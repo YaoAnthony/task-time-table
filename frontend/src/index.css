@@ -1,0 +1,331 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --border: rgba(255, 255, 255, 0.1); /* 比如一个淡白色边框 */
+  --layer: #1f1f1f; /* 深灰色浮层背景 */
+
+  --card-height: 45vh;
+  --card-width: calc(var(--card-height) / 1.5);
+}
+
+.markdown-container {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.custom-splitter .ant-splitter-bar {
+  background-color: white;
+}
+
+/* 可选：修改拖拽区域 */
+.ant-splitter-bar-dragger::before {
+  background-color: white !important;
+}
+html {
+  scroll-behavior: smooth;
+  user-select: none;
+}
+
+.screen-max-width {
+  margin-inline-start: auto;
+  margin-inline-end: auto;
+  position: relative;
+  max-width: 1600px;
+}
+
+/* 在你的全局 CSS 中添加，比如 index.css 或 tailwind.config.js 的 content 部分包含它 */
+.fileCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.fileCard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  clip-path: polygon(0 0, 100% 10px, 100% 100%, 0% 100%);
+  z-index: -1;
+}
+
+@layer utilities {
+  .flex-center {
+    @apply flex items-center justify-center;
+  }
+
+  .nav-height {
+    @apply h-[calc(100vh-60px)];
+  }
+}
+
+/* 可选：dark style antd modal（放到 css/less/scss） */
+.dark-modal .ant-modal-content {
+  background: #1e1e1e;
+  color: white;
+}
+.dark-modal .ant-btn-primary {
+  background-color: #4a90e2;
+  border: none;
+}
+
+.glassmorphism {
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.whiteGlassmorphism {
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+@property --rotate {
+  syntax: "<angle>";
+  initial-value: 132deg;
+  inherits: false;
+}
+
+.cardSize {
+  width: var(--card-width);
+  height: var(--card-height);
+}
+
+.downloadCard {
+  background: #191c29;
+  padding: 3px;
+  position: relative;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  color: rgb(88 199 250 / 0%);
+  cursor: pointer;
+  font-family: cursive;
+  transition: color 0.3s;
+  will-change: transform, opacity;
+}
+
+.downloadCard:hover {
+  color: rgb(88 199 250 / 100%);
+}
+
+.downloadCard::before {
+  content: "";
+  width: 104%;
+  height: 102%;
+  border-radius: 8px;
+  background-image: linear-gradient(
+    var(--rotate),
+    #5ddcff,
+    #3c67e3 43%,
+    #4e00c2
+  );
+  position: absolute;
+  z-index: -1;
+  top: -1%;
+  left: -2%;
+  animation: spin 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: transform;
+}
+
+.downloadCard::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  height: 100%;
+  width: 100%;
+  margin: 0 auto;
+  transform: scale(0.9);
+  opacity: 0.7;
+  transition: transform 0.5s;
+  will-change: transform;
+}
+
+@layer components {
+  .hero-gradient {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+      radial-gradient(
+        120% 120% at 0% 0%,
+        rgba(59, 130, 246, 0.35),
+        rgba(59, 130, 246, 0) 60%
+      ),
+      radial-gradient(
+        140% 120% at 100% 0%,
+        rgba(165, 180, 252, 0.3),
+        rgba(165, 180, 252, 0) 65%
+      ),
+      linear-gradient(
+        to bottom,
+        #f8fafc 0%,
+        #eef2ff 40%,
+        #f5eee4 72%,
+        #edecea 90%,
+        #edecea 100%
+      );
+  }
+
+  .hero-gradient::before,
+  .hero-gradient::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+    z-index: -1;
+    transition:
+      opacity 0.3s ease,
+      background 0.4s ease;
+  }
+
+  .hero-gradient::before {
+    inset: -25%;
+    opacity: 0.55;
+    filter: blur(60px);
+    background:
+      radial-gradient(
+        circle at 28% 24%,
+        rgba(255, 255, 255, 0.55) 0%,
+        rgba(255, 255, 255, 0.1) 46%,
+        rgba(255, 255, 255, 0) 72%
+      ),
+      radial-gradient(
+        circle at 78% 62%,
+        rgba(251, 191, 36, 0.28) 0%,
+        rgba(251, 191, 36, 0.1) 36%,
+        rgba(251, 191, 36, 0) 60%
+      );
+  }
+
+  .hero-gradient::after {
+    left: -4%;
+    width: 108%;
+    height: 44%;
+    bottom: -20%;
+    opacity: 0.92;
+    background: linear-gradient(
+      to bottom,
+      rgba(237, 236, 234, 0) 0%,
+      rgba(237, 236, 234, 0.55) 52%,
+      #edecea 90%,
+      #edecea 100%
+    );
+    clip-path: ellipse(120% 120% at 50% 0%);
+  }
+}
+
+.dark .hero-gradient {
+  background:
+    radial-gradient(
+      110% 130% at 0% 0%,
+      rgba(56, 189, 248, 0.3),
+      rgba(56, 189, 248, 0) 60%
+    ),
+    radial-gradient(
+      140% 120% at 100% 0%,
+      rgba(129, 140, 248, 0.32),
+      rgba(129, 140, 248, 0) 65%
+    ),
+    linear-gradient(
+      to bottom,
+      #0b1220 0%,
+      #0f172a 38%,
+      #111827 60%,
+      #0c0c0c 78%,
+      #0c0c0c 100%
+    );
+}
+
+.dark .hero-gradient::before {
+  background:
+    radial-gradient(
+      circle at 26% 23%,
+      rgba(59, 130, 246, 0.45) 0%,
+      rgba(59, 130, 246, 0.18) 42%,
+      rgba(59, 130, 246, 0) 68%
+    ),
+    radial-gradient(
+      circle at 76% 60%,
+      rgba(168, 85, 247, 0.45) 0%,
+      rgba(168, 85, 247, 0.2) 40%,
+      rgba(168, 85, 247, 0) 62%
+    );
+  opacity: 0.48;
+}
+
+.dark .hero-gradient::after {
+  background: linear-gradient(
+    to bottom,
+    rgba(12, 12, 12, 0) 0%,
+    rgba(12, 12, 12, 0.6) 58%,
+    #0c0c0c 85%,
+    #0c0c0c 100%
+  );
+  opacity: 0.95;
+}
+
+@keyframes spin {
+  0% {
+    --rotate: 0deg;
+  }
+  100% {
+    --rotate: 360deg;
+  }
+}
+
+/* System Management Tabs Styling */
+.system-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.system-tabs .ant-tabs-tab {
+  color: #6b7280; /* text-gray-500 */
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.system-tabs .ant-tabs-tab:hover {
+  color: #111827; /* text-gray-900 */
+}
+
+/* Dark mode overrides for system-tabs wrapper */
+.dark .system-tabs .ant-tabs-tab {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark .system-tabs .ant-tabs-tab:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.system-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #ffc72c !important;
+  text-shadow: 0 0 10px rgba(255, 199, 44, 0.3);
+}
+
+.system-tabs .ant-tabs-ink-bar {
+  background: #ffc72c;
+  box-shadow: 0 0 10px rgba(255, 199, 44, 0.5);
+}
+
+.system-tabs .ant-tabs-content {
+  height: 100%;
+}
+
+.system-tabs .ant-tabs-tabpane {
+  height: 100%;
+}
