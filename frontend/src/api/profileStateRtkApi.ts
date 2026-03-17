@@ -35,7 +35,7 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
     let result = await rawBaseQuery(args, api, extraOptions);
 
     if (result.error?.status === 401 || result.error?.status === 403) {
-        const refreshResult = await rawBaseQuery('/auth/refresh', api, extraOptions);
+        const refreshResult = await rawBaseQuery({ url: '/auth/refresh', method: 'POST' }, api, extraOptions);
         if (refreshResult.data) {
             const { accessToken, expiresAt } = refreshResult.data as { accessToken: string; expiresAt: number };
             api.dispatch(setToken({ accessToken, expiresAt }));

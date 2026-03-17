@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"localhost:3001\\\\|baseURL\\\\|API_URL\\\\|VITE_\" 'C:/my folder/HTML CODE/time plan/frontend/src' --include=*.ts --include=*.tsx -l)",
+      "Bash(docker --version)",
+      "Bash(docker compose:*)",
+      "Bash(Start-Process \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")",
+      "Bash(start \"\" \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\")",
+      "Bash(xargs cat:*)",
+      "Bash(find 'C:/my folder/HTML CODE/time plan' -type f \\\\\\(-name *.md -o -name *delete* -o -name *node* \\\\\\))",
+      "Bash(npx tsc:*)",
+      "Bash(docker ps:*)"
+    ]
+  }
+}

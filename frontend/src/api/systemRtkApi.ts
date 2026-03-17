@@ -17,17 +17,15 @@ import {
 import type {
     AddSystemAttributePayload,
     AddSystemItemPayload,
-    CreateLotteryPoolPayload,
-    CreateLotteryPrizePayload,
     CreateMissionListPayload,
     CreateMissionNodePayload,
     CreateStoreProductPayload,
     CreateSystemPayload,
-    UpdateLotteryPoolPayload,
     UserAttributeCategory,
 } from './systemApi';
 
 import { Mission } from '../Types/System';
+import { DrawResult, LotteryHistoryRecord, LotteryPityCounter } from '../Types/Lottery';
 
 const normalizeStoreType = (value: CreateStoreProductPayload['type']) => {
     if (value === 'consumables') return 'item';
@@ -56,7 +54,7 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
     let result = await rawBaseQuery(args, api, extraOptions);
 
     if (result.error?.status === 401 || result.error?.status === 403) {
-        const refreshResult = await rawBaseQuery('/auth/refresh', api, extraOptions);
+        const refreshResult = await rawBaseQuery({ url: '/auth/refresh', method: 'POST' }, api, extraOptions);
         if (refreshResult.data) {
             const { accessToken, expiresAt } = refreshResult.data as { accessToken: string; expiresAt: number };
             api.dispatch(setToken({ accessToken, expiresAt }));
@@ -314,6 +312,17 @@ export const systemRtkApi = createApi({
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
         }),
 
+        deleteMissionNode: builder.mutation<
+            { success: boolean; deletedNodeIds: string[] },
+            { systemId: string; missionListId: string; nodeId: string }
+        >({
+            query: ({ systemId, missionListId, nodeId }) => ({
+                url: `/system/${systemId}/mission-lists/${missionListId}/nodes/${nodeId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
         getMemberTaskCenter: builder.query<
             {
                 success: boolean;
@@ -501,33 +510,22 @@ export const systemRtkApi = createApi({
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
+        // ── Lottery Pool CRUD ───────────────────────────────────────────────
         createLotteryPool: builder.mutation<
-            { success: boolean },
-            { systemId: string } & CreateLotteryPoolPayload
+            { success: boolean; lotteryPools: unknown[] },
+            { systemId: string; name: string; description?: string; image?: string; drawMode?: 'simple' | 'genshin'; consume?: { type: string; itemKey?: string | null; quantity?: number } }
         >({
             query: ({ systemId, ...body }) => ({
                 url: `/system/${systemId}/lottery-pools`,
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
-        }),
-
-        createLotteryPrize: builder.mutation<
-            { success: boolean },
-            { systemId: string; poolId: string } & CreateLotteryPrizePayload
-        >({
-            query: ({ systemId, poolId, ...body }) => ({
-                url: `/system/${systemId}/lottery-pools/${poolId}/prizes`,
-                method: 'POST',
-                body,
-            }),
-            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
         updateLotteryPool: builder.mutation<
-            { success: boolean },
-            { systemId: string; poolId: string } & UpdateLotteryPoolPayload
+            { success: boolean; lotteryPools: unknown[] },
+            { systemId: string; poolId: string; name?: string; description?: string; image?: string; canGetNothing?: boolean; consume?: { type: string; itemKey?: string | null; quantity?: number } }
         >({
             query: ({ systemId, poolId, ...body }) => ({
                 url: `/system/${systemId}/lottery-pools/${poolId}`,
@@ -537,72 +535,117 @@ export const systemRtkApi = createApi({
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
-        deleteLotteryPrize: builder.mutation<
+        deleteLotteryPool: builder.mutation<
             { success: boolean },
-            { systemId: string; poolId: string; prizeId: string }
+            { systemId: string; poolId: string }
         >({
-            query: ({ systemId, poolId, prizeId }) => ({
-                url: `/system/${systemId}/lottery-pools/${poolId}/prizes/${prizeId}`,
+            query: ({ systemId, poolId }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}`,
                 method: 'DELETE',
             }),
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
-        drawLotteryPool: builder.mutation<
-            {
-                success: boolean;
-                message: string;
-                draw: {
-                    poolId: string;
-                    poolName: string;
-                    consumed?: {
-                        type: 'item';
-                        itemKey: string;
-                        quantity: number;
-                    } | null;
-                    reward?: {
-                        productId: string;
-                        productName: string;
-                        productType: 'mission' | 'item' | 'lottery_chance';
-                        quantity: number;
-                    } | null;
-                    won: boolean;
-                    randomValue: number;
-                };
-            },
+        generatePoolDescription: builder.mutation<
+            { success: boolean; description: string },
             { systemId: string; poolId: string }
         >({
             query: ({ systemId, poolId }) => ({
-                url: `/system/${systemId}/member/lottery-pools/${poolId}/draw`,
+                url: `/system/${systemId}/lottery-pools/${poolId}/generate-description`,
                 method: 'POST',
                 body: {},
             }),
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
-        getMemberLotteryHistory: builder.query<
+        // ── Simple mode prizes ──────────────────────────────────────────────
+        addSimplePrize: builder.mutation<
+            { success: boolean },
+            { systemId: string; poolId: string; type: 'item' | 'coins'; productId?: string | null; quantity: number; probability: number }
+        >({
+            query: ({ systemId, poolId, ...body }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}/simple-prizes`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        deleteSimplePrize: builder.mutation<
+            { success: boolean },
+            { systemId: string; poolId: string; prizeId: string }
+        >({
+            query: ({ systemId, poolId, prizeId }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}/simple-prizes/${prizeId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        // ── Genshin tier management ─────────────────────────────────────────
+        updateGenshinTier: builder.mutation<
+            { success: boolean },
+            { systemId: string; poolId: string; tierIndex: number; name?: string; baseRate?: number; softPityStart?: number; hardPityLimit?: number; softPityIncrement?: number }
+        >({
+            query: ({ systemId, poolId, tierIndex, ...body }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}/genshin-tiers/${tierIndex}`,
+                method: 'PATCH',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        addGenshinTierItem: builder.mutation<
+            { success: boolean },
+            { systemId: string; poolId: string; tierIndex: number; type: 'item' | 'coins'; productId?: string | null; quantity: number }
+        >({
+            query: ({ systemId, poolId, tierIndex, ...body }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}/genshin-tiers/${tierIndex}/items`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        deleteGenshinTierItem: builder.mutation<
+            { success: boolean },
+            { systemId: string; poolId: string; tierIndex: number; itemId: string }
+        >({
+            query: ({ systemId, poolId, tierIndex, itemId }) => ({
+                url: `/system/${systemId}/lottery-pools/${poolId}/genshin-tiers/${tierIndex}/items/${itemId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        // ── Draw ────────────────────────────────────────────────────────────
+        drawLotteryPool: builder.mutation<
             {
                 success: boolean;
-                history: Array<{
-                    _id: string;
-                    poolId: string;
-                    poolName: string;
-                    consumed?: {
-                        type?: 'none' | 'item' | 'coins';
-                        itemKey?: string | null;
-                        quantity?: number;
-                    };
-                    reward?: {
-                        productId?: string | null;
-                        productName?: string;
-                        productType?: 'mission' | 'item' | 'lottery_chance' | null;
-                        quantity?: number;
-                    };
-                    won: boolean;
-                    randomValue: number;
-                    createdAt: string;
-                }>;
+                draws: DrawResult[];
+                draw: DrawResult | null;
+                pityCount: number;
+                consumed?: { type: string; itemKey: string | null; quantity: number } | null;
             },
+            { systemId: string; poolId: string; count?: number }
+        >({
+            query: ({ systemId, poolId, count = 1 }) => ({
+                url: `/system/${systemId}/member/lottery-pools/${poolId}/draw`,
+                method: 'POST',
+                body: { count },
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
+        getMemberLotteryPity: builder.query<
+            { success: boolean; pityCounters: LotteryPityCounter[] },
+            { systemId: string }
+        >({
+            query: ({ systemId }) => `/system/${systemId}/member/lottery/pity`,
+        }),
+
+        getMemberLotteryHistory: builder.query<
+            { success: boolean; history: LotteryHistoryRecord[] },
             { systemId: string; limit?: number }
         >({
             query: ({ systemId, limit = 30 }) => `/system/${systemId}/member/lottery/history?limit=${limit}`,
@@ -629,6 +672,7 @@ export const {
     useUpdateMissionListMutation,
     useDeleteMissionListMutation,
     useCreateMissionNodeMutation,
+    useDeleteMissionNodeMutation,
     useGetMemberTaskCenterQuery,
     useLazyGetMemberTaskCenterQuery,
     useAcceptMissionListMutation,
@@ -645,10 +689,17 @@ export const {
     useDeleteStoreProductMutation,
     usePurchaseStoreProductMutation,
     useCreateLotteryPoolMutation,
-    useCreateLotteryPrizeMutation,
     useUpdateLotteryPoolMutation,
-    useDeleteLotteryPrizeMutation,
+    useDeleteLotteryPoolMutation,
+    useGeneratePoolDescriptionMutation,
+    useAddSimplePrizeMutation,
+    useDeleteSimplePrizeMutation,
+    useUpdateGenshinTierMutation,
+    useAddGenshinTierItemMutation,
+    useDeleteGenshinTierItemMutation,
     useDrawLotteryPoolMutation,
     useGetMemberLotteryHistoryQuery,
     useLazyGetMemberLotteryHistoryQuery,
+    useGetMemberLotteryPityQuery,
+    useLazyGetMemberLotteryPityQuery,
 } = systemRtkApi;

@@ -16,6 +16,7 @@ import {
     useCreateMissionListMutation,
     useUpdateMissionListMutation,
     useDeleteMissionListMutation,
+    useDeleteMissionNodeMutation,
 } from '../../../../api/systemRtkApi';
 
 const createInitialListForm = () => ({
@@ -71,6 +72,7 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
     const [createMissionList, { isLoading: isCreatingList }] = useCreateMissionListMutation();
     const [updateMissionList, { isLoading: isUpdatingList }] = useUpdateMissionListMutation();
     const [deleteMissionList, { isLoading: isDeletingList }] = useDeleteMissionListMutation();
+    const [deleteMissionNode, { isLoading: isDeletingNode }] = useDeleteMissionNodeMutation();
 
     useEffect(() => {
         triggerGetSystemList();
@@ -255,6 +257,77 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
         }
     };
 
+    const handleDeleteMissionNode = async (nodeId: string) => {
+        if (!selectedMissionList) return;
+
+        const taskTree = selectedMissionList.taskTree || [];
+        const targetNode = taskTree.find((n) => n.nodeId === nodeId);
+        if (!targetNode) return;
+
+        const isRoot = selectedMissionList.rootNodeId === nodeId;
+        const childCount = targetNode.childrenNodeIds?.length ?? 0;
+
+        // 计算会被级联删除的子树节点数（用于提示）
+        const collectSubtreeIds = (rootId: string): string[] => {
+            const ids: string[] = [];
+            const queue = [rootId];
+            while (queue.length > 0) {
+                const curr = queue.shift()!;
+                ids.push(curr);
+                const n = taskTree.find((nd) => nd.nodeId === curr);
+                if (n) queue.push(...n.childrenNodeIds);
+            }
+            return ids;
+        };
+
+        let confirmMsg = `确认删除节点「${targetNode.title}」？\n\n`;
+        if (isRoot && childCount > 0) {
+            const newRootNode = taskTree.find((n) => n.nodeId === targetNode.childrenNodeIds[0]);
+            const newRootTitle = newRootNode?.title ?? targetNode.childrenNodeIds[0];
+            confirmMsg += `该节点是根节点，「${newRootTitle}」将成为新的根节点。`;
+            if (childCount > 1) {
+                const slotsAvailable = 3 - (newRootNode?.childrenNodeIds?.length ?? 0);
+                const cascadeCount = childCount - 1 - slotsAvailable;
+                if (cascadeCount > 0) {
+                    const cascadeSubtreeSize = targetNode.childrenNodeIds.slice(1 + slotsAvailable)
+                        .flatMap((id) => collectSubtreeIds(id)).length;
+                    confirmMsg += `\n\n⚠️ 新根节点已无多余子节点槽位，${cascadeSubtreeSize} 个节点将被级联删除。`;
+                }
+            }
+        } else if (!isRoot && childCount > 0) {
+            const parentNode = taskTree.find((n) => n.nodeId === targetNode.parentNodeId);
+            const slotsAvailable = parentNode ? 3 - (parentNode.childrenNodeIds.length - 1) : 0;
+            const cascadeCount = Math.max(0, childCount - slotsAvailable);
+            if (cascadeCount > 0) {
+                const cascadeSubtreeSize = targetNode.childrenNodeIds.slice(slotsAvailable)
+                    .flatMap((id) => collectSubtreeIds(id)).length;
+                confirmMsg += `子节点会尽量拼接到父节点，但父节点槽位不足，${cascadeSubtreeSize} 个节点将被级联删除。`;
+            } else {
+                confirmMsg += `该节点的 ${childCount} 个子节点将拼接到父节点下。`;
+            }
+        } else {
+            confirmMsg += '此操作不可撤销。';
+        }
+
+        const confirmed = window.confirm(confirmMsg);
+        if (!confirmed) return;
+
+        try {
+            const res = await deleteMissionNode({
+                systemId,
+                missionListId: selectedMissionList._id,
+                nodeId,
+            }).unwrap();
+
+            const deletedCount = res.deletedNodeIds?.length ?? 1;
+            message.success(`节点已删除（共移除 ${deletedCount} 个节点）`);
+            await triggerGetSystemList().unwrap();
+        } catch (error) {
+            const err = error as { data?: { message?: string } };
+            message.error(err?.data?.message || '节点删除失败');
+        }
+    };
+
     return (
         <div className="p-8 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-white/20 scrollbar-track-transparent">
             <div className="max-w-[1600px] mx-auto w-full">
@@ -339,10 +412,7 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                                     setNodeParentAnchor(parentId || '');
                                     setShowNodeForm(true);
                                 }}
-                                onNodeDelete={(nodeId) => {
-                                    console.log('Clicked delete for node', nodeId);
-                                    message.info('开发中: 删除任务节点功能');
-                                }}
+                                onNodeDelete={isDeletingNode ? undefined : handleDeleteMissionNode}
                             />
                         )}
                     </div>

@@ -202,113 +202,133 @@ const Overview: React.FC = () => {
                         <motion.div animate={{ rotate: 360 }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }}>
                             <FaCogs className="text-6xl mb-6 opacity-50 drop-shadow-lg" />
                         </motion.div>
-                        <p className="text-xl font-bold tracking-widest mb-4">暂无加入的系统法则</p>
+                        <p className="text-xl font-bold tracking-widest mb-4">尚未接入任何世界线</p>
                         <p className="text-sm tracking-wider">前往 "探索法则" (Setting) 缔造纪元或搜寻坐标</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-8">
-                        {systems.map((sys) => (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-8 p-4">
+                        {systems.map((sys, idx) => (
                             <motion.div
                                 key={sys._id}
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                whileHover={{ scale: 1.02}}
+                                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                transition={{ duration: 0.4, delay: idx * 0.1, type: "spring", stiffness: 100 }}
+                                whileHover={{ scale: 1.02, y: -4 }}
                                 onClick={() => handleSystemClick(sys._id)}
-                                className="relative bg-white/60 dark:bg-gradient-to-br dark:from-gray-800 dark:to-gray-900 
-                                border border-white/80 dark:border-gray-700/50 rounded-2xl overflow-hidden 
-                                hover:border-blue-400/50 dark:hover:border-[#FFC72C] 
-                                shadow-[inset_1px_1px_2px_rgba(255,255,255,1),_0_10px_20px_rgba(0,0,0,0.05)]
-                                dark:shadow-[0_0_20px_rgba(0,0,0,0.4)] dark:hover:shadow-[0_0_30px_rgba(255,199,44,0.2)] 
-                                transition-all duration-300 cursor-pointer group"
+                                className="group relative cursor-pointer"
                             >
-                                {/* Owner Badge */}
-                                {sys.profile === profile?._id && (
-                                    <div className="absolute top-4 right-4 z-20">
-                                        <span className="bg-gradient-to-r from-blue-500 to-cyan-500 dark:from-[#FFC72C] dark:to-orange-500 text-white dark:text-black text-xs font-black px-3 py-1.5 rounded-full tracking-widest shadow-[0_4px_10px_rgba(59,130,246,0.3)] dark:shadow-[0_4px_10px_rgba(255,199,44,0.4)]">
-                                            我的主场
-                                        </span>
+                                {/* Holographic Glow Border */}
+                                <div className="absolute -inset-0.5 bg-gradient-to-br from-blue-400 to-purple-600 dark:from-cyan-400 dark:to-[#FFC72C] rounded-2xl opacity-20 group-hover:opacity-75 blur-sm transition duration-500" />
+                                
+                                <div className="relative h-full bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border border-white/50 dark:border-white/10 rounded-2xl p-6 flex flex-col overflow-hidden">
+                                    
+                                    {/* Tech/Magic pattern overlay */}
+                                    <div className="absolute top-0 right-0 w-40 h-40 bg-[radial-gradient(circle_at_top_right,rgba(59,130,246,0.15),transparent_60%)] dark:bg-[radial-gradient(circle_at_top_right,rgba(255,199,44,0.15),transparent_60%)] pointer-events-none" />
+                                    
+                                    {/* Cyberpunk Decoration dots */}
+                                    <div className="absolute bottom-5 right-5 grid grid-cols-3 gap-1.5 opacity-20 group-hover:opacity-60 transition-opacity">
+                                        {[...Array(9)].map((_, i) => <div key={i} className="w-1 h-1 bg-blue-600 dark:bg-[#FFC72C] rounded-full" />)}
                                     </div>
-                                )}
-                                {sys.profile && sys.profile !== profile?._id && (
-                                    <div className="absolute top-4 right-4 z-20">
-                                        <span className="bg-gradient-to-r from-emerald-400 to-teal-500 text-white text-xs font-black px-3 py-1.5 rounded-full tracking-widest shadow-lg">
-                                            客座成员
-                                        </span>
-                                    </div>
-                                )}
 
-                                {/* Background Ambient Colors */}
-                                <div className="absolute inset-0 opacity-40 dark:opacity-10 pointer-events-none transition-opacity duration-500 group-hover:opacity-70 dark:group-hover:opacity-20">
-                                    <div className="absolute top-[-20%] right-[-10%] w-48 h-48 bg-blue-300 dark:bg-[#FFC72C] rounded-full blur-3xl mix-blend-multiply dark:mix-blend-screen transition-transform duration-700 group-hover:scale-150" />
-                                    <div className="absolute bottom-[-20%] left-[-10%] w-48 h-48 bg-purple-300 dark:bg-blue-600 rounded-full blur-3xl mix-blend-multiply dark:mix-blend-screen transition-transform duration-700 group-hover:scale-150" />
-                                </div>
-
-                                <div className="relative p-7 flex flex-col h-full z-10">
-                                    {/* Header with Icon */}
-                                    <div className="flex items-center justify-between mb-5">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-14 h-14 rounded-xl bg-white/80 dark:bg-black/40 flex items-center justify-center 
-                                                shadow-[inset_2px_2px_4px_rgba(255,255,255,1),_0_4px_10px_rgba(0,0,0,0.05)] 
-                                                dark:shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border border-white dark:border-white/10 
-                                                group-hover:border-blue-300 dark:group-hover:border-[#FFC72C]/50 transition-colors"
-                                            >
-                                                <FaCogs className="text-3xl text-blue-500 dark:text-white/70 group-hover:text-blue-600 dark:group-hover:text-[#FFC72C] transition-colors drop-shadow-sm" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-2xl font-black tracking-wider text-neutral-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#FFC72C] transition-colors">{sys.name}</h3>
-                                                <p className="text-neutral-500 dark:text-white/40 text-[10px] font-bold tracking-[0.2em] mt-1">SYS_ID: {sys._id.slice(-8).toUpperCase()}</p>
+                                    {/* Gaming Style Owner Badge */}
+                                    {sys.profile === profile?._id && (
+                                        <div className="absolute top-0 right-0 z-20">
+                                            <div className="bg-gradient-to-bl from-blue-600 to-indigo-700 dark:from-[#cf9c0e] dark:to-[#FFC72C] text-white dark:text-black text-[10px] font-black px-4 py-1.5 rounded-bl-xl shadow-lg tracking-widest flex items-center gap-1.5 border-l border-b border-blue-400 dark:border-[#FFC72C]">
+                                                <span>★</span> MASTER
                                             </div>
                                         </div>
-                                        <motion.div
-                                            className="text-blue-600 dark:text-[#FFC72C] opacity-0 -translate-x-4 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300"
-                                        >
-                                            <FaArrowRight className="text-2xl drop-shadow-[0_0_5px_currentColor]" />
-                                        </motion.div>
+                                    )}
+                                    {sys.profile && sys.profile !== profile?._id && (
+                                        <div className="absolute top-0 right-0 z-20">
+                                            <div className="bg-gradient-to-bl from-emerald-500 to-teal-700 text-white text-[10px] font-black px-4 py-1.5 rounded-bl-xl shadow-lg tracking-widest flex items-center gap-1.5 border-l border-b border-emerald-400">
+                                                <span>◆</span> GUEST
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Header & Icon */}
+                                    <div className="flex items-start gap-4 mb-4 relative z-10 w-[90%]">
+                                        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-800 dark:to-slate-900 border border-blue-200 dark:border-white/10 flex items-center justify-center shadow-inner group-hover:rotate-12 transition-transform duration-500 shrink-0 relative overflow-hidden">
+                                            <div className="absolute inset-0 bg-white/40 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            <FaCogs className="text-3xl text-blue-600 dark:text-[#FFC72C] drop-shadow-sm" />
+                                        </div>
+                                        <div className="flex-1 pt-1 overflow-hidden">
+                                            <h3 className="text-xl font-black tracking-widest text-neutral-800 dark:text-white truncate">
+                                                {sys.name}
+                                            </h3>
+                                            <div className="flex items-center mt-1.5">
+                                                <div className="px-2 py-0.5 rounded text-[10px] font-bold tracking-[0.2em] bg-black/5 dark:bg-white/10 text-neutral-500 dark:text-white/50 border border-black/5 dark:border-white/5">
+                                                    ID: {sys._id.slice(-8).toUpperCase()}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Description */}
-                                    <p className="text-neutral-600 dark:text-white/60 font-medium text-sm mb-6 line-clamp-2 flex-1 leading-relaxed">
-                                        {sys.description || "世界线变动中，尚未观测到此系统的详细法则描述。"}
-                                    </p>
-
-                                    {/* Modules Badges - Gamified Specs */}
-                                    <div className="flex flex-wrap gap-2.5 mb-5">
-                                        {sys.modules?.taskChain && (
-                                            <span className="text-xs font-black tracking-wider px-3 py-1.5 rounded-lg 
-                                                bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 
-                                                border border-blue-200 dark:border-blue-500/30 shadow-sm flex items-center gap-1.5"
-                                            >
-                                                <FaGamepad className="text-sm" /> 任务链
-                                            </span>
-                                        )}
-                                        {sys.modules?.store && (
-                                            <span className="text-xs font-black tracking-wider px-3 py-1.5 rounded-lg 
-                                                bg-amber-50 dark:bg-yellow-900/40 text-amber-600 dark:text-yellow-300 
-                                                border border-amber-200 dark:border-yellow-500/30 shadow-sm flex items-center gap-1.5"
-                                            >
-                                                <FaStore className="text-sm" /> 交易馆
-                                            </span>
-                                        )}
-                                        {sys.modules?.lottery && (
-                                            <span className="text-xs font-black tracking-wider px-3 py-1.5 rounded-lg 
-                                                bg-fuchsia-50 dark:bg-purple-900/40 text-fuchsia-600 dark:text-purple-300 
-                                                border border-fuchsia-200 dark:border-purple-500/30 shadow-sm flex items-center gap-1.5"
-                                            >
-                                                <FaDice className="text-sm" /> 祈愿池
-                                            </span>
-                                        )}
+                                    <div className="flex-1 mb-6 relative z-10">
+                                        <div className="h-full border-l-2 border-blue-100 dark:border-gray-800 pl-3 py-1">
+                                            <p className="text-sm font-medium text-neutral-600 dark:text-white/60 line-clamp-2 leading-relaxed tracking-wide">
+                                                {sys.description || "未知的能量波动...无法解析该区域法则细节。"}
+                                            </p>
+                                        </div>
                                     </div>
 
-                                    {/* Footer Info */}
-                                    <div className="flex items-center justify-between text-[11px] font-bold text-neutral-400 dark:text-white/40 pt-4 border-t border-black/5 dark:border-white/10">
-                                        <span className="tracking-widest uppercase">
-                                            EST. {new Date(sys.createdAt || '').toLocaleDateString('zh-CN')}
-                                        </span>
-                                        <span className="text-blue-600 dark:text-[#FFC72C]/80 tracking-widest uppercase group-hover:text-blue-700 dark:group-hover:text-[#FFC72C] transition-colors relative overflow-hidden group/link">
-                                            <span className="relative z-10">跃迁至此空间</span>
-                                            <div className="absolute bottom-0 left-0 w-full h-[2px] bg-blue-600 dark:bg-[#FFC72C] -translate-x-full group-hover/link:translate-x-0 transition-transform duration-300" />
-                                        </span>
+                                    {/* Game-like Status Modules */}
+                                    <div className="space-y-2 relative z-10">
+                                        <div className="text-[10px] font-bold text-neutral-400 dark:text-white/40 tracking-[0.2em] flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded bg-blue-500 dark:bg-[#FFC72C] animate-pulse" />
+                                            ACTIVE MODULES
+                                        </div>
+                                        <div className="flex gap-2 h-9">
+                                            {sys.modules?.taskChain ? (
+                                                <div className="flex-1 rounded bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/20 border border-blue-200 dark:border-blue-500/30 flex items-center justify-center gap-1.5 text-blue-700 dark:text-blue-300 transform hover:-translate-y-1 transition-transform relative overflow-hidden group/mod shadow-sm">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 dark:via-white/20 to-transparent -translate-x-full group-hover/mod:translate-x-full transition-transform duration-700 ease-in-out" />
+                                                    <FaGamepad className="text-sm" />
+                                                    <span className="text-xs font-black tracking-wider">核心任务</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex-1 rounded bg-neutral-100/50 dark:bg-neutral-800/20 border border-neutral-200/50 dark:border-white/5 flex items-center justify-center text-neutral-400 dark:text-white/20">
+                                                    <span className="text-[10px] font-bold tracking-widest opacity-50">LOCKED</span>
+                                                </div>
+                                            )}
+                                            
+                                            {sys.modules?.store ? (
+                                                <div className="flex-1 rounded bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/40 dark:to-amber-800/20 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center gap-1.5 text-amber-700 dark:text-amber-300 transform hover:-translate-y-1 transition-transform relative overflow-hidden group/mod shadow-sm">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 dark:via-white/20 to-transparent -translate-x-full group-hover/mod:translate-x-full transition-transform duration-700 ease-in-out" />
+                                                    <FaStore className="text-sm" />
+                                                    <span className="text-xs font-black tracking-wider">交易所</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex-1 rounded bg-neutral-100/50 dark:bg-neutral-800/20 border border-neutral-200/50 dark:border-white/5 flex items-center justify-center text-neutral-400 dark:text-white/20">
+                                                    <span className="text-[10px] font-bold tracking-widest opacity-50">LOCKED</span>
+                                                </div>
+                                            )}
+
+                                            {sys.modules?.lottery ? (
+                                                <div className="flex-1 rounded bg-gradient-to-r from-fuchsia-50 to-fuchsia-100 dark:from-fuchsia-900/40 dark:to-fuchsia-800/20 border border-fuchsia-200 dark:border-fuchsia-500/30 flex items-center justify-center gap-1.5 text-fuchsia-700 dark:text-fuchsia-300 transform hover:-translate-y-1 transition-transform relative overflow-hidden group/mod shadow-sm">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 dark:via-white/20 to-transparent -translate-x-full group-hover/mod:translate-x-full transition-transform duration-700 ease-in-out" />
+                                                    <FaDice className="text-sm" />
+                                                    <span className="text-xs font-black tracking-wider">祈愿池</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex-1 rounded bg-neutral-100/50 dark:bg-neutral-800/20 border border-neutral-200/50 dark:border-white/5 flex items-center justify-center text-neutral-400 dark:text-white/20">
+                                                    <span className="text-[10px] font-bold tracking-widest opacity-50">LOCKED</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+
+                                    {/* Action Footer */}
+                                    <div className="mt-5 pt-4 border-t border-black/5 dark:border-white/10 flex items-center justify-between relative z-10 w-full">
+                                        <div className="text-[10px] font-bold text-neutral-400 dark:text-white/30 tracking-widest">
+                                            EST {new Date(sys.createdAt || '').toLocaleDateString('zh-CN')}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-blue-600 dark:text-[#FFC72C] text-xs font-black tracking-widest bg-blue-50 dark:bg-[#FFC72C]/10 px-3 py-1.5 rounded-lg group-hover:bg-blue-600 group-hover:text-white dark:group-hover:bg-[#FFC72C] dark:group-hover:text-black transition-colors">
+                                            <span>ENTER SYSTEM</span>
+                                            <FaArrowRight className="group-hover:translate-x-1 transition-transform" />
+                                        </div>
+                                    </div>
+                                    
                                 </div>
                             </motion.div>
                         ))}

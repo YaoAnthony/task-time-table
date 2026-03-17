@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: ./backend
+    restart: always
+    ports:
+      - "7778:7778"
+    env_file:
+      - ./backend/.env
+    environment:
+      # 覆盖 .env 里的 Website_URL，允许前端容器的 CORS
+      - Website_URL=http://localhost:4002
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_FRONTEND_URL: http://localhost:4002
+        VITE_GOOGLE_REDIRECT_URI: http://localhost:4002/callback
+    restart: always
+    ports:
+      - "4002:80"
+    depends_on:
+      - backend

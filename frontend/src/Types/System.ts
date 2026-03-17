@@ -1,5 +1,4 @@
 import type { LotteryConsumeType } from './Lottery';
-export type { LotteryPrizeType } from './Lottery';
 import type { LotteryPool } from './Lottery';
 // ==================== Basic Types ====================
 
