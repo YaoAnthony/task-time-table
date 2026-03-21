@@ -8,7 +8,8 @@ export type AttributeKey =
     | "wisdom"
     | "discipline"
     | "charisma"
-    | "luck";
+    | "luck"
+    | "vitality";
 
 export interface AttributeValue {
     level: number;
@@ -31,10 +32,39 @@ export interface PaymentMethod {
     billingAddress: string;
 }
 
+export type FacingDirection = 'up' | 'down' | 'left' | 'right';
+
+export interface ChestRewardItem {
+    inventoryKey: string;
+    name:         string;
+    description:  string;
+    rarity:       'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+    imageUrl:     string;
+    quantity:     number;
+}
+
+export interface GameChest {
+    id:        string;
+    x:         number;
+    y:         number;
+    rewards: {
+        coins: number;
+        items: ChestRewardItem[];
+    };
+    opened:    boolean;
+    createdAt: number;
+}
+
+export interface IdleGameState {
+    x: number;
+    y: number;
+    gameTick: number;
+    facing: FacingDirection;
+}
 
 export interface Profile {
-    _id: string; // MongoDB 的 ObjectId 通常在前端是 string 类型
-    user: User; // 关联的 User ID（或你也可以拓展为 user 对象）
+    _id: string;
+    user: User;
     paymentMethods?: PaymentMethod[];
     systems?: SystemLite[];
     wallet?: {
@@ -42,5 +72,5 @@ export interface Profile {
     };
     attributes?: Record<AttributeKey, AttributeValue>;
     inventory?: InventoryItem[];
+    idleGame?: IdleGameState;
 }
-

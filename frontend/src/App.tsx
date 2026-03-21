@@ -30,6 +30,7 @@ import {
     SystemStore,
     SystemTasks,
     SystemLottery,
+    SystemIdleGame,
  } from './Pages/Dashboard/component';
 
 
@@ -82,6 +83,7 @@ const App = () => {
                         <Route path="tasks" element={<Tasks />} />
                         <Route path="store" element={<Store />} />
                         <Route path="setting" element={<Setting />} />
+                        <Route path="idle-game" element={<SystemIdleGame />} />
                         
                         {/* 系统路由 - 嵌套路由 */}
                         <Route path="system/:systemId" element={<SystemRouter />}>

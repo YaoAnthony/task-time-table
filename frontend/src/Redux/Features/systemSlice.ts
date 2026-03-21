@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import type { SystemLite } from '../../Types/System';
+import type { SystemLite, StoreProduct } from '../../Types/System';
+import type { LotteryPool } from '../../Types/Lottery';
 import { logout } from './userSlice';
 export type { SystemLite } from '../../Types/System';
 
@@ -70,6 +71,16 @@ const systemSlice = createSlice({
             state.loading = false;
             state.error = undefined;
         },
+        /** Surgical update: replace storeProducts of one system without refetching everything */
+        patchSystemProducts(state, action: PayloadAction<{ systemId: string; storeProducts: StoreProduct[] }>) {
+            const sys = state.systems.find(s => s._id === action.payload.systemId);
+            if (sys) sys.storeProducts = action.payload.storeProducts;
+        },
+        /** Surgical update: replace lotteryPools of one system without refetching everything */
+        patchSystemLotteryPools(state, action: PayloadAction<{ systemId: string; lotteryPools: LotteryPool[] }>) {
+            const sys = state.systems.find(s => s._id === action.payload.systemId);
+            if (sys) sys.lotteryPools = action.payload.lotteryPools;
+        },
     },
     extraReducers: (builder) => {
         builder.addCase(logout, (state) => {
@@ -91,6 +102,8 @@ export const {
     setSystemLoading,
     setSystemError,
     clearSystemState,
+    patchSystemProducts,
+    patchSystemLotteryPools,
 } = systemSlice.actions;
 
 export default systemSlice.reducer;

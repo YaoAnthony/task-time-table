@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { message } from 'antd';
 import { FaArrowLeft, FaDice, FaScroll, FaShieldAlt, FaStar, FaGem, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
+import { patchSystemLotteryPools } from '../../../../Redux/Features/systemSlice';
 import { getEnv } from '../../../../config/env';
 import useSSEWithReconnect from '../../../../hook/useSSEWithReconnect';
 import {
@@ -60,6 +61,7 @@ const SystemLottery: React.FC = () => {
     const [poolIdx, setPoolIdx] = useState(0);
     const [showHistory, setShowHistory] = useState(false);
 
+    const dispatch = useDispatch();
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
     const [triggerGetProfileAndUser] = useLazyGetProfileAndUserQuery();
     const [drawPool, { isLoading: isDrawing }] = useDrawLotteryPoolMutation();
@@ -90,11 +92,18 @@ const SystemLottery: React.FC = () => {
             try {
                 const payload = JSON.parse(event.data);
                 if (!payload?.type || payload.type === 'connected') return;
-                if (payload.type?.startsWith('lottery_pool')) {
-                    triggerGetSystemList();
+
+                if (payload.type === 'lottery_pools_updated' && payload.systemId === systemId) {
+                    // Surgical update — only lotteryPools slice, no full refetch
+                    dispatch(patchSystemLotteryPools({
+                        systemId: payload.systemId as string,
+                        lotteryPools: payload.lotteryPools as LotteryPool[],
+                    }));
+                } else if (payload.type === 'lottery_pool_draw_executed') {
+                    // Draw happened — refresh history + pity (these are per-user queries, not system cache)
                     refetchHistory();
-                }
-                if (payload.type === 'system_deleted') {
+                    refetchPity();
+                } else if (payload.type === 'system_deleted') {
                     navigate('/dashboard/home');
                 }
             } catch { /* ignore */ }
@@ -260,8 +269,16 @@ const SystemLottery: React.FC = () => {
                 {pool?.image && (
                     <motion.div key={pool._id} className="absolute inset-0 pointer-events-none"
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6 }}>
-                        <img src={pool.image} alt="" className="w-full h-full object-cover opacity-15" />
-                        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 30%, #0f0c29 100%)' }} />
+                        <img
+                            src={pool.image} alt=""
+                            className="w-full h-full object-cover"
+                            style={{
+                                opacity: 0.28,
+                                mixBlendMode: 'luminosity',
+                                filter: 'brightness(0.55) saturate(0.7)',
+                            }}
+                        />
+                        <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at center, transparent 20%, #0f0c29 80%)' }} />
                     </motion.div>
                 )}
 

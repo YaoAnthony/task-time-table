@@ -487,6 +487,17 @@ export const systemRtkApi = createApi({
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
         }),
 
+        toggleStoreProductListing: builder.mutation<
+            { success: boolean; storeProducts: unknown[] },
+            { systemId: string; productId: string }
+        >({
+            query: ({ systemId, productId }) => ({
+                url: `/system/${systemId}/store-products/${productId}/listing`,
+                method: 'PATCH',
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+        }),
+
         purchaseStoreProduct: builder.mutation<
             {
                 success: boolean;
@@ -687,6 +698,7 @@ export const {
     useCreateStoreProductMutation,
     useUpdateStoreProductMutation,
     useDeleteStoreProductMutation,
+    useToggleStoreProductListingMutation,
     usePurchaseStoreProductMutation,
     useCreateLotteryPoolMutation,
     useUpdateLotteryPoolMutation,

@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { message } from 'antd';
 import { FaGamepad, FaArrowLeft, FaTasks, FaPlay, FaCheck, FaHistory, FaRedo, FaTimes } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
+import { patchSystemLotteryPools } from '../../../../Redux/Features/systemSlice';
 import { getEnv } from '../../../../config/env';
+import type { LotteryPool } from '../../../../Types/Lottery';
 import useSSEWithReconnect from '../../../../hook/useSSEWithReconnect';
 import {
     useAcceptMissionListMutation,
@@ -26,6 +28,7 @@ const SystemTasks: React.FC = () => {
     const { systemId } = useParams<{ systemId: string }>();
     const navigate = useNavigate();
     
+    const dispatch = useDispatch();
     const systems = useSelector((state: RootState) => state.system.systems);
     const accessToken = useSelector((state: RootState) => state.user.accessToken);
     const currentSystem = systems.find(sys => sys._id === systemId);
@@ -59,16 +62,17 @@ const SystemTasks: React.FC = () => {
                 const payload = JSON.parse(event.data);
                 if (!payload?.type || payload.type === 'connected') return;
 
-                if (
+                if (payload.type === 'lottery_pools_updated' && payload.systemId === systemId) {
+                    // Surgical update — only lotteryPools slice
+                    dispatch(patchSystemLotteryPools({
+                        systemId: payload.systemId as string,
+                        lotteryPools: payload.lotteryPools as LotteryPool[],
+                    }));
+                } else if (
                     payload.type === 'mission_list_created'
                     || payload.type === 'mission_list_updated'
                     || payload.type === 'mission_list_deleted'
                     || payload.type === 'mission_node_created'
-                    || payload.type === 'lottery_pool_created'
-                    || payload.type === 'lottery_pool_updated'
-                    || payload.type === 'lottery_pool_prizes_updated'
-                    || payload.type === 'lottery_pool_prize_deleted'
-                    || payload.type === 'lottery_pool_draw_executed'
                 ) {
                     triggerGetSystemList();
                     refetch();

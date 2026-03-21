@@ -9,7 +9,24 @@
       "Bash(xargs cat:*)",
       "Bash(find 'C:/my folder/HTML CODE/time plan' -type f \\\\\\(-name *.md -o -name *delete* -o -name *node* \\\\\\))",
       "Bash(npx tsc:*)",
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(node -e \":*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npm install:*)",
+      "Bash(where node:*)",
+      "Bash(ls \"C:\\\\my folder\\\\HTML CODE\\\\time plan\\\\frontend\\\\src\\\\assets\"\" 2>/dev/null || dir \"C:my folderHTML CODEtime planfrontendsrcassets \")",
+      "WebFetch(domain:www.joshmorony.com)",
+      "WebFetch(domain:dl.acm.org)",
+      "WebSearch",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:3dvar.com)",
+      "WebFetch(domain:ar5iv.labs.arxiv.org)",
+      "WebFetch(domain:gonzoml.substack.com)",
+      "Bash(grep -n \"npcMemor\\\\|Map\\\\|$\\\\*\\\\|mapOf\" \"/c/my folder/HTML CODE/time plan/backend/models/Profile.js\")",
+      "Bash(xargs grep:*)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c \":*)"
     ]
   }
 }

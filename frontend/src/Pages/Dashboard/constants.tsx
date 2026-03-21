@@ -1,11 +1,11 @@
 //icons
-import { 
+import {
     BarChartOutlined,
     ShoppingOutlined,
     ShopOutlined,
     UnorderedListOutlined,
     SettingOutlined,
-    
+    PlaySquareOutlined,
 } from '@ant-design/icons';
 
 export const inventoryTabs: { id: string; label: string }[] = [
@@ -17,9 +17,10 @@ export const inventoryTabs: { id: string; label: string }[] = [
 ];
 
 export const sidebarItems = [
-    { label: "主界面", path: "/dashboard/home", icon: <BarChartOutlined /> },
-    { label: "背包", path: "/dashboard/backpack", icon: <ShoppingOutlined /> },
-    { label: "任务", path: "/dashboard/tasks", icon: <UnorderedListOutlined /> },
-    { label: "商城", path: "/dashboard/store", icon: <ShopOutlined /> },
-    { label: "探索法则", path: "/dashboard/setting", icon: <SettingOutlined /> }, // 更具游戏感的命名
+    { label: "主界面",   path: "/dashboard/home",      icon: <BarChartOutlined /> },
+    { label: "背包",     path: "/dashboard/backpack",   icon: <ShoppingOutlined /> },
+    { label: "任务",     path: "/dashboard/tasks",      icon: <UnorderedListOutlined /> },
+    { label: "商城",     path: "/dashboard/store",      icon: <ShopOutlined /> },
+    { label: "挂机培养", path: "/dashboard/idle-game",  icon: <PlaySquareOutlined /> },
+    { label: "探索法则", path: "/dashboard/setting",    icon: <SettingOutlined /> },
 ];

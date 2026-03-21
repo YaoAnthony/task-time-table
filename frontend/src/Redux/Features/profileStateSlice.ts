@@ -1,6 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
-export type UserAttributeKey = 'stamina' | 'strength' | 'wisdom' | 'discipline' | 'charisma' | 'luck';
+export type UserAttributeKey = 'stamina' | 'strength' | 'wisdom' | 'discipline' | 'charisma' | 'luck' | 'vitality';
 
 export interface UserAttributeValue {
     level: number;
@@ -31,8 +31,9 @@ const initialAttributes: Record<UserAttributeKey, UserAttributeValue> = {
     strength: { level: 0, exp: 0 },
     wisdom: { level: 0, exp: 0 },
     discipline: { level: 0, exp: 0 },
-    charisma: { level: 0, exp: 0 },
-    luck: { level: 0, exp: 0 },
+    charisma:  { level: 0, exp: 0 },
+    luck:      { level: 0, exp: 0 },
+    vitality:  { level: 0, exp: 0 },
 };
 
 const initialState: ProfileRuntimeState = {

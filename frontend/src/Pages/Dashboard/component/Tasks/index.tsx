@@ -29,9 +29,15 @@ const Tasks: React.FC = () => {
     const targetSystemId = searchParams.get('systemId');
     const targetMissionListId = searchParams.get('missionListId');
 
-    const systems = useSelector((state: RootState) => state.system.systems);
+    const allSystems = useSelector((state: RootState) => state.system.systems);
     const selectedSystemId = useSelector((state: RootState) => state.system.selectedSystemId);
     const profile = useSelector((state: RootState) => state.profile.profile);
+
+    // Only show systems the user has JOINED (not their own creations)
+    const systems = useMemo(
+        () => allSystems.filter(s => s.profile !== profile?._id),
+        [allSystems, profile?._id]
+    );
     const accessToken = useSelector((state: RootState) => state.user.accessToken);
     const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
@@ -109,8 +115,8 @@ const Tasks: React.FC = () => {
         if (!selectedSystemId) return;
         try {
             const result = await completeMemberTask({ systemId: selectedSystemId, missionListId, nodeId }).unwrap();
-            const rewardCoins = result?.rewards?.coins || 0;
-            message.success(`节点已攻破：${title}${rewardCoins > 0 ? `，获得储备能量 ${rewardCoins}` : ''}`);
+            const hasChestReward = (result?.rewards?.coins || 0) > 0 || (result?.rewards?.items?.length || 0) > 0;
+            message.success(`节点已攻破：${title}${hasChestReward ? '，宝箱已在地图生成！' : ''}`);
             refetch();
             triggerGetSystemList(); // 奖励可能更新金币
             triggerGetActiveSystemTasks();

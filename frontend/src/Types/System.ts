@@ -115,6 +115,7 @@ export interface StoreProduct {
     price: number;
     stock: number | null;
     missionId?: string;
+    isListed: boolean;
 }
 
 

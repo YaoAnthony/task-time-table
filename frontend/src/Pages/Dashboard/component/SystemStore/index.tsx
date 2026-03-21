@@ -1,27 +1,33 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { message } from 'antd';
 import { FaStore, FaArrowLeft, FaBoxOpen, FaScroll, FaDice } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
+import { patchSystemProducts } from '../../../../Redux/Features/systemSlice';
 import { getEnv } from '../../../../config/env';
 import useSSEWithReconnect from '../../../../hook/useSSEWithReconnect';
+import { RARITY_COLORS } from '../../../../Constant';
 import {
     useLazyGetSystemListQuery,
     usePurchaseStoreProductMutation,
 } from '../../../../api/systemRtkApi';
+import type { StoreProduct } from '../../../../Types/System';
 import { useLazyGetProfileAndUserQuery } from '../../../../api/profileApi';
 
-/**
- * SystemStore - 系统商城页面
- * 显示该系统的所有上架商品，成员可以购买
- */
+const TYPE_LABELS: Record<string, string> = {
+    mission: '任务',
+    item: '道具',
+    lottery_chance: '抽奖次数',
+};
+
 const SystemStore: React.FC = () => {
     const { systemId } = useParams<{ systemId: string }>();
     const navigate = useNavigate();
-    
+    const dispatch = useDispatch();
+
     const systems = useSelector((state: RootState) => state.system.systems);
     const accessToken = useSelector((state: RootState) => state.user.accessToken);
     const profile = useSelector((state: RootState) => state.profile.profile);
@@ -49,43 +55,27 @@ const SystemStore: React.FC = () => {
                 const payload = JSON.parse(event.data);
                 if (!payload?.type || payload.type === 'connected') return;
 
-                if (
-                    payload.type === 'store_product_created'
-                    || payload.type === 'store_product_updated'
-                    || payload.type === 'store_product_deleted'
-                    || payload.type === 'store_product_purchased'
-                ) {
-                    triggerGetSystemList();
-                    message.info('系统商城已更新，已自动同步');
-                } else if (payload.type === 'system_deletion_started') {
-                    message.warning(`系统即将删除：${payload.systemName || payload.systemId}`);
-                } else if (payload.type === 'system_deletion_cleaning_profiles_started') {
-                    message.info('系统删除中：正在清理成员数据');
-                } else if (payload.type === 'system_deletion_cleaning_profiles_completed') {
-                    message.info('系统删除中：成员数据清理完成');
-                } else if (payload.type === 'system_deletion_deleting_system') {
-                    message.info('系统删除中：正在删除系统');
+                if (payload.type === 'store_products_updated' && payload.systemId === systemId) {
+                    // Surgical update — only storeProducts of this system, no full refetch
+                    dispatch(patchSystemProducts({
+                        systemId: payload.systemId as string,
+                        storeProducts: payload.storeProducts as StoreProduct[],
+                    }));
                 } else if (payload.type === 'system_deleted') {
                     message.info('系统已删除，正在返回首页');
                     triggerGetSystemList();
                     navigate('/dashboard/home');
                 }
             } catch (error) {
-                console.error('SystemStore update SSE parse error:', error);
+                console.error('SystemStore SSE parse error:', error);
             }
         },
     });
 
     const handlePurchase = async (productId: string, productName: string) => {
         if (!systemId) return;
-
         try {
-            const result = await purchaseStoreProduct({
-                systemId,
-                productId,
-                quantity: 1,
-            }).unwrap();
-
+            const result = await purchaseStoreProduct({ systemId, productId, quantity: 1 }).unwrap();
             message.success(`购买成功：${result.purchase.productName}（- ${result.purchase.totalCost} 金币）`);
             await Promise.all([
                 triggerGetSystemList().unwrap(),
@@ -97,11 +87,9 @@ const SystemStore: React.FC = () => {
         }
     };
 
-    if (!currentSystem) {
-        return null;
-    }
+    if (!currentSystem) return null;
 
-    const products = currentSystem.storeProducts || [];
+    const products = (currentSystem.storeProducts || []).filter(p => p.isListed !== false);
     const currentCoins = Number(profile?.wallet?.coins || 0);
 
     return (
@@ -120,19 +108,9 @@ const SystemStore: React.FC = () => {
                     <FaStore className="text-3xl text-[#FFC72C]" />
                     <div>
                         <h1 className="text-3xl font-bold tracking-widest">系统商城</h1>
-                        <p className="text-white/50 text-sm tracking-wider mt-1">
-                            {currentSystem.name} - 商品列表
-                        </p>
+                        <p className="text-white/50 text-sm tracking-wider mt-1">{currentSystem.name}</p>
                     </div>
                 </div>
-            </div>
-
-            {/* Wallet Display */}
-            <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-xl p-4 mb-6">
-                <p className="text-white/70 text-sm tracking-wider mb-1">我的金币</p>
-                <p className="text-4xl font-bold text-[#FFC72C] tracking-wider">
-                    {typeof profile?.wallet === 'number' ? profile.wallet : profile?.wallet?.coins || 0}
-                </p>
             </div>
 
             {/* Products Grid */}
@@ -143,66 +121,90 @@ const SystemStore: React.FC = () => {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {products.map((product) => (
-                        <motion.div
-                            key={product._id}
-                            whileHover={{ scale: 1.02 }}
-                            className="bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-700/50 rounded-xl p-6 hover:border-[#FFC72C] transition-all"
-                        >
-                            <div className="flex items-start justify-between mb-3">
-                                <h3 className="text-lg font-bold tracking-wider">{product.name}</h3>
-                                <span className={`text-xs px-2 py-1 rounded ${
-                                    product.rarity === 'legendary' ? 'bg-orange-500/30 text-orange-300' :
-                                    product.rarity === 'epic' ? 'bg-purple-500/30 text-purple-300' :
-                                    product.rarity === 'rare' ? 'bg-blue-500/30 text-blue-300' :
-                                    'bg-gray-500/30 text-gray-300'
-                                }`}>
-                                    {product.rarity}
-                                </span>
-                            </div>
+                    {products.map((product) => {
+                        const rarityConfig = RARITY_COLORS[product.rarity as keyof typeof RARITY_COLORS] ?? RARITY_COLORS.common;
+                        const outOfStock = product.stock === 0;
+                        const cantAfford = currentCoins < product.price;
 
-                            {product.image ? (
-                                <img
-                                    src={product.image}
-                                    alt={product.name}
-                                    className="w-full h-32 object-cover rounded-lg border border-white/10 mb-3"
-                                />
-                            ) : (
-                                <div className="w-full h-32 rounded-lg border border-white/10 mb-3 bg-black/30 flex items-center justify-center text-white/60">
-                                    {product.type === 'mission' && <FaScroll className="text-4xl" />}
-                                    {product.type === 'item' && <FaBoxOpen className="text-4xl" />}
-                                    {product.type === 'lottery_chance' && <FaDice className="text-4xl" />}
+                        return (
+                            <motion.div
+                                key={product._id}
+                                whileHover={{ scale: 1.02, y: -2 }}
+                                className="relative rounded-xl overflow-hidden border-2 transition-all"
+                                style={{ borderColor: rarityConfig.color + '60' }}
+                            >
+                                {/* Rarity glow top bar */}
+                                <div className="h-1 w-full" style={{ background: rarityConfig.color }} />
+
+                                <div className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 p-5 h-full flex flex-col">
+                                    {/* Name + rarity */}
+                                    <div className="flex items-start justify-between mb-3">
+                                        <h3 className="text-base font-bold tracking-wider leading-tight pr-2">{product.name}</h3>
+                                        <span
+                                            className="text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap shrink-0"
+                                            style={{ color: rarityConfig.color, border: `1px solid ${rarityConfig.color}50`, background: `${rarityConfig.color}18` }}
+                                        >
+                                            {rarityConfig.name}
+                                        </span>
+                                    </div>
+
+                                    {/* Image */}
+                                    {product.image ? (
+                                        <img
+                                            src={product.image}
+                                            alt={product.name}
+                                            className="w-full h-32 object-cover rounded-lg border border-white/10 mb-3"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-32 rounded-lg border border-white/10 mb-3 bg-black/30 flex items-center justify-center"
+                                            style={{ color: rarityConfig.color + '80' }}>
+                                            {product.type === 'mission' && <FaScroll className="text-4xl" />}
+                                            {product.type === 'item' && <FaBoxOpen className="text-4xl" />}
+                                            {product.type === 'lottery_chance' && <FaDice className="text-4xl" />}
+                                        </div>
+                                    )}
+
+                                    <p className="text-white/60 text-sm mb-2 flex-1">{product.description || '暂无描述'}</p>
+
+                                    <p className="text-white/40 text-xs mb-1">
+                                        类型: {TYPE_LABELS[product.type] ?? product.type}
+                                    </p>
+
+                                    {product.stock !== null && (
+                                        <p className={`text-xs mb-3 ${outOfStock ? 'text-red-400' : 'text-white/50'}`}>
+                                            库存: {outOfStock ? '已售罄' : product.stock}
+                                        </p>
+                                    )}
+
+                                    {/* Buy row */}
+                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
+                                        <span
+                                            className="font-bold text-xl"
+                                            style={{ color: '#FFC72C' }}
+                                        >
+                                            {product.price} 币
+                                        </span>
+                                        <motion.button
+                                            whileHover={{ scale: outOfStock || cantAfford ? 1 : 1.05 }}
+                                            whileTap={{ scale: outOfStock || cantAfford ? 1 : 0.95 }}
+                                            className="px-4 py-2 rounded-lg font-bold tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                            style={
+                                                outOfStock || cantAfford
+                                                    ? undefined
+                                                    : { background: rarityConfig.color, color: '#000' }
+                                            }
+                                            onClick={() => handlePurchase(product._id, product.name)}
+                                            disabled={isPurchasing || outOfStock || cantAfford}
+                                        >
+                                            {outOfStock ? '已售罄' : cantAfford ? '金币不足' : '购买'}
+                                        </motion.button>
+                                    </div>
                                 </div>
-                            )}
-                            
-                            <p className="text-white/60 text-sm mb-2">{product.description || '暂无描述'}</p>
-                            <p className="text-white/40 text-xs mb-4">
-                                类型: {product.type === 'item' ? '物品' : product.type === 'mission' ? '任务' : '抽奖次数'}
-                            </p>
-                            
-                            {product.stock !== null && (
-                                <p className="text-white/50 text-xs mb-4">
-                                    库存: {product.stock > 0 ? product.stock : '已售罄'}
-                                </p>
-                            )}
-
-                            <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-                                <span className="text-[#FFC72C] font-bold text-xl">{product.price} 币</span>
-                                <motion.button
-                                    whileHover={{ scale: 1.05 }}
-                                    whileTap={{ scale: 0.95 }}
-                                    className="bg-[#FFC72C] hover:bg-white text-black px-4 py-2 rounded-lg font-bold tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    onClick={() => handlePurchase(product._id, product.name)}
-                                    disabled={isPurchasing || product.stock === 0 || currentCoins < product.price}
-                                >
-                                    {product.stock === 0 ? '已售罄' : currentCoins < product.price ? '金币不足' : '购买'}
-                                </motion.button>
-                            </div>
-                        </motion.div>
-                    ))}
+                            </motion.div>
+                        );
+                    })}
                 </div>
             )}
-
         </section>
     );
 };

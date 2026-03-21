@@ -14,6 +14,8 @@ import {
     type UserAttributeValue,
 } from '../Redux/Features/profileStateSlice';
 import type { CoinOperation, ProfileAttributePatchPayload } from './profileStateApi';
+import type { IdleGameState, GameChest } from '../Types/Profile';
+import type { NpcMemoryEntry } from '../Pages/Dashboard/component/SystemIdleGame/types';
 
 const { backendUrl } = getEnv();
 
@@ -149,7 +151,6 @@ export const profileStateRtkApi = createApi({
                 method: 'POST',
                 body,
             }),
-            invalidatesTags: ['ProfileState'],
             async onQueryStarted(_, { dispatch, queryFulfilled }) {
                 dispatch(setProfileStateLoading(true));
                 try {
@@ -163,6 +164,60 @@ export const profileStateRtkApi = createApi({
                 }
             },
         }),
+
+        saveIdleGame: builder.mutation<
+            { success: boolean; idleGame: IdleGameState },
+            Partial<IdleGameState>
+        >({
+            query: (body) => ({
+                url: '/profile/state/idle-game',
+                method: 'PATCH',
+                body,
+            }),
+        }),
+
+        /**
+         * Send a player message to an NPC and receive a short GPT reply.
+         * Memory is now owned entirely by the backend — no need to send it.
+         */
+        npcChat: builder.mutation<
+            { reply: string },
+            {
+                npcName:       string;
+                playerMessage: string;
+                gameTick:      number;
+            }
+        >({
+            query: (body) => ({
+                url:    '/profile/npc/chat',
+                method: 'POST',
+                body,
+            }),
+        }),
+
+        /** Fetch the full persistent memory array for a named NPC. */
+        getNpcMemories: builder.query<
+            { memories: NpcMemoryEntry[] },
+            string   // npcName
+        >({
+            query: (npcName) => `/profile/npc/memories/${encodeURIComponent(npcName)}`,
+        }),
+
+        /** Fetch all unopened treasure chests for the current user. */
+        getGameChests: builder.query<{ chests: GameChest[] }, void>({
+            query: () => '/profile/game/chests',
+        }),
+
+        /** Open a chest: backend applies rewards and returns updated wallet + inventory. */
+        openChest: builder.mutation<
+            { success: boolean; rewards: GameChest['rewards']; wallet: { coins: number }; inventory: InventoryItem[] },
+            { chestId: string }
+        >({
+            query: ({ chestId }) => ({
+                url:    `/profile/game/chests/${chestId}/open`,
+                method: 'POST',
+            }),
+        }),
     }),
 });
 
@@ -172,4 +227,9 @@ export const {
     useUpdateProfileAttributeMutation,
     usePurchaseFromSystemStoreMutation,
     useUseInventoryItemMutation,
+    useSaveIdleGameMutation,
+    useNpcChatMutation,
+    useLazyGetNpcMemoriesQuery,
+    useLazyGetGameChestsQuery,
+    useOpenChestMutation,
 } = profileStateRtkApi;

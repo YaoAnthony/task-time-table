@@ -14,9 +14,15 @@ const Store: React.FC = () => {
     const dispatch = useDispatch();
     const navigate = useNavigate();
 
-    const systems = useSelector((state: RootState) => state.system.systems);
+    const allSystems = useSelector((state: RootState) => state.system.systems);
     const selectedSystemId = useSelector((state: RootState) => state.system.selectedSystemId);
     const profile = useSelector((state: RootState) => state.profile.profile);
+
+    // Only show systems the user has JOINED (not their own creations)
+    const systems = useMemo(
+        () => allSystems.filter(s => s.profile !== profile?._id),
+        [allSystems, profile]
+    );
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
     const [triggerGetProfileAndUser] = useLazyGetProfileAndUserQuery();
     const [purchaseStoreProduct, { isLoading: isPurchasing }] = usePurchaseStoreProductMutation();
@@ -44,8 +50,8 @@ const Store: React.FC = () => {
             backdrop-blur-xl overflow-hidden text-neutral-800 dark:text-white font-sans select-none transition-colors duration-300 p-8">
                 <div className="flex flex-col items-center justify-center h-full text-neutral-400 dark:text-white/40">
                     <FaStore className="text-7xl mb-6 opacity-40 drop-shadow-md" />
-                    <p className="text-2xl font-black tracking-widest mb-2">未监测到系统</p>
-                    <p className="text-sm font-bold tracking-wider opacity-70">请先在系统总览或系统设置中创建/加入系统结界</p>
+                    <p className="text-2xl font-black tracking-widest mb-2">未加入任何系统</p>
+                    <p className="text-sm font-bold tracking-wider opacity-70">请前往「探索法则」搜索并加入他人系统，方可访问其交易馆</p>
                 </div>
             </section>
         );

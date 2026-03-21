@@ -1,12 +1,15 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { message } from 'antd';
 import { FaArrowLeft, FaCoins, FaBox, FaChartBar, FaStore, FaGamepad } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
+import { patchSystemProducts, patchSystemLotteryPools } from '../../../../Redux/Features/systemSlice';
 import { getEnv } from '../../../../config/env';
+import type { StoreProduct } from '../../../../Types/System';
+import type { LotteryPool } from '../../../../Types/Lottery';
 import useSSEWithReconnect from '../../../../hook/useSSEWithReconnect';
 import { useGetMemberTaskCenterQuery, useGetMemberCurrentTaskQuery, useLazyGetSystemListQuery } from '../../../../api/systemRtkApi';
 import ExistSystemBtn from '../ExistSystemBtn';
@@ -24,6 +27,7 @@ const SystemUsage: React.FC = () => {
     const currentSystem = systems.find(sys => sys._id === systemId);
 
 
+    const dispatch = useDispatch();
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
     const { data: currentTaskData, refetch: refetchCurrentTask } = useGetMemberCurrentTaskQuery(
         { systemId: systemId || '' },
@@ -53,19 +57,21 @@ const SystemUsage: React.FC = () => {
                 const payload = JSON.parse(event.data);
                 if (!payload?.type || payload.type === 'connected') return;
 
-                if (
+                if (payload.type === 'store_products_updated' && payload.systemId === systemId) {
+                    dispatch(patchSystemProducts({
+                        systemId: payload.systemId as string,
+                        storeProducts: payload.storeProducts as StoreProduct[],
+                    }));
+                } else if (payload.type === 'lottery_pools_updated' && payload.systemId === systemId) {
+                    dispatch(patchSystemLotteryPools({
+                        systemId: payload.systemId as string,
+                        lotteryPools: payload.lotteryPools as LotteryPool[],
+                    }));
+                } else if (
                     payload.type === 'mission_list_created'
                     || payload.type === 'mission_list_updated'
                     || payload.type === 'mission_list_deleted'
                     || payload.type === 'mission_node_created'
-                    || payload.type === 'store_product_created'
-                    || payload.type === 'store_product_updated'
-                    || payload.type === 'store_product_deleted'
-                    || payload.type === 'lottery_pool_created'
-                    || payload.type === 'lottery_pool_updated'
-                    || payload.type === 'lottery_pool_prizes_updated'
-                    || payload.type === 'lottery_pool_prize_deleted'
-                    || payload.type === 'lottery_pool_draw_executed'
                 ) {
                     triggerGetSystemList();
                     refetchTaskCenter();

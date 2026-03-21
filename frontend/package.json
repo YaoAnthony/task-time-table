@@ -31,6 +31,7 @@
     "motion": "^11.13.1",
     "motion-plus": "https://api.motion.dev/registry?package=motion-plus&version=1.5.4&token=cd1fe5221eb0d4d36e92d6ad295c614661e967ff923b278ee25102edafe55317",
     "npm": "^11.6.2",
+    "phaser": "^3.88.2",
     "prismjs": "^1.30.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -48,6 +49,7 @@
     "rehype-highlight": "^7.0.2",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "sharp": "^0.34.5",
     "tailwind-scrollbar-hide": "^2.0.0",
     "three": "^0.171.0",
     "uuid": "^11.1.0"
