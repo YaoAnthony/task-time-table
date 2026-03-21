@@ -1,86 +1,104 @@
 /**
- * ChatInput — Floating pixel-art text input for NPC conversation.
- * Appears above the hotbar when the player interacts with an NPC.
- * Enter = send, Escape = cancel.
- * Stops key events from propagating to the game while open.
+ * ChatInput — Floating pixel-art text input.
+ *
+ * Two modes (detected automatically):
+ *   • Normal  — text sent to NPC when it does NOT start with "/"
+ *   • Command — text executed as a game command when it starts with "/"
+ *
+ * Enter = send/execute, Escape = cancel.
+ * Key events are stopped from propagating to the game while open.
  */
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 
 interface ChatInputProps {
-  npcName:  string;
-  onSend:   (text: string) => void;
-  onCancel: () => void;
+  npcName:      string;
+  onSend:       (text: string) => void;
+  onCancel:     () => void;
+  /** Pre-fill the input (e.g. "/" when opened via slash key). */
+  initialValue?: string;
 }
 
-export const ChatInput: React.FC<ChatInputProps> = ({ npcName, onSend, onCancel }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
+export const ChatInput: React.FC<ChatInputProps> = ({ npcName, onSend, onCancel, initialValue = '' }) => {
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(initialValue);
 
-  // Auto-focus on mount so the player can type immediately
+  const isCommand = value.startsWith('/');
+
   useEffect(() => {
-    inputRef.current?.focus();
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    // Move cursor to end of any pre-filled text
+    el.setSelectionRange(el.value.length, el.value.length);
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Prevent game keys (WASD, arrows, space, E) from reaching Phaser
     e.stopPropagation();
-
     if (e.key === 'Enter') {
-      const text = (inputRef.current?.value ?? '').trim();
-      if (text) {
-        onSend(text);
-        if (inputRef.current) inputRef.current.value = '';
-      }
+      const text = value.trim();
+      if (text) { onSend(text); setValue(''); }
     } else if (e.key === 'Escape') {
       onCancel();
     }
   };
 
+  const labelBg    = isCommand ? '#0d2a0d' : '#4a3500';
+  const labelColor = isCommand ? '#88ff88' : '#fffde8';
+  const borderClr  = isCommand ? '#44aa44' : '#4a3500';
+  const shadowClr  = isCommand ? '#44aa44' : '#c8a850';
+  const labelText  = isCommand
+    ? '⌨ 命令模式 — Enter 执行'
+    : `▶ 对 ${npcName} 说话…`;
+
   return (
     <div
       style={{
-        position:  'absolute',
-        bottom:    80,
-        left:      '50%',
-        transform: 'translateX(-50%)',
-        width:     'clamp(280px, 55%, 500px)',
-        zIndex:    999,
-        display:   'flex',
+        position:      'absolute',
+        bottom:        80,
+        left:          '50%',
+        transform:     'translateX(-50%)',
+        width:         'clamp(280px, 55%, 500px)',
+        zIndex:        999,
+        display:       'flex',
         flexDirection: 'column',
-        gap:       6,
-        fontFamily: '"Courier New", monospace',
-        // Shadow so it's visible regardless of background
-        filter:    'drop-shadow(0 4px 12px rgba(0,0,0,0.7))',
+        gap:           6,
+        fontFamily:    '"Courier New", monospace',
+        filter:        'drop-shadow(0 4px 12px rgba(0,0,0,0.7))',
       }}
     >
-      {/* "Speaking to" label */}
+      {/* Mode label */}
       <div style={{
-        background:    '#4a3500',
-        color:         '#fffde8',
+        background:    labelBg,
+        color:         labelColor,
         fontSize:      10,
         padding:       '3px 10px',
         borderRadius:  3,
         alignSelf:     'center',
         letterSpacing: 1,
+        transition:    'background 0.15s, color 0.15s',
       }}>
-        ▶ 对 {npcName} 说话…
+        {labelText}
       </div>
 
       {/* Input row */}
       <div style={{
         background:   '#fffde8',
-        border:       '3px solid #4a3500',
+        border:       `3px solid ${borderClr}`,
         borderRadius: 4,
-        boxShadow:    '0 0 0 1px #c8a850, 4px 4px 0 #4a3500',
+        boxShadow:    `0 0 0 1px ${shadowClr}, 4px 4px 0 ${borderClr}`,
         padding:      '6px 10px',
         display:      'flex',
         gap:          8,
         alignItems:   'center',
+        transition:   'border-color 0.15s, box-shadow 0.15s',
       }}>
         <input
           ref={inputRef}
           type="text"
-          placeholder="输入消息，回车发送…"
-          maxLength={80}
+          placeholder={isCommand ? '/weather rain   /time set 480   /help' : '输入消息，回车发送…'}
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          maxLength={120}
           onKeyDown={handleKeyDown}
           style={{
             flex:       1,
@@ -88,7 +106,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ npcName, onSend, onCancel 
             border:     'none',
             outline:    'none',
             fontSize:   13,
-            color:      '#3a2000',
+            color:      isCommand ? '#1a5c1a' : '#3a2000',
             fontFamily: '"Courier New", monospace',
           }}
         />
@@ -96,11 +114,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ npcName, onSend, onCancel 
           ESC 取消
         </span>
       </div>
-
-      {/* Hint text */}
-      <style>{`
-        @keyframes blink { 50% { opacity: 0 } }
-      `}</style>
     </div>
   );
 };

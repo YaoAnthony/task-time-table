@@ -30,12 +30,14 @@ export class Player {
     this.sprite = scene.physics.add.sprite(x, y, 'player', 0);
     this.sprite.setScale(2).setCollideWorldBounds(true);
 
-    // Tight foot hitbox (the 48×48 frame has large transparent padding)
+    // Tight hitbox — formula: body.y = sprite.y + scaleY*(offsetY - displayOriginY)
+    // scaleY=2, displayOriginY=24 (set before setScale call, so unscaled)
+    // We want body.y ≈ sprite.y (center of sprite world origin), so offsetY=24
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setSize(16, 10);
     body.setOffset(
-      (CHAR_FRAME_W - 16) / 2,   // center horizontally
-      CHAR_FRAME_H - 14,          // near the bottom of the frame
+      (CHAR_FRAME_W - 16) / 2,   // = 16, center horizontally
+      CHAR_FRAME_H / 2,           // = 24 → body.y = sprite.y + 2*(24-24) = sprite.y
     );
 
     this.sprite.play('idle-down');

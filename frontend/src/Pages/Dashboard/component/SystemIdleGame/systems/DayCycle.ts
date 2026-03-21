@@ -156,6 +156,16 @@ export class DayCycle {
     return this._currentMinute() / MINS_PER_DAY;
   }
 
+  /**
+   * Jump the in-game clock to a specific minute (0–1439).
+   * Preserves the integer day count so only the time-of-day changes.
+   */
+  setTimeOfDay(minute: number): void {
+    const secsPerDay = MINS_PER_DAY / GAME_MINS_PER_SEC;
+    const day        = Math.floor(this.gameTick / secsPerDay);
+    this.gameTick    = day * secsPerDay + (minute % MINS_PER_DAY) / GAME_MINS_PER_SEC;
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
   private _currentMinute(): number {
     return (this.gameTick * GAME_MINS_PER_SEC) % MINS_PER_DAY;

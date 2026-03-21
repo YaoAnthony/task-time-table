@@ -26,7 +26,12 @@
       "Bash(grep -n \"npcMemor\\\\|Map\\\\|$\\\\*\\\\|mapOf\" \"/c/my folder/HTML CODE/time plan/backend/models/Profile.js\")",
       "Bash(xargs grep:*)",
       "Bash(npm run:*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "WebFetch(domain:docs.phaser.io)",
+      "Bash(find 'C:\\\\my folder\\\\HTML CODE\\\\time plan' -name *.js -path */arcade/*)",
+      "Bash(grep -r \"POST\\\\|GET.*npc\\\\|router\\\\.post.*npc\\\\|router\\\\.get.*npc\" 'C:/my folder/HTML CODE/time plan/backend/routes' --include=*.js)",
+      "Bash(identify \"C:/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Characters/Free Chicken Sprites.png\")",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const b=fs.readFileSync\\(''/c/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Characters/Free Chicken Sprites.png''\\);const w=b.readUInt32BE\\(16\\);const h=b.readUInt32BE\\(20\\);console.log\\(''Width:'',w,''Height:'',h\\);\")"
     ]
   }
 }

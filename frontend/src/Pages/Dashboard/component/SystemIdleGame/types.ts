@@ -49,16 +49,50 @@ export interface NpcMemoryEntry {
   lastAccessed: number;
 }
 
-export interface NpcPlannedAction {
-  type:      'say' | 'move' | 'chop' | 'water' | 'idle';
-  text?:     string;   // for 'say'
-  x?:        number;   // for 'move'
-  y?:        number;
-  duration?: number;   // real seconds
+// ─── NPC Action System (extensible) ─────────────────────────────────────────
+
+/**
+ * Where the NPC should move to.  Resolved at execution time by ActionExecutor
+ * so the LLM only outputs semantic targets, not raw pixel coordinates.
+ */
+export type ActionTarget =
+  | { kind: 'coords';   x: number; y: number }
+  | { kind: 'named';    place: 'room' | 'door' | 'pond' | string }
+  | { kind: 'entity';   ref: 'player' | 'npc' }
+  | { kind: 'relative'; dx: number; dy: number };
+
+export type NpcActionType =
+  | 'say' | 'move' | 'idle'              // core
+  | 'emote'                               // future: animation key
+  | 'water' | 'eat' | 'drink' | 'nuzzle'; // future: tool / animal
+
+export interface NpcAction {
+  type:      NpcActionType;
+  text?:     string;       // for 'say'
+  target?:   ActionTarget; // for 'move' / 'water' etc.
+  duration?: number;       // real seconds
+  tool?:     string;       // future: 'watering_can' etc.
+  emote?:    string;       // future: 'wave' | 'bow' etc.
 }
 
+/** Backend chat response — LLM decides both reply text and actions. */
+export interface NpcChatResponse {
+  reply:   string;
+  actions: NpcAction[];
+}
+
+/** SSE npc_command event payload — server can push NPC behavior at any time. */
+export interface NpcCommandPayload {
+  npcName:       string;
+  actions:       NpcAction[];
+  announcement?: string;
+}
+
+/** @deprecated Use NpcAction instead */
+export type NpcPlannedAction = NpcAction;
+
 export interface NpcPlan {
-  actions: NpcPlannedAction[];
+  actions: NpcAction[];
 }
 
 // ─── Scene ↔ React bridge ─────────────────────────────────────────────────────

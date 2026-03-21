@@ -8,15 +8,16 @@
  */
 
 import Phaser from 'phaser';
-import type { NpcMemoryEntry, NpcPlannedAction, GameCallbacks } from '../types';
+import type { NpcMemoryEntry, NpcAction, GameCallbacks } from '../types';
 import { NPC_SPEED, NPC_THINK_INTERVAL, NPC_MAX_MEMORY, CHAR_FRAME_W, CHAR_FRAME_H } from '../constants';
+import type { Pathfinder } from '../systems/Pathfinder';
 
 export class Npc {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
   readonly name:   string;
 
-  memory:         NpcMemoryEntry[]   = [];
-  plannedActions: NpcPlannedAction[] = [];
+  memory:         NpcMemoryEntry[] = [];
+  plannedActions: NpcAction[]      = [];
 
   private scene:       Phaser.Scene;
   private callbacks:   GameCallbacks;
@@ -26,6 +27,12 @@ export class Npc {
   private velX   = 0;
   private velY   = 0;
   private timer  = 2;   // seconds until next decision
+
+  // A* pathfinding
+  private pathfinder: Pathfinder | null = null;
+  private waypoints:  [number, number][] = [];
+  private readonly NAV_SPEED   = NPC_SPEED * 1.6;  // faster when navigating
+  private readonly REACH_DIST  = 10;               // px — waypoint considered reached
 
   // Speech state
   private speechTimer   = 0;
@@ -53,7 +60,7 @@ export class Npc {
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setSize(16, 10);
-    body.setOffset((CHAR_FRAME_W - 16) / 2, CHAR_FRAME_H - 14);
+    body.setOffset((CHAR_FRAME_W - 16) / 2, CHAR_FRAME_H - 22); // same as player
     this.sprite.play('idle-up');
     this.sprite.setDepth(y + 96);
 
@@ -112,6 +119,41 @@ export class Npc {
     }
   }
 
+  // ── A* navigation ─────────────────────────────────────────────────────────
+  /** Attach the scene's Pathfinder so this NPC can navigate around obstacles. */
+  setPathfinder(pf: Pathfinder): void {
+    this.pathfinder = pf;
+  }
+
+  /**
+   * Navigate to world position (tx, ty) using A*.
+   * Clears any in-progress wandering / planned move actions.
+   */
+  navigateTo(tx: number, ty: number): void {
+    // Clear pending random wander (but keep speech-only planned actions)
+    this.plannedActions = this.plannedActions.filter(a => a.type === 'say');
+    this.waypoints = [];
+
+    if (this.pathfinder) {
+      const path = this.pathfinder.findPath(this.sprite.x, this.sprite.y, tx, ty);
+      if (path.length > 0) {
+        this.waypoints = path;
+        this.mode = 'walk';
+        return;
+      }
+    }
+    // Fallback: head straight
+    this.startMoveTo(tx, ty);
+  }
+
+  /** Stop all active navigation immediately. */
+  clearNavigation(): void {
+    this.waypoints = [];
+    this.velX = 0;
+    this.velY = 0;
+    this.mode = 'idle';
+  }
+
   // ── Frame update (called from GameScene.update) ───────────────────────────
   update(dt: number, gameTick: number): void {
     // AI think cooldown
@@ -121,12 +163,17 @@ export class Npc {
       this.think(gameTick);
     }
 
-    // Consume next planned action when idle
-    this.timer -= dt;
-    if (this.timer <= 0 && this.plannedActions.length > 0) {
-      this.executeAction(this.plannedActions.shift()!, gameTick);
-    } else if (this.timer <= 0) {
-      this.randomWander();
+    // Waypoint following takes priority over random wandering
+    if (this.waypoints.length > 0) {
+      this.followWaypoints();
+    } else {
+      // Consume next planned action when idle
+      this.timer -= dt;
+      if (this.timer <= 0 && this.plannedActions.length > 0) {
+        this.executeAction(this.plannedActions.shift()!, gameTick);
+      } else if (this.timer <= 0) {
+        this.randomWander();
+      }
     }
 
     // Apply velocity
@@ -151,7 +198,7 @@ export class Npc {
   }
 
   // ── Action execution ───────────────────────────────────────────────────────
-  private executeAction(action: NpcPlannedAction, gameTick: number): void {
+  private executeAction(action: NpcAction, gameTick: number): void {
     switch (action.type) {
       case 'say': {
         const text = action.text ?? '';
@@ -159,8 +206,15 @@ export class Npc {
         this.timer = action.duration ?? 4;
         break;
       }
-      case 'move': {
-        this.startMoveTo(action.x ?? this.sprite.x, action.y ?? this.sprite.y);
+      case 'move':
+      case 'water': {
+        // target must be pre-resolved to 'coords' by ActionExecutor before queuing
+        if (action.target?.kind === 'coords') {
+          this.navigateTo(action.target.x, action.target.y);
+        } else {
+          // Legacy fallback (x/y fields no longer used)
+          this.navigateTo(this.sprite.x, this.sprite.y);
+        }
         this.timer = action.duration ?? 3;
         break;
       }
@@ -170,6 +224,14 @@ export class Npc {
         this.mode = 'idle';
         this.timer = action.duration ?? 3;
     }
+  }
+
+  /**
+   * Push pre-resolved actions into the planned queue for sequential execution.
+   * Called by ActionExecutor when say+move sequencing is required.
+   */
+  queueActions(actions: NpcAction[], _gameTick: number): void {
+    this.plannedActions.push(...actions);
   }
 
   say(text: string, gameTick: number): void {
@@ -201,6 +263,29 @@ export class Npc {
       if (this.bubbleText.text === '…') {
         this.bubbleText.setVisible(false);
       }
+    }
+  }
+
+  /** Advance along the current waypoint list each frame. */
+  private followWaypoints(): void {
+    const [wx, wy] = this.waypoints[0];
+    const dx = wx - this.sprite.x;
+    const dy = wy - this.sprite.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < this.REACH_DIST) {
+      this.waypoints.shift();
+      if (this.waypoints.length === 0) {
+        // Arrived at destination
+        this.velX = 0;
+        this.velY = 0;
+        this.mode = 'idle';
+        this.timer = 1.5;   // pause briefly before resuming normal behaviour
+      }
+    } else {
+      this.velX = (dx / dist) * this.NAV_SPEED;
+      this.velY = (dy / dist) * this.NAV_SPEED;
+      this.mode = 'walk';
     }
   }
 
@@ -263,7 +348,7 @@ export class Npc {
         body:    JSON.stringify({ npcName: this.name, gameTick }),
       });
       if (!res.ok) return;
-      const plan = await res.json() as { actions?: NpcPlannedAction[] };
+      const plan = await res.json() as { actions?: NpcAction[] };
       if (Array.isArray(plan.actions) && plan.actions.length > 0) {
         // Append new planned actions (don't discard existing queue)
         this.plannedActions.push(...plan.actions);

@@ -55,8 +55,8 @@ const SystemIdleGame: React.FC = () => {
   });
 
   // ── Chat / NPC interaction state ──────────────────────────────────────────
-  const [chat, setChat] = useState<{ open: boolean; npcName: string }>({
-    open: false, npcName: '',
+  const [chat, setChat] = useState<{ open: boolean; npcName: string; initialValue: string }>({
+    open: false, npcName: '', initialValue: '',
   });
 
   const dispatch = useDispatch();
@@ -107,15 +107,34 @@ const SystemIdleGame: React.FC = () => {
     url: sseUrl,
     onMessage: (event) => {
       try {
-        const data = JSON.parse(event.data) as { type: string; chest?: GameChest };
+        const data = JSON.parse(event.data) as {
+          type:          string;
+          chest?:        GameChest;
+          npcName?:      string;
+          actions?:      import('./types').NpcAction[];
+          announcement?: string;
+        };
+
+        // ── Chest spawned ──────────────────────────────────────────────────
         if (data.type === 'game_chest_spawned' && data.chest) {
           console.log('[IdleGame] SSE: chest spawned', data.chest.id);
-          // Add to HUD list
           setAvailableChests(prev =>
             prev.some(c => c.id === data.chest!.id) ? prev : [...prev, data.chest!]
           );
-          // Add to Phaser scene (visual only)
           sceneRef.current?.addChest(data.chest);
+        }
+
+        // ── Server-pushed NPC command ──────────────────────────────────────
+        if (data.type === 'npc_command' && data.npcName && Array.isArray(data.actions)) {
+          console.log('[IdleGame] SSE: npc_command', data.npcName, data.actions);
+          if (data.announcement) {
+            setDialog({ visible: true, text: data.announcement, npcName: data.npcName });
+            setTimeout(
+              () => setDialog(d => d.text === data.announcement ? { ...d, visible: false } : d),
+              4000,
+            );
+          }
+          sceneRef.current?.executeNpcActions(data.npcName, data.actions);
         }
       } catch {
         // malformed SSE data — ignore
@@ -154,7 +173,7 @@ const SystemIdleGame: React.FC = () => {
   // ── NPC chat ──────────────────────────────────────────────────────────────
   const handleCancelChat = useCallback(() => {
     chatOpenRef.current = false;
-    setChat({ open: false, npcName: '' });
+    setChat({ open: false, npcName: '', initialValue: '' });
     sceneRef.current?.resumeInput();
   }, []);
 
@@ -194,30 +213,54 @@ const SystemIdleGame: React.FC = () => {
 
   const handleSendMessage = useCallback(async (text: string) => {
     const { npcName } = chat;
-    if (!sceneRef.current || !npcName) return;
+    if (!sceneRef.current) return;
 
-    // 1. Close the input (player message sent)
+    // ── Slash command — route to CommandSystem, never to NPC ─────────────
+    // Commands work regardless of NPC proximity; no npcName check needed.
+    if (text.startsWith('/')) {
+      chatOpenRef.current = false;
+      setChat({ open: false, npcName, initialValue: '' });
+      sceneRef.current.resumeInput();
+
+      const feedback = sceneRef.current.executeCommand(text);
+      if (feedback) {
+        setDialog({ visible: true, text: feedback, npcName: '系统' });
+        setTimeout(() => setDialog(d => d.text === feedback ? { ...d, visible: false } : d), 4000);
+      }
+      return;
+    }
+
+    // ── Normal NPC chat ───────────────────────────────────────────────────
+
+    // 1. Close the input
     chatOpenRef.current = false;
-    setChat({ open: false, npcName });
+    setChat({ open: false, npcName, initialValue: '' });
     sceneRef.current.resumeInput();
 
-    // 2. Record the player's message in the NPC's local cache (for speech bubbles)
+    // 2. Record player message in NPC memory
     sceneRef.current.addPlayerMessageToNpc(npcName, text);
 
-    // 3. Show "thinking" indicator in the NPC's speech bubble
+    // 3. Show "thinking" indicator
     sceneRef.current.setNpcThinking(npcName, true);
 
     try {
-      const gameTick = sceneRef.current.getGameTick();
+      const gameTick  = sceneRef.current.getGameTick();
+      const playerPos = sceneRef.current.getPlayerPosition();
+      const result    = await npcChat({
+        npcName,
+        playerMessage: text,
+        gameTick,
+        playerX: playerPos.x,
+        playerY: playerPos.y,
+      }).unwrap();
 
-      console.log('[IdleGame] Sending NPC chat:', { npcName, playerMessage: text, gameTick });
-      // Memory is now managed server-side — backend loads it from DB
-      const result = await npcChat({ npcName, playerMessage: text, gameTick }).unwrap();
-      console.log('[IdleGame] NPC chat response:', result);
-      const reply  = result.reply ?? '……';
+      // 4. NPC speaks the reply
+      sceneRef.current.npcReply(npcName, result.reply ?? '……');
 
-      // 4. NPC speaks the reply (also calls onNpcSpeak → shows React dialog)
-      sceneRef.current.npcReply(npcName, reply);
+      // 5. Execute actions decided by LLM (move, idle, etc.)
+      if (result.actions && result.actions.length > 0) {
+        sceneRef.current.executeNpcActions(npcName, result.actions);
+      }
     } catch (err) {
       console.error('[IdleGame] NPC chat error:', err);
       sceneRef.current.setNpcThinking(npcName, false);
@@ -248,7 +291,7 @@ const SystemIdleGame: React.FC = () => {
       },
       onInteract: (npcName) => {
         chatOpenRef.current = true;
-        setChat({ open: true, npcName });
+        setChat({ open: true, npcName, initialValue: '' });
         scene.pauseInput();
       },
       getAuthToken: () => tokenRef.current,
@@ -293,7 +336,7 @@ const SystemIdleGame: React.FC = () => {
 
       // ── Called when player harvests a world item (fruit from tree, etc.) ──
       onItemPickup: (itemKey, quantity) => {
-        const ITEM_NAMES: Record<string, string> = { fruit: '苹果' };
+        const ITEM_NAMES: Record<string, string> = { fruit: '苹果', egg: '鸡蛋' };
         const name = ITEM_NAMES[itemKey] ?? itemKey;
         const cur  = inventoryRef.current;
         const existing = cur.find(i => i.inventoryKey === itemKey);
@@ -325,20 +368,43 @@ const SystemIdleGame: React.FC = () => {
     console.log('[IdleGame] Booting Phaser game. savedIdleGame:', savedIdleGameRef.current);
     gameRef.current = new Phaser.Game(config);
 
-    // ── Keyboard: Space → tool action, E → NPC chat ────────────────────────
-    // document + capture phase guarantees events fire even when Phaser or
-    // DevTools has focus.
+    // ── Keyboard shortcuts ────────────────────────────────────────────────
+    // document + capture phase fires even when Phaser or DevTools has focus.
+    //
+    //   Space  → tool action
+    //   Enter  → open NPC chat (normal mode)
+    //   /      → open NPC chat pre-filled with "/" (command mode)
+    //   E      → same as Enter (legacy fallback)
+    //
+    const openChat = (initialValue: string) => {
+      chatOpenRef.current = true;
+      setChat({ open: true, npcName: NPC_NAME, initialValue });
+      scene.pauseInput();
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' && e.code !== 'KeyE') return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      e.preventDefault();
+
+      // Space is always for tool action (even while "chat open" flag is set)
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (!chatOpenRef.current) sceneRef.current?.triggerAction();
+        return;
+      }
+
+      // All other chat-open shortcuts are ignored when chat is already open
       if (chatOpenRef.current) return;
 
-      if (e.code === 'KeyE') {
-        sceneRef.current?.triggerInteract();
-      } else {
-        sceneRef.current?.triggerAction();
+      if (e.code === 'Enter' || e.code === 'KeyE') {
+        e.preventDefault();
+        openChat('');
+        return;
+      }
+
+      if (e.key === '/') {
+        e.preventDefault();
+        openChat('/');
       }
     };
     document.addEventListener('keydown', onKeyDown, true);
@@ -455,7 +521,7 @@ const SystemIdleGame: React.FC = () => {
             letterSpacing: 0.5,
           }}
         >
-          💬 [E] 和老李对话
+          💬 [Enter] 和老李对话
         </button>
       )}
 
@@ -466,6 +532,7 @@ const SystemIdleGame: React.FC = () => {
       {chat.open && (
         <ChatInput
           npcName={chat.npcName}
+          initialValue={chat.initialValue}
           onSend={handleSendMessage}
           onCancel={handleCancelChat}
         />

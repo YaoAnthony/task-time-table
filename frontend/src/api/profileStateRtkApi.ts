@@ -15,7 +15,7 @@ import {
 } from '../Redux/Features/profileStateSlice';
 import type { CoinOperation, ProfileAttributePatchPayload } from './profileStateApi';
 import type { IdleGameState, GameChest } from '../Types/Profile';
-import type { NpcMemoryEntry } from '../Pages/Dashboard/component/SystemIdleGame/types';
+import type { NpcMemoryEntry, NpcChatResponse } from '../Pages/Dashboard/component/SystemIdleGame/types';
 
 const { backendUrl } = getEnv();
 
@@ -181,11 +181,13 @@ export const profileStateRtkApi = createApi({
          * Memory is now owned entirely by the backend — no need to send it.
          */
         npcChat: builder.mutation<
-            { reply: string },
+            NpcChatResponse,
             {
                 npcName:       string;
                 playerMessage: string;
                 gameTick:      number;
+                playerX?:      number;
+                playerY?:      number;
             }
         >({
             query: (body) => ({

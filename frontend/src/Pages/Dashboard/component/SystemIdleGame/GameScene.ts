@@ -34,12 +34,22 @@ import {
 import { registerAnimations }  from './systems/AnimationRegistry';
 import { MapBuilder }          from './systems/MapBuilder';
 import { DayCycle }            from './systems/DayCycle';
+import { WeatherSystem }       from './systems/WeatherSystem';
+import { CommandSystem }       from './systems/CommandSystem';
 import { Player }              from './entities/Player';
 import { Npc }                 from './entities/Npc';
 import { Chest }               from './entities/Chest';
 import { Tree }                from './entities/Tree';
 import type { TreeStage }      from './entities/Tree';
+import { House }               from './entities/House';
+import { Chicken }             from './entities/Chicken';
+import { Nest }                from './entities/Nest';
+import { Pathfinder }          from './systems/Pathfinder';
+import { ActionExecutor }      from './systems/ActionExecutor';
 import type { IdleGameState }  from '../../../../Types/Profile';
+
+// ── House interior navigation target (world px) ──────────────────────────────
+// ROOM_INTERIOR_X/Y now defined in ActionExecutor.ts NAMED_LOCATIONS
 
 // ─── Asset imports (Vite resolves to hashed URLs at build time) ─────────────
 // @ts-ignore
@@ -60,6 +70,8 @@ import chickenUrl    from '../../../../assets/Sprout-Lands/Characters/Free Chick
 import houseUrl      from '../../../../assets/Sprout-Lands/Tilesets/Wooden House.png';
 // @ts-ignore
 import chestUrl      from '../../../../assets/Sprout-Lands/Objects/Chest.png';
+// @ts-ignore
+import eggNestUrl    from '../../../../assets/Sprout-Lands/Characters/Egg_And_Nest.png';
 
 // ─────────────────────────────────────────────────────────────────────────────
 export class GameScene extends Phaser.Scene {
@@ -71,7 +83,9 @@ export class GameScene extends Phaser.Scene {
   // ── Private game objects ──────────────────────────────────────────────────
   private player!:    Player;
   private npc!:       Npc;
-  private chickens!:  Phaser.Physics.Arcade.Group;
+  private chickenGroup!:   Phaser.Physics.Arcade.Group;
+  private chickenEntities: Chicken[] = [];
+  private nests:           Nest[]    = [];
   private obstacles!: Phaser.Physics.Arcade.StaticGroup;
   private dayCycle!:  DayCycle;
 
@@ -83,6 +97,18 @@ export class GameScene extends Phaser.Scene {
 
   // ── Tree management ────────────────────────────────────────────────────────
   private trees = new Map<string, Tree>();
+
+  // ── House ─────────────────────────────────────────────────────────────────
+  private house!: House;
+
+  // ── Pathfinder ────────────────────────────────────────────────────────────
+  private pathfinder!:    Pathfinder;
+  private actionExecutor!: ActionExecutor;
+
+  // ── Systems ───────────────────────────────────────────────────────────────
+  private weather!:  WeatherSystem;
+  private commands!: CommandSystem;
+  private physicsDebugEnabled = false;
 
   // ── Chat state flag ───────────────────────────────────────────────────────
   /** True while the React chat input is open — suppresses player movement. */
@@ -107,7 +133,8 @@ export class GameScene extends Phaser.Scene {
     this.load.spritesheet('player',  charUrl,    { frameWidth: CHAR_FRAME_W,   frameHeight: CHAR_FRAME_H   });
     this.load.spritesheet('actions', actionsUrl, { frameWidth: ACTION_FRAME_W, frameHeight: ACTION_FRAME_H });
     this.load.spritesheet('chicken', chickenUrl, { frameWidth: CHICK_FRAME_W,  frameHeight: CHICK_FRAME_H  });
-    this.load.spritesheet('chest',   chestUrl,   { frameWidth: CHEST_FRAME_W,  frameHeight: CHEST_FRAME_H  });
+    this.load.spritesheet('chest',    chestUrl,   { frameWidth: CHEST_FRAME_W,  frameHeight: CHEST_FRAME_H  });
+    this.load.spritesheet('egg-nest', eggNestUrl, { frameWidth: 16, frameHeight: 16 });
   }
 
   create() {
@@ -149,16 +176,6 @@ export class GameScene extends Phaser.Scene {
 
     this.npc = new Npc(this, NPC_X, NPC_Y, NPC_NAME, this.callbacks);
 
-    // ── Chickens ──────────────────────────────────────────────────────────
-    this.createChickens();
-
-    // ── Collisions ────────────────────────────────────────────────────────
-    this.physics.add.collider(this.player.sprite, this.obstacles);
-    this.physics.add.collider(this.npc.sprite,    this.obstacles);
-    this.physics.add.collider(this.player.sprite, this.npc.sprite);
-    this.physics.add.collider(this.chickens,      this.obstacles);
-    this.physics.add.collider(this.chickens,      this.chickens);
-
     // ── F key (general world-object interaction) ──────────────────────────
     this._fKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F);
 
@@ -169,8 +186,32 @@ export class GameScene extends Phaser.Scene {
     // Note: background colour is managed frame-by-frame by DayCycle.
     this.cameras.main.setBackgroundColor('#12340e');
 
+    // ── Weather + Command systems ──────────────────────────────────────────
+    this.weather  = new WeatherSystem(this);
+    this.commands = new CommandSystem();
+    this._registerCommands();
+
+    // ── House (tiled, door animation) ─────────────────────────────────────────
+    // House: 10×6 tiles, upper-right area (x:390-710, y:160-352)
+    this.house = new House(this, 390, 160, this.obstacles);
+
     // ── Trees (interactive entities, F=harvest, Space+axe=chop) ──────────────
     this.spawnInitialTrees();
+
+    // ── Pathfinder — built after ALL obstacles (house + trees) are placed ─────
+    this.pathfinder    = new Pathfinder(this.obstacles, WORLD_W, WORLD_H);
+    this.npc.setPathfinder(this.pathfinder);
+    this.actionExecutor = new ActionExecutor(this.player);
+
+    // ── Chickens + Nests (created after pathfinder is ready) ─────────────────
+    this.createChickens();
+
+    // ── Collisions ────────────────────────────────────────────────────────
+    this.physics.add.collider(this.player.sprite, this.obstacles);
+    this.physics.add.collider(this.npc.sprite,    this.obstacles);
+    this.physics.add.collider(this.player.sprite, this.npc.sprite);
+    this.physics.add.collider(this.chickenGroup,  this.obstacles);
+    this.physics.add.collider(this.chickenGroup,  this.chickenGroup);
 
     // ── Notify React that the scene is fully ready ─────────────────────────
     // React can now safely call loadNpcMemories() and other NPC APIs.
@@ -202,51 +243,40 @@ export class GameScene extends Phaser.Scene {
       this.player.update();
     }
 
+    // ── House door proximity (player OR NPC triggers door) ────────────────
+    this.house.update(
+      this.player.sprite.x, this.player.sprite.y,
+      this.npc.sprite.x,    this.npc.sprite.y,
+    );
+
     // ── NPC + chickens ────────────────────────────────────────────────────
     this.npc.update(dt, this.dayCycle.gameTick);
-    this.updateChickens(time);
+    this.updateChickens(time, delta);
   }
 
-  // ── Chickens ──────────────────────────────────────────────────────────────
-  private createChickens() {
-    this.chickens = this.physics.add.group();
-    for (const [cx, cy] of [[510, 380], [545, 400], [480, 415]] as [number, number][]) {
-      const c = this.chickens.create(cx, cy, 'chicken') as Phaser.Physics.Arcade.Sprite;
-      c.setScale(2).setCollideWorldBounds(true).play('chicken-idle');
-      c.setDepth(cy + 32);
-      (c as any).nextAction = 0;
-      (c as any).stopTime   = 0;
-    }
-  }
+  // ── Chickens + Nests ───────────────────────────────────────────────────────
+  private createChickens(): void {
+    this.chickenGroup = this.physics.add.group();
 
-  private updateChickens(time: number) {
-    this.chickens.getChildren().forEach((obj) => {
-      const c    = obj as Phaser.Physics.Arcade.Sprite;
-      const body = c.body as Phaser.Physics.Arcade.Body;
-      const a    = c as any;
+    // Water drinking spots — just above the pond edge (createPond is at 560,390)
+    const WATER_SPOTS: [number, number][] = [[600, 386]];
 
-      if (time > a.nextAction) {
-        if (Math.random() < 0.5) {
-          const angle = Math.random() * Math.PI * 2;
-          const spd   = 35 + Math.random() * 25;
-          body.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
-          c.setFlipX(body.velocity.x < 0);
-          c.play('chicken-walk', true);
-          a.stopTime = time + 800 + Math.random() * 1200;
-        } else {
-          body.setVelocity(0, 0);
-          c.play('chicken-idle', true);
-          a.stopTime = 0;
-        }
-        a.nextAction = time + 1500 + Math.random() * 2000;
-      }
-      if (a.stopTime && time > a.stopTime) {
-        body.setVelocity(0, 0);
-        c.play('chicken-idle', true);
-        a.stopTime = 0;
-      }
-      c.setDepth(c.y + 32);
+    // Nests placed in a row above the chicken spawn area
+    const NEST_POSITIONS: [number, number][] = [[455, 370], [480, 370], [505, 370]];
+    this.nests = NEST_POSITIONS.map(([nx, ny]) => {
+      const nest = new Nest(this, nx, ny, this.callbacks);
+      this.registerInteractable(nest);
+      return nest;
     });
+
+    const SPAWN: [number, number][] = [[510, 390], [545, 405], [480, 420]];
+    this.chickenEntities = SPAWN.map(([cx, cy]) =>
+      new Chicken(this.chickenGroup, cx, cy, this.pathfinder, WATER_SPOTS, this.nests),
+    );
+  }
+
+  private updateChickens(time: number, delta: number): void {
+    this.chickenEntities.forEach(c => c.update(time, delta));
   }
 
   // ── Tree spawning ──────────────────────────────────────────────────────────
@@ -353,10 +383,39 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Seed the NPC's local memory cache with entries fetched from the backend.
-   * Call this once after the game boots to restore persistent memory.
+   * Always appends the built-in location memory so 老李 knows where the room is.
    */
   loadNpcMemories(npcName: string, entries: NpcMemoryEntry[]): void {
-    if (this.npc.name === npcName) this.npc.loadMemories(entries);
+    if (this.npc.name !== npcName) return;
+    const locationMemory: NpcMemoryEntry = {
+      id:           'builtin-house-location',
+      gameTick:     0,
+      text:         '我知道地图右边有一间木屋，那是我和玩家共同的房间。' +
+                    '木屋大门入口坐标约(502, 336)，房间内部中心坐标约(550, 240)。' +
+                    '当玩家说"去房间里"时，我应该回复我要去，然后去房间。' +
+                    '当玩家说"出来找我"时，我应该出来到玩家身边。',
+      source:       'event',
+      importance:   9,
+      keywords:     ['房间', '木屋', '大门', '室内', '里面', '进去', '出来', '找我'],
+      lastAccessed: 0,
+    };
+    this.npc.loadMemories([locationMemory, ...entries]);
+  }
+
+  // ── NPC action execution (called from React after player message / SSE) ────
+
+  /**
+   * Execute a sequence of NpcActions on a named NPC.
+   * Used by both chat replies and SSE npc_command events.
+   */
+  executeNpcActions(npcName: string, actions: import('./types').NpcAction[]): void {
+    if (this.npc.name !== npcName) return;
+    this.actionExecutor.execute(this.npc, actions, this.dayCycle.gameTick);
+  }
+
+  /** Return the player's current world position (used to pass to backend for context). */
+  getPlayerPosition(): { x: number; y: number } {
+    return { x: this.player.sprite.x, y: this.player.sprite.y };
   }
 
   /** Freeze player movement / interaction while React chat input is open. */
@@ -419,5 +478,109 @@ export class GameScene extends Phaser.Scene {
     this.unregisterInteractable(chest);
     chest.destroy();
     this.chests.delete(id);
+  }
+
+  // ── Command system ─────────────────────────────────────────────────────────
+
+  /**
+   * Parse and execute a slash command (e.g. "/weather rain").
+   * Returns a player-facing feedback string to display in the UI.
+   */
+  executeCommand(input: string): string {
+    return this.commands.execute(input);
+  }
+
+  private setPhysicsDebug(enabled: boolean): void {
+    const world = this.physics.world;
+
+    if (enabled) {
+      // Ensure the debug graphic exists (createDebugGraphic also sets drawDebug=true)
+      if (!world.debugGraphic) world.createDebugGraphic();
+      world.drawDebug = true;
+      world.defaults.debugShowBody         = true;
+      world.defaults.debugShowStaticBody   = true;
+      world.defaults.debugShowVelocity     = false;
+      world.defaults.bodyDebugColor        = 0x2ee6a6;   // cyan  — dynamic
+      world.defaults.staticBodyDebugColor  = 0xff4d6d;   // pink  — static/wall
+
+      // ⚠️ Phaser sets body.debugShowBody at CREATION time from world.defaults.
+      // Bodies created while debug=false have debugShowBody=false permanently
+      // unless we patch them all here.
+      world.bodies.iterate((body: Phaser.Physics.Arcade.Body) => {
+        body.debugShowBody  = true;
+        body.debugBodyColor = world.defaults.bodyDebugColor;
+        return true;
+      });
+      (world.staticBodies as Phaser.Structs.Set<Phaser.Physics.Arcade.StaticBody>)
+        .iterate((body: Phaser.Physics.Arcade.StaticBody) => {
+          body.debugShowBody  = true;
+          body.debugBodyColor = world.defaults.staticBodyDebugColor;
+          return true;
+        });
+
+      world.debugGraphic!.setVisible(true);
+      this.physicsDebugEnabled = true;
+      return;
+    }
+
+    world.drawDebug = false;
+    if (world.debugGraphic) {
+      world.debugGraphic.clear();
+      world.debugGraphic.setVisible(false);
+    }
+    this.physicsDebugEnabled = false;
+  }
+
+  /** Register built-in game commands. Add new commands here. */
+  private _registerCommands(): void {
+    // /weather <rain|clear>
+    this.commands.register(
+      'weather',
+      'set weather — rain | clear',
+      (args) => {
+        const w = args[0]?.toLowerCase();
+        if (w === 'rain')  { this.weather.setWeather('rain');  return '🌧  天气: 下雨'; }
+        if (w === 'clear') { this.weather.setWeather('clear'); return '☀️  天气: 晴天'; }
+        return `用法: /weather rain | /weather clear`;
+      },
+    );
+
+    // /time set <0-1439>
+    this.commands.register(
+      'time',
+      'set in-game time — /time set <0-1439>',
+      (args) => {
+        if (args[0] === 'set') {
+          const mins = parseInt(args[1] ?? '');
+          if (!isNaN(mins) && mins >= 0 && mins <= 1439) {
+            this.dayCycle.setTimeOfDay(mins);
+            const h = Math.floor(mins / 60).toString().padStart(2, '0');
+            const m = (mins % 60).toString().padStart(2, '0');
+            return `🕐  时间跳转到 ${h}:${m}`;
+          }
+        }
+        return `用法: /time set <0-1439>  例: /time set 480`;
+      },
+    );
+
+    this.commands.register(
+      'debug',
+      'toggle physics debug — /debug on | /debug off',
+      (args) => {
+        const mode = args[0]?.toLowerCase();
+        if (mode === 'on') {
+          this.setPhysicsDebug(true);
+          return '碰撞调试已开启';
+        }
+        if (mode === 'off') {
+          this.setPhysicsDebug(false);
+          return '碰撞调试已关闭';
+        }
+        return `当前状态: ${this.physicsDebugEnabled ? 'on' : 'off'}。用法: /debug on | /debug off`;
+      },
+    );
+
+    // /help
+    this.commands.register('help', '查看所有可用命令', () => this.commands.listHelp());
   }
 }

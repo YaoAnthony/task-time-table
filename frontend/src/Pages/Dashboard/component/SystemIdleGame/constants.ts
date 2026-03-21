@@ -5,7 +5,7 @@ export const WORLD_W      = 832;   // 26 tiles × 32px
 export const WORLD_H      = 640;   // 20 tiles × 32px
 export const SPAWN_X      = 250;
 export const SPAWN_Y      = 320;
-export const NPC_X        = 430;
+export const NPC_X        = 300;
 export const NPC_Y        = 280;
 export const NPC_NAME     = '老李';
 
@@ -28,9 +28,25 @@ export const CHEST_FRAME_W  = 48;   // Chest.png (240×96, 5 cols × 2 rows @ 48
 export const CHEST_FRAME_H  = 48;   // row 0 = closed variants, row 1 = opened variants
 export const TOOL_ICON_SIZE = 16;   // Basic tools and meterials.png
 
+export const NEST_FRAME_W  = 16;   // Egg_And_Nest.png
+export const NEST_FRAME_H  = 16;
+
 // ─── Chest ────────────────────────────────────────────────────────────────────
 /** Pixel radius within which the player can interact with a chest. */
 export const CHEST_INTERACT_RADIUS = 80;
+
+// ─── Nest ─────────────────────────────────────────────────────────────────────
+export const NEST_INTERACT_RADIUS     = 60;
+
+// ─── Chicken AI ───────────────────────────────────────────────────────────────
+export const CHICKEN_SPEED            = 50;   // px/s when navigating
+export const CHICKEN_THIRST_TICK_MS   = 5000; // how often thirst increases
+export const CHICKEN_THIRST_PER_TICK  = 10;   // thirst added per tick
+export const CHICKEN_THIRST_THRESHOLD = 80;   // triggers water-seeking
+export const CHICKEN_GROWTH_PER_DRINK = 20;   // growth added per drink
+export const CHICKEN_GROWTH_THRESHOLD = 100;  // triggers nest-seeking
+export const CHICKEN_DRINK_MS         = 3000; // ms spent drinking
+export const CHICKEN_LAY_MS           = 5000; // ms spent laying
 
 // ─── Time ─────────────────────────────────────────────────────────────────────
 export const GAME_MINS_PER_SEC = 5;   // 5 in-game minutes per real second
@@ -64,13 +80,16 @@ export const FRAMES = {
   flower3:  { src: 'objects', x: 128, y: 48, w: 16, h: 16 },
   // Wooden House.png
   house:    { src: 'house',   x:   0, y:  0, w: 112, h: 80 },
-  // Hills.png — island cliff edges (each tile 16×16 px)
-  // Top cliff: col=0 rows 1-3  →  x=0,  y=16/32/48
-  hillTop1: { src: 'hills',   x:  0, y: 16, w: 16, h: 16 },
-  hillTop2: { src: 'hills',   x:  0, y: 32, w: 16, h: 16 },
-  hillTop3: { src: 'hills',   x:  0, y: 48, w: 16, h: 16 },
-  // Bottom cliff: col=2 rows 1-3  →  x=32, y=16/32/48
-  hillBot1: { src: 'hills',   x: 32, y: 16, w: 16, h: 16 },
-  hillBot2: { src: 'hills',   x: 32, y: 32, w: 16, h: 16 },
-  hillBot3: { src: 'hills',   x: 32, y: 48, w: 16, h: 16 },
+  // Hills.png — 9-patch island border tiles (each 16×16 px)
+  // A=top-left  B=top-edge  C=top-right
+  // D=left-edge             F=right-edge
+  // G=bot-left  H=bot-edge  I=bot-right
+  hillA: { src: 'hills', x:  0, y:  0, w: 16, h: 16 },
+  hillB: { src: 'hills', x: 16, y:  0, w: 16, h: 16 },
+  hillC: { src: 'hills', x: 32, y:  0, w: 16, h: 16 },
+  hillD: { src: 'hills', x:  0, y: 16, w: 16, h: 16 },
+  hillF: { src: 'hills', x: 32, y: 16, w: 16, h: 16 },
+  hillG: { src: 'hills', x:  0, y: 32, w: 16, h: 16 },
+  hillH: { src: 'hills', x: 16, y: 32, w: 16, h: 16 },
+  hillI: { src: 'hills', x: 32, y: 32, w: 16, h: 16 },
 } as const;

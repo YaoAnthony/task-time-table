@@ -73,9 +73,11 @@ export function registerAnimations(scene: Phaser.Scene): void {
   });
 
   // ── Chicken ────────────────────────────────────────────────────────────
+  // Use [0,1,2,1] ping-pong sequence so "leg-up" frames (1,3) don't flash:
+  // frame 3 at frameRate 8 looked transparent due to short-body pose.
   scene.anims.create({
     key:       'chicken-walk',
-    frames:    scene.anims.generateFrameNumbers('chicken', { start: 0, end: 3 }),
+    frames:    scene.anims.generateFrameNumbers('chicken', { frames: [0, 0, 1, 1, 2, 2, 1, 1] }),
     frameRate: 8,
     repeat:    -1,
   });

@@ -20,6 +20,7 @@
 
 import Phaser from 'phaser';
 import type { GameCallbacks, Interactable } from '../types';
+import { createObstacleBlock } from '../world/utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type TreeStage = 'A' | 'B' | 'C' | 'chopA' | 'chopBC';
@@ -89,11 +90,8 @@ export class Tree implements Interactable {
 
     // Optional collision body
     if (obstacles) {
-      const block = scene.physics.add.staticImage(x, y - 8, 'grass', 'grass1');
-      block.setVisible(false).setActive(false);
-      (block.body as Phaser.Physics.Arcade.StaticBody).setSize(28, 16, false);
-      block.refreshBody();
-      obstacles.add(block);
+      const block = createObstacleBlock(scene, obstacles, x, y - 8, 28, 16);
+      block.setActive(true);
     }
 
     this.applyStage(initialStage);
