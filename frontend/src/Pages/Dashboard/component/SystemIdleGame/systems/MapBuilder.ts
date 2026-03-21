@@ -36,9 +36,6 @@ export class MapBuilder {
     this.factory.createGrassFill(IL + T, IT + T, IW - T * 2, IH - T * 2);
     this.factory.createIslandBorder(IL, IT, IW, IH, WORLD_W, WORLD_H);
     this.placePond();
-    this.placeRocks();
-    this.placeBushes();
-    this.placeFlowers();
   }
 
   // ── Pond ────────────────────────────────────────────────────────────────────
@@ -46,38 +43,4 @@ export class MapBuilder {
     this.factory.createPond(560, 390, 3, 2);
   }
 
-  // ── Rocks ───────────────────────────────────────────────────────────────────
-  // House footprint x:390–710, y:160–352 excluded
-  private placeRocks(): void {
-    const positions: [number, number][] = [
-      [110, 200],   // upper-left
-      [380, 185],   // upper-mid (just left of house)
-      [ 90, 440],   // lower-left
-      [320, 455],   // lower-mid
-      [660, 435],   // lower-right
-    ];
-    for (const [x, y] of positions) this.factory.createRock(x, y);
-  }
-
-  // ── Bushes ──────────────────────────────────────────────────────────────────
-  private placeBushes(): void {
-    const positions: [number, number][] = [
-      [105, 230], [105, 280],   // left cluster
-      [720, 250], [725, 300],   // right cluster
-      [330, 190], [370, 195],   // upper-mid cluster
-    ];
-    for (const [x, y] of positions) this.factory.createBush(x, y);
-  }
-
-  // ── Flowers ─────────────────────────────────────────────────────────────────
-  private placeFlowers(): void {
-    const positions: [number, number, 1 | 2 | 3][] = [
-      [140, 300, 1], [170, 325, 2], [200, 305, 3],   // near spawn
-      [290, 380, 1], [320, 405, 2],                   // lower-left
-      [480, 375, 3], [530, 390, 1],                   // center (below house)
-      [650, 375, 2], [700, 400, 3],                   // right (below house)
-      [200, 200, 1], [340, 190, 2],                   // upper strip
-    ];
-    for (const [x, y, v] of positions) this.factory.createFlower(x, y, v);
-  }
 }

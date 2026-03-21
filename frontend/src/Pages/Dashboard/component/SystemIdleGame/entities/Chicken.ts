@@ -32,7 +32,8 @@ type ChickenState =
   | 'moving_to_nest'
   | 'laying';
 
-const REACH_DIST = 14;  // px — waypoint considered reached
+const REACH_DIST       = 14;   // px — waypoint considered reached
+const WATER_REACH_DIST = 48;   // px — close enough to water to start drinking
 
 export class Chicken {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
@@ -88,6 +89,11 @@ export class Chicken {
         break;
 
       case 'moving_to_water':
+        // Physics stops the chicken at the water edge — check proximity too
+        if (this.nearWater()) { this.waypoints = []; this.startDrinking(); break; }
+        this.followWaypoints(body);
+        break;
+
       case 'moving_to_nest':
         this.followWaypoints(body);
         break;
@@ -235,6 +241,16 @@ export class Chicken {
       if (d < bestD) { bestD = d; best = p; }
     }
     return best;
+  }
+
+  /** True if any water spot is within drinking range. */
+  private nearWater(): boolean {
+    for (const [wx, wy] of this.waterSpots) {
+      const dx = wx - this.sprite.x;
+      const dy = wy - this.sprite.y;
+      if (dx * dx + dy * dy <= WATER_REACH_DIST * WATER_REACH_DIST) return true;
+    }
+    return false;
   }
 
   private closestNest(nests: Nest[]): Nest {
