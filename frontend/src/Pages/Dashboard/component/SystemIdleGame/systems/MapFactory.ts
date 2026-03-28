@@ -7,6 +7,7 @@
 import Phaser from 'phaser';
 import { FRAMES } from '../constants';
 import { WorldCtx }                                       from '../world/utils';
+import type { WorldGrid }                                 from '../shared/WorldGrid';
 import { createWaterBackground, createGrassFill,
          createIslandBorder }                             from '../world/ground';
 import { createRock }                                     from '../world/rock';
@@ -17,8 +18,8 @@ import { createPond }                                     from '../world/pond';
 export class MapFactory {
   private ctx: WorldCtx;
 
-  constructor(scene: Phaser.Scene, obstacles: Phaser.Physics.Arcade.StaticGroup) {
-    this.ctx = { scene, obstacles };
+  constructor(scene: Phaser.Scene, obstacles: Phaser.Physics.Arcade.StaticGroup, grid?: WorldGrid) {
+    this.ctx = { scene, obstacles, grid };
   }
 
   /** Register all named frames from FRAMES onto their source textures. */

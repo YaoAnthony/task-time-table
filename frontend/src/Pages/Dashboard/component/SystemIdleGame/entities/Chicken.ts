@@ -22,8 +22,13 @@ import {
   CHICKEN_DRINK_MS,
   CHICKEN_LAY_MS,
 } from '../constants';
-import type { Pathfinder } from '../systems/Pathfinder';
+import type { Pathfinder } from '../systems/Pathfinder';  // kept for constructor param type
+import { PathingComponent } from '../shared/PathingComponent';
 import type { Nest } from './Nest';
+import type { CreatureState } from '../../../../../Redux/Features/gameSlice';
+
+/** Simple sequential ID for stable creature IDs within a session. */
+let _nextChickenId = 1;
 
 type ChickenState =
   | 'wandering'
@@ -37,18 +42,18 @@ const WATER_REACH_DIST = 48;   // px — close enough to water to start drinking
 
 export class Chicken {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
+  readonly id:     string;
 
   private state:      ChickenState = 'wandering';
   private thirst      = 0;
   private growth      = 0;
-  private waypoints:  [number, number][] = [];
+  private readonly pathing: PathingComponent;
   private actionTimer = 0;        // ms remaining for drink / lay
   private nextWander  = 0;        // game-time ms for next wander decision
   private stopTime    = 0;        // game-time ms to stop current wander move
   private nextThirst  = 0;        // game-time ms for next thirst tick
   private targetNest: Nest | null = null;
 
-  private readonly pathfinder: Pathfinder;
   private readonly waterSpots: [number, number][];
   private readonly nests:      Nest[];
 
@@ -60,9 +65,10 @@ export class Chicken {
     waterSpots: [number, number][],
     nests:      Nest[],
   ) {
-    this.pathfinder  = pathfinder;
+    this.id          = `chicken_${_nextChickenId++}`;
     this.waterSpots  = waterSpots;
     this.nests       = nests;
+    this.pathing     = new PathingComponent(CHICKEN_SPEED, REACH_DIST, pathfinder);
 
     // Stagger initial thirst so chickens don't all seek water at the same time
     this.nextThirst = CHICKEN_THIRST_TICK_MS * (0.5 + Math.random());
@@ -90,12 +96,12 @@ export class Chicken {
 
       case 'moving_to_water':
         // Physics stops the chicken at the water edge — check proximity too
-        if (this.nearWater()) { this.waypoints = []; this.startDrinking(); break; }
-        this.followWaypoints(body);
+        if (this.nearWater()) { this.pathing.clearNavigation(); this.startDrinking(); break; }
+        this._followPathing(body);
         break;
 
       case 'moving_to_nest':
-        this.followWaypoints(body);
+        this._followPathing(body);
         break;
 
       case 'drinking':
@@ -116,9 +122,8 @@ export class Chicken {
   private seekWater(): void {
     if (this.waterSpots.length === 0) return;
     const nearest = this.closestPoint(this.waterSpots);
-    const path    = this.pathfinder.findPath(this.sprite.x, this.sprite.y, nearest[0], nearest[1]);
-    this.waypoints = path.length > 0 ? path : [nearest];
-    this.state     = 'moving_to_water';
+    this.pathing.navigateTo(this.sprite.x, this.sprite.y, nearest[0], nearest[1], () => this.startDrinking());
+    this.state = 'moving_to_water';
     this.stopBody();
   }
 
@@ -152,9 +157,8 @@ export class Chicken {
     const nest       = this.closestNest(available);
     this.targetNest  = nest;
     nest.occupy();
-    const path       = this.pathfinder.findPath(this.sprite.x, this.sprite.y, nest.x, nest.y);
-    this.waypoints   = path.length > 0 ? path : [[nest.x, nest.y]];
-    this.state       = 'moving_to_nest';
+    this.pathing.navigateTo(this.sprite.x, this.sprite.y, nest.x, nest.y, () => this.startLaying());
+    this.state = 'moving_to_nest';
     this.stopBody();
   }
 
@@ -198,31 +202,20 @@ export class Chicken {
     }
   }
 
-  // ── A* waypoint following ──────────────────────────────────────────────────
-  private followWaypoints(body: Phaser.Physics.Arcade.Body): void {
-    if (this.waypoints.length === 0) {
+  // ── A* waypoint following — delegates to PathingComponent ─────────────────
+  private _followPathing(body: Phaser.Physics.Arcade.Body): void {
+    if (!this.pathing.isMoving()) {
       this.stopBody();
-      if (this.state === 'moving_to_water') this.startDrinking();
-      else if (this.state === 'moving_to_nest') this.startLaying();
       return;
     }
-
-    const [wx, wy] = this.waypoints[0];
-    const dx   = wx - this.sprite.x;
-    const dy   = wy - this.sprite.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < REACH_DIST) {
-      this.waypoints.shift();
-      if (this.waypoints.length === 0) {
-        this.stopBody();
-        if (this.state === 'moving_to_water') this.startDrinking();
-        else if (this.state === 'moving_to_nest') this.startLaying();
-      }
-    } else {
-      const vx = (dx / dist) * CHICKEN_SPEED;
-      const vy = (dy / dist) * CHICKEN_SPEED;
-      body.setVelocity(vx, vy);
+    // PathingComponent.update() sets velocity on the sprite body;
+    // grab velocity afterward to drive animation + flip.
+    const scene = (this.sprite.scene as Phaser.Scene);
+    this.pathing.update(this.sprite, scene, 0);
+    const vx = body.velocity.x;
+    const vy = body.velocity.y;
+    const moving = Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1;
+    if (moving) {
       this.sprite.setFlipX(vx < 0);
       this.sprite.play('chicken-walk', true);
     }
@@ -261,5 +254,30 @@ export class Chicken {
       if (d < bestD) { bestD = d; best = n; }
     }
     return best;
+  }
+
+  // ── Persistence ─────────────────────────────────────────────────────────────
+
+  /** Snapshot current state for server-side persistence. */
+  getState(): CreatureState {
+    return {
+      creatureId: this.id,
+      type:       'chicken',
+      x:          this.sprite.x,
+      y:          this.sprite.y,
+      thirst:     this.thirst,
+      growth:     this.growth,
+      state:      this.state,
+    };
+  }
+
+  /** Restore persisted state (called on game load). */
+  restoreState(saved: Partial<CreatureState>): void {
+    if (saved.thirst !== undefined) this.thirst = saved.thirst;
+    if (saved.growth !== undefined) this.growth = saved.growth;
+    if (saved.state  !== undefined) this.state  = saved.state as ChickenState;
+    if (saved.x !== undefined && saved.y !== undefined) {
+      this.sprite.setPosition(saved.x, saved.y);
+    }
   }
 }

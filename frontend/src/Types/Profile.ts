@@ -1,5 +1,6 @@
 import { User } from "./User";
 import type { SystemLite } from "./System";
+import type { GameWorldState } from '../Pages/Dashboard/component/SystemIdleGame/types';
 
 
 export type AttributeKey =
@@ -55,11 +56,20 @@ export interface GameChest {
     createdAt: number;
 }
 
+export interface TreeSaveState {
+    id:       string;
+    stage:    'A' | 'B' | 'C' | 'chopA' | 'chopBC';
+    hasFruit: boolean;
+}
+
 export interface IdleGameState {
-    x: number;
-    y: number;
-    gameTick: number;
-    facing: FacingDirection;
+    x:          number;
+    y:          number;
+    gameTick:   number;
+    facing:     FacingDirection;
+    trees?:     TreeSaveState[];
+    /** Generic world-entity blob: beds, nest states, future furniture. */
+    worldState?: GameWorldState;
 }
 
 export interface Profile {

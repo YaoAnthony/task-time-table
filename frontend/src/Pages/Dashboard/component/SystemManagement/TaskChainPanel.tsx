@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { message } from 'antd';
-import { FaGamepad } from 'react-icons/fa';
+import { FaGamepad, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
 import type { MissionListType, SystemWithMission, MissionList } from '../../../../Types/System';
@@ -64,6 +64,9 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
     const [showEditListForm, setShowEditListForm] = useState(false);
     const [showNodeForm, setShowNodeForm] = useState(false);
     const [nodeParentAnchor, setNodeParentAnchor] = useState('');
+
+    // Delete-confirm modal state
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; nodeCount: number } | null>(null);
 
     const [listForm, setListForm] = useState(createInitialListForm);
     const [editListForm, setEditListForm] = useState(createInitialListForm);
@@ -226,30 +229,22 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
         }
     };
 
-    const handleDeleteMissionList = async () => {
-        if (!selectedMissionList) {
-            message.error('请先选择任务列表');
-            return;
-        }
+    /** Open the confirm modal for a mission list. */
+    const handleRequestDeleteMissionList = (listId: string, title: string, nodeCount: number) => {
+        setDeleteTarget({ id: listId, title, nodeCount });
+    };
 
-        const confirmed = window.confirm(`确认删除任务列表「${selectedMissionList.title}」？\n\n删除后会同步清理所有成员在该任务列表下的接取状态、进行中任务、完成记录与历史记录。`);
-        if (!confirmed) return;
+    /** Called when user clicks "确认删除" in the confirm modal. */
+    const handleConfirmDeleteMissionList = async () => {
+        if (!deleteTarget) return;
+        const { id, title } = deleteTarget;
+        setDeleteTarget(null);
+        setShowEditListForm(false);
 
         try {
-            await deleteMissionList({
-                systemId,
-                missionListId: selectedMissionList._id,
-            }).unwrap() as {
-                cleanup?: {
-                    affectedMembers?: number;
-                    removedTaskCompletions?: number;
-                    removedTaskHistories?: number;
-                };
-            };
-
-            message.success('任务列表已删除，并完成成员历史清理');
-            setShowEditListForm(false);
-            setSelectedMissionListId('');
+            await deleteMissionList({ systemId, missionListId: id }).unwrap();
+            message.success(`已删除任务列表「${title}」及其所有任务`);
+            if (selectedMissionListId === id) setSelectedMissionListId('');
             await triggerGetSystemList().unwrap();
         } catch (error) {
             const err = error as { data?: { message?: string } };
@@ -370,23 +365,40 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                         ) : (
                             <div className="space-y-3">
                                 {missionLists.map((list) => (
-                                    <button
+                                    <div
                                         key={list._id}
-                                        onClick={() => setSelectedMissionListId(list._id)}
-                                        className={`w-full text-left rounded-lg border p-4 transition-colors ${selectedMissionListId === list._id
+                                        className={`relative group rounded-lg border transition-colors ${selectedMissionListId === list._id
                                             ? 'border-blue-400 bg-blue-50 dark:bg-blue-500/10'
                                             : 'border-gray-200 dark:border-white/10 bg-white/40 dark:bg-black/20 hover:border-gray-300 dark:hover:border-white/30 shadow-sm dark:shadow-none'
                                         }`}
                                     >
-                                        <div className="flex items-center justify-between mb-1">
-                                            <p className="font-bold tracking-wider text-gray-800 dark:text-inherit">{list.title}</p>
-                                            <span className={`text-xs px-2 py-1 rounded ${list.listType === 'urgent' ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300'}`}>
-                                                {list.listType === 'urgent' ? '紧急' : '主线'}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-gray-500 dark:text-white/50 mb-1">节点数: {list.taskTree?.length || 0}</p>
-                                        <p className="text-xs text-gray-500 dark:text-white/50">状态: {list.hasFailed ? '已失败（不可重开）' : '进行中'}</p>
-                                    </button>
+                                        {/* Selectable area */}
+                                        <button
+                                            onClick={() => setSelectedMissionListId(list._id)}
+                                            className="w-full text-left p-4 pr-10"
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <p className="font-bold tracking-wider text-gray-800 dark:text-inherit">{list.title}</p>
+                                                <span className={`text-xs px-2 py-1 rounded ${list.listType === 'urgent' ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300'}`}>
+                                                    {list.listType === 'urgent' ? '紧急' : '主线'}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-gray-500 dark:text-white/50 mb-1">节点数: {list.taskTree?.length || 0}</p>
+                                            <p className="text-xs text-gray-500 dark:text-white/50">状态: {list.hasFailed ? '已失败（不可重开）' : '进行中'}</p>
+                                        </button>
+
+                                        {/* Delete icon — visible on hover */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleRequestDeleteMissionList(list._id, list.title, list.taskTree?.length || 0);
+                                            }}
+                                            title="删除任务列表"
+                                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-all duration-150"
+                                        >
+                                            <FaTrash className="text-xs" />
+                                        </button>
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -453,10 +465,81 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                     rewardItemOptions={rewardItemOptions}
                     onListFormChange={setEditListForm}
                     onSave={handleUpdateMissionList}
-                    onDelete={handleDeleteMissionList}
+                    onDelete={() => {
+                        if (selectedMissionList) {
+                            handleRequestDeleteMissionList(
+                                selectedMissionList._id,
+                                selectedMissionList.title,
+                                selectedMissionList.taskTree?.length || 0,
+                            );
+                        }
+                    }}
                     onClose={() => setShowEditListForm(false)}
                     onCancel={() => setShowEditListForm(false)}
                 />
+
+                {/* ── Delete confirm modal ───────────────────────────────── */}
+                <AnimatePresence>
+                    {deleteTarget && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[10000001] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                            onClick={() => setDeleteTarget(null)}
+                        >
+                            <motion.div
+                                initial={{ scale: 0.92, opacity: 0, y: 12 }}
+                                animate={{ scale: 1, opacity: 1, y: 0 }}
+                                exit={{ scale: 0.92, opacity: 0, y: 12 }}
+                                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="bg-white dark:bg-[#111] border border-red-300/50 dark:border-red-500/30 rounded-2xl shadow-2xl p-7 w-[90vw] max-w-md"
+                            >
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-500/20 flex items-center justify-center shrink-0">
+                                        <FaExclamationTriangle className="text-red-500 dark:text-red-400 text-lg" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-black tracking-widest text-gray-900 dark:text-white text-base">删除任务列表</h3>
+                                        <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">此操作不可撤销</p>
+                                    </div>
+                                </div>
+
+                                <p className="text-sm text-gray-700 dark:text-white/80 mb-2 leading-relaxed">
+                                    即将删除任务列表{' '}
+                                    <span className="font-bold text-red-500 dark:text-red-400">「{deleteTarget.title}」</span>
+                                </p>
+                                <ul className="text-xs text-gray-500 dark:text-white/50 space-y-1 mb-6 pl-4 list-disc">
+                                    <li>列表内 <span className="font-bold text-gray-700 dark:text-white/80">{deleteTarget.nodeCount}</span> 个任务节点将被一并删除</li>
+                                    <li>所有成员的接取状态、进行中任务、完成记录将同步清除</li>
+                                    <li>此操作会通过 SSE 实时通知所有在线成员</li>
+                                </ul>
+
+                                <div className="flex gap-3">
+                                    <motion.button
+                                        whileHover={{ scale: 1.03 }}
+                                        whileTap={{ scale: 0.97 }}
+                                        onClick={handleConfirmDeleteMissionList}
+                                        disabled={isDeletingList}
+                                        className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black tracking-widest text-sm transition-colors disabled:opacity-60"
+                                    >
+                                        {isDeletingList ? '删除中...' : '确认删除'}
+                                    </motion.button>
+                                    <motion.button
+                                        whileHover={{ scale: 1.03 }}
+                                        whileTap={{ scale: 0.97 }}
+                                        onClick={() => setDeleteTarget(null)}
+                                        disabled={isDeletingList}
+                                        className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white font-black tracking-widest text-sm transition-colors"
+                                    >
+                                        取消
+                                    </motion.button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );

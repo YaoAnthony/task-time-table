@@ -8,6 +8,7 @@
 import Phaser from 'phaser';
 import { OBJ_SCALE } from '../constants';
 import { T, LAYER, WorldCtx, makeTile, addBlock } from './utils';
+import { TerrainType } from '../shared/WorldGrid';
 
 // ── Water ─────────────────────────────────────────────────────────────────────
 
@@ -124,4 +125,32 @@ export function createIslandBorder(
   addBlock(ctx, worldW / 2, y + height - T + (worldH - y - height + T) / 2,   worldW, worldH - y - height + T);
   addBlock(ctx, (x + T) / 2,                          worldH / 2,              x + T,  worldH);
   addBlock(ctx, x + width - T + (worldW - x - width + T) / 2, worldH / 2,     worldW - x - width + T, worldH);
+
+  // Mark border + water cells in WorldGrid (for pathfinding)
+  if (ctx.grid) {
+    const { grid } = ctx;
+    const c0 = Math.floor(x / T), r0 = Math.floor(y / T);
+    const c1 = Math.floor((x + width - 1) / T);
+    const r1 = Math.floor((y + height - 1) / T);
+    // Top/bottom border rows
+    for (let c = c0; c <= c1; c++) {
+      grid.setTerrain(c, r0, TerrainType.BORDER);
+      grid.setTerrain(c, r1, TerrainType.BORDER);
+    }
+    // Left/right border columns
+    for (let r = r0 + 1; r < r1; r++) {
+      grid.setTerrain(c0, r, TerrainType.BORDER);
+      grid.setTerrain(c1, r, TerrainType.BORDER);
+    }
+    // Outer water strips
+    const worldCols = Math.ceil(worldW / T), worldRows = Math.ceil(worldH / T);
+    for (let c = 0; c < worldCols; c++) {
+      for (let r = 0; r < r0; r++) grid.setTerrain(c, r, TerrainType.WATER);
+      for (let r = r1 + 1; r < worldRows; r++) grid.setTerrain(c, r, TerrainType.WATER);
+    }
+    for (let r = 0; r < worldRows; r++) {
+      for (let c = 0; c < c0; c++) grid.setTerrain(c, r, TerrainType.WATER);
+      for (let c = c1 + 1; c < worldCols; c++) grid.setTerrain(c, r, TerrainType.WATER);
+    }
+  }
 }

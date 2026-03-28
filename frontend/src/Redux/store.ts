@@ -18,6 +18,7 @@ import themeReducer from "./Features/themeSlice";
 import profileReducer from "./Features/profileSlice";
 import systemReducer from "./Features/systemSlice";
 import profileStateReducer from "./Features/profileStateSlice";
+import gameReducer from "./Features/gameSlice";
 
 // RTK Query apis
 import { authApi } from "../api/authApi";
@@ -36,6 +37,7 @@ const rootReducer = combineReducers({
     profile: profileReducer,
     system: systemReducer,
     profileState: profileStateReducer,
+    game: gameReducer,
 
     // RTK Query
     [authApi.reducerPath]: authApi.reducer,

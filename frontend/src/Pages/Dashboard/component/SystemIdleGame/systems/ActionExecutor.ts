@@ -13,14 +13,28 @@
 import type { NpcAction, ActionTarget } from '../types';
 import type { Npc } from '../entities/Npc';
 import type { Player } from '../entities/Player';
+import type { WorldItem } from '../entities/WorldItem';
+import { WORLD_LOCATION_MAP } from '../shared/WorldLocations';
 
-// ─── Named world locations (px) — add new places here ────────────────────────
-const NAMED_LOCATIONS: Record<string, { x: number; y: number }> = {
-  room: { x: 550, y: 240 },
-  door: { x: 502, y: 336 },
-  // pond: { x: 150, y: 450 },   // future
-  // barn: { x: 700, y: 500 },   // future
-};
+// ─── WorldContext — implemented by GameScene ──────────────────────────────────
+/**
+ * Interface that GameScene implements so ActionExecutor can interact with
+ * the game world (trees, items on the ground) without a direct scene reference.
+ */
+export interface WorldContext {
+  /** Find the nearest live (un-chopped) tree from position (x, y). */
+  findNearestTree(x: number, y: number): { id: string; x: number; y: number } | null;
+  /** Trigger a tree chop by tree entity ID. */
+  chopTreeById(id: string): void;
+  /** Find the first live WorldItem with the given itemId. */
+  findWorldItem(itemId: string): WorldItem | null;
+  /** Create a WorldItem at (x, y) for the NPC dropping an item. */
+  dropWorldItem(x: number, y: number, itemId: string, npcName: string): void;
+  /** Remove a WorldItem from the world (NPC picked it up); fires onNpcPickupWorldItem. */
+  claimWorldItem(itemId: string, npcName: string): void;
+}
+
+// Named locations are now defined in shared/WorldLocations.ts
 
 // ─── Executor function signature ──────────────────────────────────────────────
 type ActionExecutorFn = (
@@ -28,6 +42,7 @@ type ActionExecutorFn = (
   npc:      Npc,
   player:   Player,
   gameTick: number,
+  world?:   WorldContext,
 ) => void;
 
 // ─── Default action registry ──────────────────────────────────────────────────
@@ -58,6 +73,57 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
   drink:  () => { /* TODO: play drink animation, update thirst stat */ },
   nuzzle: () => { /* TODO: play nuzzle/affection animation */ },
   emote:  () => { /* TODO: play emote animation by action.emote key */ },
+
+  // ── Agent actions ──────────────────────────────────────────────────────
+  pickup_item: (action, npc, _player, _gameTick, world) => {
+    if (!world || !action.itemId) {
+      if (!action.itemId) console.warn('[ActionExecutor] pickup_item missing itemId');
+      return;
+    }
+    const item = world.findWorldItem(action.itemId);
+    if (!item) {
+      console.warn('[ActionExecutor] pickup_item: item not found:', action.itemId);
+      return;
+    }
+    const { worldX: x, worldY: y } = item;
+    npc.navigateTo(x, y, () => {
+      world.claimWorldItem(action.itemId!, npc.name);
+    });
+  },
+
+  drop_item: (action, npc, _player, _gameTick, world) => {
+    if (!world || !action.itemId) return;
+    world.dropWorldItem(npc.sprite.x, npc.sprite.y, action.itemId, npc.name);
+  },
+
+  chop_tree: (_action, npc, _player, gameTick, world) => {
+    console.log(`[ActionExecutor] chop_tree handler: world=${!!world} npcPos=(${Math.round(npc.sprite.x)},${Math.round(npc.sprite.y)})`);
+    if (!world) { console.warn('[ActionExecutor] chop_tree: world context missing!'); return; }
+    const nearest = world.findNearestTree(npc.sprite.x, npc.sprite.y);
+    console.log(`[ActionExecutor] chop_tree: nearest=`, nearest);
+    if (!nearest) {
+      npc.say('附近没有可以砍的树。', gameTick);
+      return;
+    }
+    npc.navigateTo(nearest.x, nearest.y, () => {
+      console.log(`[ActionExecutor] chop_tree onArrive: chopping tree id=${nearest.id}`);
+      world.chopTreeById(nearest.id);
+    });
+  },
+
+  ask_confirm: (action, npc, _player, gameTick) => {
+    const question = action.question ?? action.text ?? '确认吗？';
+    npc.say(question, gameTick);
+    npc.pauseForConfirm(question);   // fires onAskConfirm callback → React dialog
+  },
+
+  // ── Follow / dispatch ─────────────────────────────────────────────────
+  follow_player: (_action, npc) => { npc.startFollowing(); },
+  stop_follow:   (_action, npc) => { npc.stopFollowing();  },
+  dispatch:      (_action, npc) => {
+    // Carry whatever is in NPC inventory; startDispatch reads it via callback
+    npc.startDispatch();
+  },
 };
 
 // ─── Target resolution (pure function, no side effects) ───────────────────────
@@ -71,12 +137,12 @@ function resolveTarget(
       return { x: target.x, y: target.y };
 
     case 'named': {
-      const loc = NAMED_LOCATIONS[target.place];
+      const loc = WORLD_LOCATION_MAP[target.place];
       if (!loc) {
         console.warn(`[ActionExecutor] Unknown named location: "${target.place}"`);
         return null;
       }
-      return loc;
+      return { x: loc.worldX, y: loc.worldY };
     }
 
     case 'entity':
@@ -99,35 +165,48 @@ function resolveTarget(
 
 // ─── ActionExecutor class ─────────────────────────────────────────────────────
 export class ActionExecutor {
-  constructor(private readonly player: Player) {}
+  constructor(
+    private readonly player: Player,
+    private world?: WorldContext,
+  ) {}
+
+  /** Update the world context reference (e.g. when GameScene finishes creating). */
+  setWorld(world: WorldContext): void { this.world = world; }
 
   /**
    * Execute a sequence of NpcActions on the given NPC.
    *
    * Sequencing rule:
-   *  - If the list contains a 'move' that follows a 'say', we QUEUE all
-   *    actions so the NPC finishes speaking before it starts moving.
-   *  - Otherwise we execute immediately (direct method calls, no timer gap).
+   *  - If there are multiple actions AND at least one involves navigation
+   *    (move / chop_tree / pickup_item), ALL actions are QUEUED so they run
+   *    one-after-another (arrive first, then do the next thing).
+   *  - Single actions, or multi-action plans that are purely say/idle/drop,
+   *    execute immediately.
+   *
+   * This fixes the "NPC comes but immediately wanders off" bug where two
+   * simultaneous navigateTo() calls would cancel each other.
    */
   execute(npc: Npc, actions: NpcAction[], gameTick: number): void {
     if (!actions || actions.length === 0) return;
+    console.log(`[ActionExecutor] execute: npc=${npc.name} actions=`, JSON.stringify(actions));
 
-    // Check if a move comes after a say (requires sequential execution)
-    const hasMoveAfterSay = actions.some(
-      (a, i) => a.type === 'move' && actions.slice(0, i).some(b => b.type === 'say'),
-    );
+    const NAVIGATION_TYPES = ['move', 'chop_tree', 'pickup_item', 'dispatch'];
+    const hasNavigation = actions.some(a => NAVIGATION_TYPES.includes(a.type));
 
-    if (hasMoveAfterSay) {
+    // Queue when multiple actions include navigation — ensures proper sequencing
+    const needsSequencing = hasNavigation && actions.length > 1;
+
+    if (needsSequencing) {
       // Resolve all targets now; queue into NPC's plannedActions for sequential execution
       const resolved = actions.map(a => this.resolveActionTarget(a, npc));
       npc.queueActions(resolved, gameTick);
     } else {
-      // Execute immediately in order
+      // Execute immediately in order (single action, or no navigation involved)
       for (const action of actions) {
         const resolved = this.resolveActionTarget(action, npc);
         const fn = ACTION_REGISTRY[resolved.type];
         if (fn) {
-          fn(resolved, npc, this.player, gameTick);
+          fn(resolved, npc, this.player, gameTick, this.world);
         } else {
           console.warn(`[ActionExecutor] No executor for action type: "${resolved.type}"`);
         }
@@ -151,11 +230,25 @@ export class ActionExecutor {
    * plannedActions queue (which only understands coords) can execute it.
    */
   private resolveActionTarget(action: NpcAction, npc: Npc): NpcAction {
+    // chop_tree: resolve to nearest tree coords + embed treeId in itemId field
+    if (action.type === 'chop_tree') {
+      const tree = this.world?.findNearestTree(npc.sprite.x, npc.sprite.y);
+      if (!tree) return action;
+      return { ...action, target: { kind: 'coords', x: tree.x, y: tree.y }, itemId: tree.id };
+    }
+    // pickup_item: resolve itemId → world item coords
+    if (action.type === 'pickup_item' && action.itemId) {
+      const item = this.world?.findWorldItem(action.itemId);
+      if (!item) return action;
+      return { ...action, target: { kind: 'coords', x: item.worldX, y: item.worldY } };
+    }
+    // dispatch: always head to the door
+    if (action.type === 'dispatch') {
+      return { ...action, target: { kind: 'coords', x: 502, y: 336 } };
+    }
     if (!action.target || action.target.kind === 'coords') return action;
-
     const coords = resolveTarget(action.target, npc, this.player);
     if (!coords) return { ...action, target: undefined };
-
     return { ...action, target: { kind: 'coords', x: coords.x, y: coords.y } };
   }
 }

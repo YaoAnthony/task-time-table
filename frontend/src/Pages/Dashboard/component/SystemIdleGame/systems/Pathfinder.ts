@@ -1,21 +1,15 @@
 /**
  * Pathfinder — weighted A* grid pathfinding for NPC navigation.
  *
- * Each grid cell carries a movement-cost weight:
- *   0          = impassable (solid wall / water)
- *   1          = normal grass / open ground
- *   0.5        = preferred path (road, stone path, etc.)
- *   2+         = discouraged terrain (dense foliage, mud …)
- *   DOOR_WEIGHT= door tile — walkable but slightly costly (opens on proximity)
+ * Reads weights directly from WorldGrid (Sprint 3 refactor).
+ * No longer scans Phaser physics bodies — WorldGrid is the authority.
  *
- * Any Phaser game-object placed in the scene can influence the grid via tags:
- *   _pathWeight: number   — override cell cost (0 = impassable)
- *   _isDoor:     true     — treated as passable with DOOR_WEIGHT
- *
- * Grid cell size: 16 px (half a tile) for fine-grained navigation.
+ * Cell size: 32 px (one tile, aligned with WorldGrid).
  */
 
 import Phaser from 'phaser';
+import { T } from '../world/utils';
+import type { WorldGrid } from '../shared/WorldGrid';
 
 // ── Terrain weights ──────────────────────────────────────────────────────────
 export const WEIGHT = {
@@ -39,74 +33,16 @@ interface ANode {
 }
 
 export class Pathfinder {
-  /** weight grid: 0 = impassable, >0 = traversal cost multiplier */
-  private weights: Float32Array;
+  private grid: WorldGrid;
   readonly cols: number;
   readonly rows: number;
   readonly cell: number;
 
-  constructor(
-    obstacles: Phaser.Physics.Arcade.StaticGroup,
-    worldW: number,
-    worldH: number,
-    cell = 16,
-  ) {
-    this.cell = cell;
-    this.cols = Math.ceil(worldW / cell);
-    this.rows = Math.ceil(worldH / cell);
-    this.weights = this.buildWeights(obstacles);
-  }
-
-  // ── Grid construction ──────────────────────────────────────────────────────
-  private buildWeights(obstacles: Phaser.Physics.Arcade.StaticGroup): Float32Array {
-    // Default: every cell is grass-weight walkable
-    const w = new Float32Array(this.cols * this.rows).fill(WEIGHT.GRASS);
-
-    obstacles.getChildren().forEach(obj => {
-      const body = (obj as any).body as Phaser.Physics.Arcade.StaticBody | null;
-      if (!body) return;
-
-      const c0 = Math.max(0, Math.floor(body.left  / this.cell));
-      const c1 = Math.min(this.cols - 1, Math.floor((body.right  - 1) / this.cell));
-      const r0 = Math.max(0, Math.floor(body.top   / this.cell));
-      const r1 = Math.min(this.rows - 1, Math.floor((body.bottom - 1) / this.cell));
-
-      // Resolve weight: _pathWeight tag overrides, _isDoor → DOOR, else IMPASSABLE
-      let weight: number;
-      if (typeof (obj as any)._pathWeight === 'number') {
-        weight = (obj as any)._pathWeight;
-      } else if ((obj as any)._isDoor) {
-        weight = WEIGHT.DOOR;
-      } else {
-        weight = WEIGHT.IMPASSABLE;
-      }
-
-      for (let r = r0; r <= r1; r++)
-        for (let c = c0; c <= c1; c++)
-          w[r * this.cols + c] = weight;
-    });
-
-    return w;
-  }
-
-  /**
-   * Paint a rectangular region of the weight grid with a custom weight.
-   * Call this after construction to add roads, paths, etc.
-   * @param wx  world X of region top-left
-   * @param wy  world Y of region top-left
-   * @param ww  world width
-   * @param wh  world height
-   * @param weight  new weight value (use WEIGHT.PATH, WEIGHT.FOLIAGE, etc.)
-   */
-  paintRegion(wx: number, wy: number, ww: number, wh: number, weight: number): void {
-    const c0 = Math.max(0, Math.floor(wx / this.cell));
-    const c1 = Math.min(this.cols - 1, Math.floor((wx + ww - 1) / this.cell));
-    const r0 = Math.max(0, Math.floor(wy / this.cell));
-    const r1 = Math.min(this.rows - 1, Math.floor((wy + wh - 1) / this.cell));
-    for (let r = r0; r <= r1; r++)
-      for (let c = c0; c <= c1; c++)
-        if (this.weights[r * this.cols + c] !== WEIGHT.IMPASSABLE)  // never un-block walls
-          this.weights[r * this.cols + c] = weight;
+  constructor(grid: WorldGrid) {
+    this.grid = grid;
+    this.cols = grid.cols;
+    this.rows = grid.rows;
+    this.cell = T;   // 32 px — aligned with WorldGrid
   }
 
   // ── Coordinate helpers ─────────────────────────────────────────────────────
@@ -116,8 +52,7 @@ export class Pathfinder {
   private cy(r: number) { return r * this.cell + this.cell * 0.5; }
 
   private weight(c: number, r: number): number {
-    if (c < 0 || r < 0 || c >= this.cols || r >= this.rows) return WEIGHT.IMPASSABLE;
-    return this.weights[r * this.cols + c];
+    return this.grid.getWeight(c, r);
   }
 
   private walkable(c: number, r: number): boolean {

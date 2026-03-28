@@ -38,13 +38,23 @@ const Tasks: React.FC = () => {
         () => allSystems.filter(s => s.profile !== profile?._id),
         [allSystems, profile?._id]
     );
+
+    // Derived BEFORE any hooks that depend on it.
+    // selectedSystem is always from the filtered (joined-only) list.
+    // Never use raw selectedSystemId for member API calls — it can point to an owned system.
+    const selectedSystem = useMemo(() => {
+        if (!systems.length) return null;
+        return systems.find((sys) => sys._id === selectedSystemId) || systems[0];
+    }, [systems, selectedSystemId]);
+
     const accessToken = useSelector((state: RootState) => state.user.accessToken);
     const [selectedMissionId, setSelectedMissionId] = useState<string | null>(null);
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
     const [triggerGetActiveSystemTasks] = useLazyGetActiveSystemTasksQuery();
+
     const { data: taskCenterData, refetch, isFetching } = useGetMemberTaskCenterQuery(
-        { systemId: selectedSystemId || '' },
-        { skip: !selectedSystemId }
+        { systemId: selectedSystem?._id || '' },
+        { skip: !selectedSystem }
     );
     const [acceptMissionList, { isLoading: isAccepting }] = useAcceptMissionListMutation();
     const [startMemberTask, { isLoading: isStarting }] = useStartMemberTaskMutation();
@@ -53,13 +63,13 @@ const Tasks: React.FC = () => {
     const [restartMemberTask, { isLoading: isRestarting }] = useRestartMemberTaskMutation();
 
     const { backendUrl } = getEnv();
-    const updateSseUrl = selectedSystemId && accessToken
-        ? `${backendUrl}/system/${selectedSystemId}/updates/events?token=${encodeURIComponent(accessToken)}`
+    const updateSseUrl = selectedSystem?._id && accessToken
+        ? `${backendUrl}/system/${selectedSystem._id}/updates/events?token=${encodeURIComponent(accessToken)}`
         : null;
 
     useSSEWithReconnect({
         url: updateSseUrl,
-        enabled: Boolean(selectedSystemId && accessToken),
+        enabled: Boolean(selectedSystem?._id && accessToken),
         onMessage: (event) => {
             try {
                 const payload = JSON.parse(event.data);
@@ -86,9 +96,9 @@ const Tasks: React.FC = () => {
     });
 
     const handleAcceptMissionList = async (missionListId: string, title: string) => {
-        if (!selectedSystemId) return;
+        if (!selectedSystem?._id) return;
         try {
-            await acceptMissionList({ systemId: selectedSystemId, missionListId }).unwrap();
+            await acceptMissionList({ systemId: selectedSystem._id, missionListId }).unwrap();
             message.success(`已接取重任：${title}`);
             refetch();
         } catch (error) {
@@ -98,9 +108,9 @@ const Tasks: React.FC = () => {
     };
 
     const handleStartTask = async (missionListId: string, nodeId: string, title: string) => {
-        if (!selectedSystemId) return;
+        if (!selectedSystem?._id) return;
         try {
-            await startMemberTask({ systemId: selectedSystemId, missionListId, nodeId }).unwrap();
+            await startMemberTask({ systemId: selectedSystem._id, missionListId, nodeId }).unwrap();
             message.success(`行动启动：${title}`);
             refetch();
             triggerGetActiveSystemTasks();
@@ -112,9 +122,9 @@ const Tasks: React.FC = () => {
     };
 
     const handleCompleteTask = async (missionListId: string, nodeId: string, title: string) => {
-        if (!selectedSystemId) return;
+        if (!selectedSystem?._id) return;
         try {
-            const result = await completeMemberTask({ systemId: selectedSystemId, missionListId, nodeId }).unwrap();
+            const result = await completeMemberTask({ systemId: selectedSystem._id, missionListId, nodeId }).unwrap();
             const hasChestReward = (result?.rewards?.coins || 0) > 0 || (result?.rewards?.items?.length || 0) > 0;
             message.success(`节点已攻破：${title}${hasChestReward ? '，宝箱已在地图生成！' : ''}`);
             refetch();
@@ -127,9 +137,9 @@ const Tasks: React.FC = () => {
     };
 
     const handleFailTask = async (missionListId: string, nodeId: string, title: string) => {
-        if (!selectedSystemId) return;
+        if (!selectedSystem?._id) return;
         try {
-            await failMemberTask({ systemId: selectedSystemId, missionListId, nodeId }).unwrap();
+            await failMemberTask({ systemId: selectedSystem._id, missionListId, nodeId }).unwrap();
             message.warning(`节点崩坏：${title}`);
             refetch();
             triggerGetActiveSystemTasks();
@@ -140,9 +150,9 @@ const Tasks: React.FC = () => {
     };
 
     const handleRestartTask = async (missionListId: string, nodeId: string, title: string) => {
-        if (!selectedSystemId) return;
+        if (!selectedSystem?._id) return;
         try {
-            await restartMemberTask({ systemId: selectedSystemId, missionListId, nodeId }).unwrap();
+            await restartMemberTask({ systemId: selectedSystem._id, missionListId, nodeId }).unwrap();
             message.success(`时空回溯，重新挑战：${title}`);
             refetch();
             triggerGetActiveSystemTasks();
@@ -170,11 +180,6 @@ const Tasks: React.FC = () => {
             dispatch(setSelectedSystemId(targetSystemId));
         }
     }, [targetSystemId, systems, selectedSystemId, dispatch]);
-
-    const selectedSystem = useMemo(() => {
-        if (!systems.length) return null;
-        return systems.find((sys) => sys._id === selectedSystemId) || systems[0];
-    }, [systems, selectedSystemId]);
 
     const isOwner = selectedSystem?.profile === profile?._id;
     const missionLists = useMemo(() => taskCenterData?.missionLists || [], [taskCenterData?.missionLists]);

@@ -66,7 +66,7 @@ export const HUD: React.FC<HUDProps> = ({ timeStr, isSaving, username, onSave })
       userSelect:    'none',
       zIndex:        10,
     }}>
-      WASD / ↑↓←→ 移动 · Space 使用工具 · E 和NPC对话 · 1–0 换工具
+      WASD / ↑↓←→ 移动 · Space 使用工具 · F 交互/捡起 · Enter 和NPC对话 · 1–0 换工具
     </div>
 
     {/* ── Player name ── */}

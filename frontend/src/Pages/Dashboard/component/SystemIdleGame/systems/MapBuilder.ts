@@ -7,6 +7,7 @@ import Phaser from 'phaser';
 import { WORLD_W, WORLD_H } from '../constants';
 import { T }                from '../world/utils';
 import { MapFactory }       from './MapFactory';
+import type { WorldGrid }   from '../shared/WorldGrid';
 
 // ── Island geometry ────────────────────────────────────────────────────────────
 //
@@ -26,8 +27,8 @@ const IH = IB - IT;            // island height = 512
 export class MapBuilder {
   private factory: MapFactory;
 
-  constructor(scene: Phaser.Scene, obstacles: Phaser.Physics.Arcade.StaticGroup) {
-    this.factory = new MapFactory(scene, obstacles);
+  constructor(scene: Phaser.Scene, obstacles: Phaser.Physics.Arcade.StaticGroup, grid?: WorldGrid) {
+    this.factory = new MapFactory(scene, obstacles, grid);
   }
 
   build(): void {

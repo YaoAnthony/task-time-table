@@ -41,14 +41,21 @@ const profileSlice = createSlice({
             state.status = "unauthenticated";
             state.error = undefined;
         },
+        /** Patch just the wallet coins without replacing the whole profile object. */
+        patchWalletCoins(state, action: PayloadAction<number>) {
+            if (state.profile?.wallet) {
+                state.profile.wallet.coins = Math.max(0, action.payload);
+            }
+        },
     },
 });
 
-export const { 
-    setProfile, 
-    setStatus, 
-    setError, 
-    clearProfile 
+export const {
+    setProfile,
+    setStatus,
+    setError,
+    clearProfile,
+    patchWalletCoins,
 } = profileSlice.actions;
 
 export const selectAuthStatus = (state: RootState): AuthStatus =>

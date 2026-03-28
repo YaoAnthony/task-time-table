@@ -27,6 +27,28 @@ import type {
 import { Mission } from '../Types/System';
 import { DrawResult, LotteryHistoryRecord, LotteryPityCounter } from '../Types/Lottery';
 
+export interface DailyQuest {
+    _id: string;
+    title: string;
+    description: string;
+    rewards: { experience?: { name: string; value: number }[]; coins?: number; items?: { itemKey: string; quantity: number }[] };
+    isUnlimited: boolean;
+    maxCompletions: number;
+    totalCompletions: number;
+    isActive: boolean;
+}
+
+export interface UserDailyQuestStatus {
+    questId: string;
+    title: string;
+    description: string;
+    rewards: DailyQuest['rewards'];
+    isUnlimited: boolean;
+    maxCompletions: number;
+    completedCount: number;
+    completed: boolean;
+}
+
 const normalizeStoreType = (value: CreateStoreProductPayload['type']) => {
     if (value === 'consumables') return 'item';
     if (value === 'cache chance') return 'lottery_chance';
@@ -53,7 +75,9 @@ const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQue
 ) => {
     let result = await rawBaseQuery(args, api, extraOptions);
 
-    if (result.error?.status === 401 || result.error?.status === 403) {
+    // Only refresh on 401 (token expired/invalid). A 403 is a genuine permission error
+    // and should NOT trigger a token refresh or logout — it would create an incorrect logout loop.
+    if (result.error?.status === 401) {
         const refreshResult = await rawBaseQuery({ url: '/auth/refresh', method: 'POST' }, api, extraOptions);
         if (refreshResult.data) {
             const { accessToken, expiresAt } = refreshResult.data as { accessToken: string; expiresAt: number };
@@ -661,6 +685,86 @@ export const systemRtkApi = createApi({
         >({
             query: ({ systemId, limit = 30 }) => `/system/${systemId}/member/lottery/history?limit=${limit}`,
         }),
+
+        // ── Daily Quests ─────────────────────────────────────────────────────
+        getDailyQuestSettings: builder.query<
+            { success: boolean; settings: { dailyCount: number; enabled: boolean } },
+            { systemId: string }
+        >({
+            query: ({ systemId }) => `/system/${systemId}/daily-quests/settings`,
+        }),
+
+        updateDailyQuestSettings: builder.mutation<
+            { success: boolean; settings: { dailyCount: number; enabled: boolean } },
+            { systemId: string; dailyCount?: number; enabled?: boolean }
+        >({
+            query: ({ systemId, ...body }) => ({
+                url: `/system/${systemId}/daily-quests/settings`,
+                method: 'PATCH',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
+        getDailyQuestPool: builder.query<
+            { success: boolean; pool: DailyQuest[] },
+            { systemId: string }
+        >({
+            query: ({ systemId }) => `/system/${systemId}/daily-quests/pool`,
+        }),
+
+        createDailyQuest: builder.mutation<
+            { success: boolean; pool: DailyQuest[] },
+            { systemId: string; title: string; description?: string; rewards?: object; isUnlimited?: boolean; maxCompletions?: number; isActive?: boolean }
+        >({
+            query: ({ systemId, ...body }) => ({
+                url: `/system/${systemId}/daily-quests/pool`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
+        updateDailyQuest: builder.mutation<
+            { success: boolean; pool: DailyQuest[] },
+            { systemId: string; questId: string; title?: string; description?: string; rewards?: object; isUnlimited?: boolean; maxCompletions?: number; isActive?: boolean }
+        >({
+            query: ({ systemId, questId, ...body }) => ({
+                url: `/system/${systemId}/daily-quests/pool/${questId}`,
+                method: 'PATCH',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
+        deleteDailyQuest: builder.mutation<
+            { success: boolean; pool: DailyQuest[] },
+            { systemId: string; questId: string }
+        >({
+            query: ({ systemId, questId }) => ({
+                url: `/system/${systemId}/daily-quests/pool/${questId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
+        getMemberDailyQuests: builder.query<
+            { success: boolean; quests: UserDailyQuestStatus[]; date: string; message?: string },
+            { systemId: string }
+        >({
+            query: ({ systemId }) => `/system/${systemId}/member/daily-quests`,
+        }),
+
+        completeDailyQuest: builder.mutation<
+            { success: boolean; quests: UserDailyQuestStatus[]; rewards: object },
+            { systemId: string; questId: string }
+        >({
+            query: ({ systemId, questId }) => ({
+                url: `/system/${systemId}/member/daily-quests/${questId}/complete`,
+                method: 'POST',
+                body: {},
+            }),
+        }),
     }),
 });
 
@@ -714,4 +818,15 @@ export const {
     useLazyGetMemberLotteryHistoryQuery,
     useGetMemberLotteryPityQuery,
     useLazyGetMemberLotteryPityQuery,
+    useGetDailyQuestSettingsQuery,
+    useLazyGetDailyQuestSettingsQuery,
+    useUpdateDailyQuestSettingsMutation,
+    useGetDailyQuestPoolQuery,
+    useLazyGetDailyQuestPoolQuery,
+    useCreateDailyQuestMutation,
+    useUpdateDailyQuestMutation,
+    useDeleteDailyQuestMutation,
+    useGetMemberDailyQuestsQuery,
+    useLazyGetMemberDailyQuestsQuery,
+    useCompleteDailyQuestMutation,
 } = systemRtkApi;

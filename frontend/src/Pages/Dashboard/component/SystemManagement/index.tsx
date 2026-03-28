@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { message, Tabs } from 'antd';
-import { FaArrowLeft, FaCogs, FaGamepad, FaStore, FaDice, FaBell, FaInfoCircle, FaChartBar } from 'react-icons/fa';
+import { FaArrowLeft, FaCogs, FaGamepad, FaStore, FaDice, FaBell, FaInfoCircle, FaChartBar, FaCalendarCheck } from 'react-icons/fa';
 
 
 import { RootState } from '../../../../Redux/store';
@@ -19,6 +19,7 @@ import StorePanel from './StorePanel';
 import LotteryPanel from './LotteryPanel';
 import TaskChainPanel from './TaskChainPanel';
 import AttributeBoardPanel from './AttributeBoardPanel';
+import DailyQuestPanel from './DailyQuestPanel';
 const { TabPane } = Tabs;
 
 const SystemManagement: React.FC = () => {
@@ -86,6 +87,10 @@ const SystemManagement: React.FC = () => {
                         text = `成员抽卡未中奖：${payload.poolName || payload.poolId}`;
                         message.info(text);
                     }
+                    triggerGetSystemList();
+                } else if (payload?.type === 'mission_list_deleted') {
+                    text = `任务列表已删除：${payload.missionListTitle || payload.missionListId}`;
+                    message.warning(text);
                     triggerGetSystemList();
                 } else if (payload?.type === 'member_leave_system') {
                     text = `成员退出系统：${payload.memberUserId || '未知成员'}`;
@@ -257,13 +262,20 @@ const SystemManagement: React.FC = () => {
                     )}
 
                     {currentSystem.modules?.lottery && (
-                        <TabPane 
-                            tab={<span className="flex items-center gap-2 tracking-widest"><FaDice />祈愿卡池</span>} 
+                        <TabPane
+                            tab={<span className="flex items-center gap-2 tracking-widest"><FaDice />祈愿卡池</span>}
                             key="lottery"
                         >
                             <LotteryPanel systemId={systemId!} />
                         </TabPane>
                     )}
+
+                    <TabPane
+                        tab={<span className="flex items-center gap-2 tracking-widest"><FaCalendarCheck />每日任务</span>}
+                        key="daily-quests"
+                    >
+                        <DailyQuestPanel systemId={systemId!} />
+                    </TabPane>
                 </Tabs>
             </div>
         </section>

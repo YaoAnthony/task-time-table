@@ -6,9 +6,10 @@
  */
 
 import Phaser from 'phaser';
-import type { Interactable, GameCallbacks } from '../types';
+import type { Interactable } from '../types';
 import type { ChestRewardItem } from '../../../../../Types/Profile';
 import { CHEST_INTERACT_RADIUS } from '../constants';
+import { gameBus } from '../shared/EventBus';
 
 export class Chest implements Interactable {
   readonly sprite: Phaser.GameObjects.Sprite;
@@ -16,7 +17,6 @@ export class Chest implements Interactable {
   isOpen = false;
 
   private readonly rewards: { coins: number; items: ChestRewardItem[] };
-  private readonly callbacks: GameCallbacks;
 
   constructor(
     scene: Phaser.Scene,
@@ -24,11 +24,9 @@ export class Chest implements Interactable {
     y: number,
     id: string,
     rewards: { coins: number; items: ChestRewardItem[] },
-    callbacks: GameCallbacks,
   ) {
-    this.id        = id;
-    this.rewards   = rewards;
-    this.callbacks = callbacks;
+    this.id      = id;
+    this.rewards = rewards;
 
     this.sprite = scene.add.sprite(x, y, 'chest', 0);
     // 48×48 source frame → scale 1 = same as 3×3 tiles, looks good in world
@@ -66,7 +64,7 @@ export class Chest implements Interactable {
     // Play opening animation; on complete, notify React to show reward UI
     this.sprite.play('chest-open');
     this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      this.callbacks.onChestInteract?.(this.id, this.rewards);
+      gameBus.emit('chest:interact', { chestId: this.id, rewards: this.rewards });
     });
   }
 

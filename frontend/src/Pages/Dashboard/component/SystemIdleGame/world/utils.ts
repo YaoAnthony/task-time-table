@@ -15,6 +15,7 @@
 
 import Phaser from 'phaser';
 import { OBJ_SCALE } from '../constants';
+import type { WorldGrid } from '../shared/WorldGrid';
 
 export const T = 16 * OBJ_SCALE; // 32 px per displayed tile
 
@@ -34,6 +35,8 @@ export const LAYER = {
 export type WorldCtx = {
   scene:     Phaser.Scene;
   obstacles: Phaser.Physics.Arcade.StaticGroup;
+  /** Optional grid — populated during map build for pathfinding & world queries. */
+  grid?:     WorldGrid;
 };
 
 export function createObstacleBlock(

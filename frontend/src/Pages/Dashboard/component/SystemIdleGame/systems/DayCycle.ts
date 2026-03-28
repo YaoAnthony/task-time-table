@@ -61,6 +61,12 @@ const KEYFRAMES: Keyframe[] = [
   { minute: 1440, r: 10, g: 10, b: 52, alpha: 0.68, bgR:  3, bgG:  6, bgB: 22 }, // 24:00 ≡ 00:00
 ];
 
+// ─── Night / morning boundaries ──────────────────────────────────────────────
+/** In-game minute at which night begins (19:00). */
+const NIGHT_START    = 1140;
+/** In-game minute at which morning begins (06:00). */
+const MORNING_MINUTE = 360;
+
 // ─── Linear interpolation helper ──────────────────────────────────────────────
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -102,6 +108,18 @@ export class DayCycle {
   /** Real seconds elapsed since game-start (this value is persisted to the server). */
   gameTick = 0;
 
+  /**
+   * Fired once when a fast-forward completes and clock snaps to morning.
+   * GameScene sets this to wire up sleep manager + React notifications.
+   */
+  onFastForwardComplete: (() => void) | null = null;
+
+  // ── Fast-forward (sleep) ──────────────────────────────────────────────────
+  /** Target gameTick for fast-forward; null = normal speed. */
+  private _fastForwardTarget: number | null = null;
+  /** How many times faster than real-time to advance when sleeping. */
+  readonly FAST_FORWARD_RATE = 20;
+
   // ── Private Phaser objects ────────────────────────────────────────────────
   private readonly overlay: Phaser.GameObjects.Rectangle;
   private readonly camera:  Phaser.Cameras.Scene2D.Camera;
@@ -135,10 +153,40 @@ export class DayCycle {
     this.tinted.push(...sprites);
   }
 
+  // ── Fast-forward API ──────────────────────────────────────────────────────
+  /** True while the clock is running at FAST_FORWARD_RATE speed. */
+  get isAccelerating(): boolean { return this._fastForwardTarget !== null; }
+
+  /**
+   * Begin fast-forwarding to the next 06:00 at FAST_FORWARD_RATE × speed.
+   * Does nothing if already fast-forwarding or if it's already morning.
+   */
+  accelerateToMorning(): void {
+    if (this._fastForwardTarget !== null) return;
+    const secsPerDay  = MINS_PER_DAY / GAME_MINS_PER_SEC;
+    const curMinute   = this._currentMinute();
+    const day         = Math.floor(this.gameTick / secsPerDay);
+    const targetDay   = curMinute < MORNING_MINUTE ? day : day + 1;
+    this._fastForwardTarget = targetDay * secsPerDay + MORNING_MINUTE / GAME_MINS_PER_SEC;
+  }
+
   // ── Per-frame update ──────────────────────────────────────────────────────
   /** Advance time by `dt` real seconds and repaint the ambient light. */
   update(dt: number): void {
-    this.gameTick += dt;
+    if (this._fastForwardTarget !== null) {
+      const step = dt * this.FAST_FORWARD_RATE;
+      if (this.gameTick + step >= this._fastForwardTarget) {
+        // Arrived at morning — snap exactly and stop
+        this.gameTick           = this._fastForwardTarget;
+        this._fastForwardTarget = null;
+        this._applyKeyframe(interpolateKeyframes(this._currentMinute()));
+        this.onFastForwardComplete?.();
+        return;
+      }
+      this.gameTick += step;
+    } else {
+      this.gameTick += dt;
+    }
     this._applyKeyframe(interpolateKeyframes(this._currentMinute()));
   }
 
@@ -164,6 +212,33 @@ export class DayCycle {
     const secsPerDay = MINS_PER_DAY / GAME_MINS_PER_SEC;
     const day        = Math.floor(this.gameTick / secsPerDay);
     this.gameTick    = day * secsPerDay + (minute % MINS_PER_DAY) / GAME_MINS_PER_SEC;
+  }
+
+  /**
+   * Returns true when the current in-game time counts as "night":
+   *   19:00 (min 1140) → 06:00 (min 360), i.e. dusk through dawn.
+   */
+  isNight(): boolean {
+    const m = this._currentMinute();
+    return m >= NIGHT_START || m < MORNING_MINUTE;
+  }
+
+  /**
+   * Fast-forward the clock to the next 06:00 (in-game morning).
+   * - If it's before 06:00 today, snaps to today's 06:00.
+   * - Otherwise snaps to tomorrow's 06:00.
+   * Returns the real-seconds skipped (useful for saving state).
+   */
+  skipToMorning(): number {
+    const secsPerDay  = MINS_PER_DAY / GAME_MINS_PER_SEC;
+    const curMinute   = this._currentMinute();
+    const day         = Math.floor(this.gameTick / secsPerDay);
+    const targetDay   = curMinute < MORNING_MINUTE ? day : day + 1;
+    const targetTick  = targetDay * secsPerDay + MORNING_MINUTE / GAME_MINS_PER_SEC;
+    const skipped     = targetTick - this.gameTick;
+    this.gameTick     = targetTick;
+    this._applyKeyframe(interpolateKeyframes(MORNING_MINUTE));
+    return skipped;
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

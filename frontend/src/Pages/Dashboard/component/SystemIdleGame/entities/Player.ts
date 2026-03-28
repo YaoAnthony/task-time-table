@@ -5,8 +5,9 @@
  */
 
 import Phaser from 'phaser';
-import type { ToolType, Direction, GameCallbacks } from '../types';
+import type { ToolType, Direction } from '../types';
 import { PLAYER_SPEED, CHAR_FRAME_W, CHAR_FRAME_H } from '../constants';
+import { gameBus } from '../shared/EventBus';
 
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Sprite;
@@ -17,15 +18,12 @@ export class Player {
 
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd:    Record<string, Phaser.Input.Keyboard.Key>;
-  private callbacks: GameCallbacks;
 
   constructor(
     scene: Phaser.Scene,
     x: number,
     y: number,
-    callbacks: GameCallbacks,
   ) {
-    this.callbacks = callbacks;
 
     this.sprite = scene.physics.add.sprite(x, y, 'player', 0);
     this.sprite.setScale(2).setCollideWorldBounds(true);
@@ -65,7 +63,7 @@ export class Player {
 
   setTool(tool: ToolType): void {
     this.currentTool = tool;
-    this.callbacks.onToolChange?.(tool);
+    gameBus.emit('player:tool_change', { tool });
   }
 
   /** Trigger the action animation for the current tool. */
@@ -74,6 +72,7 @@ export class Player {
 
     this.isActing = true;
     const animKey = `${this.currentTool}-${this.facing}`;
+    console.log('[Player] performAction —', animKey);
 
     // Phaser auto-switches texture to the animation's texture key ('actions')
     this.sprite.play(animKey);
@@ -81,6 +80,16 @@ export class Player {
       this.isActing = false;
       // Switch back to character walk/idle texture
       this.sprite.play(`idle-${this.facing}`);
+    });
+
+    // Safety timeout: if animationcomplete never fires (animation missing/broken),
+    // reset isActing after 1 second so the player doesn't get permanently stuck.
+    this.sprite.scene.time.delayedCall(1000, () => {
+      if (this.isActing) {
+        console.warn('[Player] isActing stuck — force-releasing after 1s');
+        this.isActing = false;
+        this.sprite.play(`idle-${this.facing}`);
+      }
     });
   }
 

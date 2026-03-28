@@ -50,6 +50,7 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "sharp": "^0.34.5",
+    "socket.io-client": "^4.8.3",
     "tailwind-scrollbar-hide": "^2.0.0",
     "three": "^0.171.0",
     "uuid": "^11.1.0"

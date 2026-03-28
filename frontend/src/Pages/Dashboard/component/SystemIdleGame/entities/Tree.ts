@@ -2,12 +2,12 @@
  * Tree entity — a world object with three growth stages.
  *
  * Stage layout in Basic_Grass_Biom_things.png (source 16 px tiles):
- *   A (young)  : cols 0-1, rows 0-1 → src x=0,  y=0,  32×32
- *   B (medium) : cols 1-2, rows 0-1 → src x=16, y=0,  32×32  (side-by-side, not stacked)
- *   C (fruit)  : cols 3-4, rows 0-1 → src x=48, y=0,  32×32
- *   chopA stump: col  5,   rows 0-1 → src x=80, y=0,  16×32
- *   chopBC log : col  5,   rows 2-3 → src x=80, y=32, 16×32
- *   fruit icon : col  2,   row  0   → src x=32, y=0,  16×16
+ *   A (young)  : col  0,   rows 0-1 → src x=0,  y=0,  16×32  (tree_stage1)
+ *   B (medium) : cols 1-2, rows 0-1 → src x=16, y=0,  32×32  (tree_stage2_no_fruit)
+ *   C (fruit)  : cols 3-4, rows 0-1 → src x=48, y=0,  32×32  (tree_stage2_fruit)
+ *   chopA stump: col  3,   row  2   → src x=48, y=32, 16×16  (stump_small)
+ *   chopBC log : col  4,   row  2   → src x=64, y=32, 16×16  (stump_large)
+ *   fruit icon : col  2,   row  2   → src x=32, y=32, 16×16  (apple_ripe)
  *
  * Growth cycle (real time):
  *   A ──(60 s)──► B ──(120 s)──► C
@@ -19,26 +19,23 @@
  */
 
 import Phaser from 'phaser';
-import type { GameCallbacks, Interactable } from '../types';
+import type { Interactable } from '../types';
+import type { TreeSaveState } from '../../../../../Types/Profile';
 import { createObstacleBlock } from '../world/utils';
+import { gameBus } from '../shared/EventBus';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type TreeStage = 'A' | 'B' | 'C' | 'chopA' | 'chopBC';
 
 // ─── Source regions (px in Basic_Grass_Biom_things.png, 144×80) ──────────────
-// Trees are laid out SIDE-BY-SIDE across rows 0-1 (y=0-31), NOT stacked:
-//   treeA: x=0,  w=32  (crown extends from x=0 to ~x=16)
-//   treeB: x=16, w=32  (crown centred around x=32, spans x=20-44)
-//   treeC: x=48, w=32  (crown centred around x=64, spans x=56-76)
-//   chop states at col 5 (x=80), h=32 per state
 // [srcX, srcY, srcW, srcH]
 const SRC: Record<string, [number, number, number, number]> = {
-  A:     [0,  0,  32, 32],   // cols 0-1, rows 0-1
-  B:     [16, 0,  32, 32],   // cols 1-2, rows 0-1 (centred on x=32)
-  C:     [48, 0,  32, 32],   // cols 3-4, rows 0-1 (fruit tree)
-  chopA: [80, 0,  16, 32],   // col 5, rows 0-1
-  chopBC:[80, 32, 16, 32],   // col 5, rows 2-3
-  fruit: [32, 0,  16, 16],   // inside treeC area — small fruit icon
+  A:     [0,  0,  16, 32],   // col 0,   rows 0-1 → tree_stage1 (16×32)
+  B:     [16, 0,  32, 32],   // cols 1-2, rows 0-1 → tree_stage2_no_fruit (32×32)
+  C:     [48, 0,  32, 32],   // cols 3-4, rows 0-1 → tree_stage2_fruit (32×32)
+  chopA: [48, 32, 16, 16],   // col 3, row 2 → stump_small (16×16)
+  chopBC:[64, 32, 16, 16],   // col 4, row 2 → stump_large (16×16)
+  fruit: [32, 32, 16, 16],   // col 2, row 2 → apple_ripe icon (16×16)
 };
 
 // Scale: source 16 px tiles → 32 px world tiles (OBJ_SCALE = 2)
@@ -61,24 +58,23 @@ export class Tree implements Interactable {
   private sprite:      Phaser.GameObjects.Image;
   private stage:       TreeStage;
   private growTimer?:  Phaser.Time.TimerEvent;
-  private callbacks:   GameCallbacks;
   private hasFruit     = false;
 
 
   constructor(
-    scene:       Phaser.Scene,
-    x:           number,
-    y:           number,
-    id:          string,
-    callbacks:   GameCallbacks,
-    obstacles?:  Phaser.Physics.Arcade.StaticGroup,
-    initialStage: TreeStage = 'A',
+    scene:         Phaser.Scene,
+    x:             number,
+    y:             number,
+    id:            string,
+    obstacles?:    Phaser.Physics.Arcade.StaticGroup,
+    initialStage:  TreeStage = 'A',
+    /** Override hasFruit after applyStage (e.g. restoring a harvested C tree) */
+    initialHasFruit?: boolean,
   ) {
     this.scene     = scene;
     this.worldX    = x;
     this.worldY    = y;
     this.id        = id;
-    this.callbacks = callbacks;
     this.stage     = initialStage;
 
     this.ensureTextures();
@@ -96,9 +92,16 @@ export class Tree implements Interactable {
 
     this.applyStage(initialStage);
 
-    if (initialStage === 'A') this.scheduleGrow('A');
-    else if (initialStage === 'B') this.scheduleGrow('B');
-    // C: already bearing fruit
+    // Override hasFruit if explicitly provided (e.g. C tree already harvested)
+    if (initialHasFruit !== undefined) this.hasFruit = initialHasFruit;
+
+    // Only schedule growth for living (non-chopped) trees
+    const isChopped = initialStage === 'chopA' || initialStage === 'chopBC';
+    if (!isChopped) {
+      if (initialStage === 'A') this.scheduleGrow('A');
+      else if (initialStage === 'B') this.scheduleGrow('B');
+      // C: already bearing fruit — no growth needed
+    }
   }
 
   // ── Canvas texture extraction ──────────────────────────────────────────────
@@ -164,6 +167,11 @@ export class Tree implements Interactable {
     if (this.stage === 'C' && this.hasFruit) this.harvestFruit();
   }
 
+  /** Serialise for save / restore. */
+  getState(): TreeSaveState {
+    return { id: this.id, stage: this.stage, hasFruit: this.hasFruit };
+  }
+
   // ── Axe chop (called by GameScene when Space + axe) ───────────────────────
   isChopped(): boolean {
     return this.stage === 'chopA' || this.stage === 'chopBC';
@@ -197,7 +205,7 @@ export class Tree implements Interactable {
     });
 
     // Notify React → inventory
-    this.callbacks.onItemPickup?.('fruit', 1);
+    gameBus.emit('player:item_pickup', { itemKey: 'fruit', quantity: 1 });
 
     // Tree regresses to B then re-grows to C
     this.applyStage('B');

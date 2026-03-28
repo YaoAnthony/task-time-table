@@ -4,11 +4,22 @@ import type { ChestRewardItem } from '../../../../Types/Profile';
 
 export type ToolType = 'empty' | 'water' | 'axe' | 'scythe';
 
+// ─── World-state persistence (beds, nests, future furniture) ──────────────────
+export interface BedSaveState  { color: 'green' | 'blue' | 'pink'; x: number; y: number }
+export interface NestSaveState { x: number; y: number; state: 'empty' | 'has_egg' }
+export interface GameWorldState {
+  schemaVersion: 1;
+  beds:  BedSaveState[];
+  nests: NestSaveState[];
+}
+
 // ─── General world-object interaction (F key) ─────────────────────────────────
 /** Any object in the world that the player can interact with (F key). */
 export interface Interactable {
   isNearPlayer(px: number, py: number, radius?: number): boolean;
   interact(): void;
+  /** Optional: called every frame with player position to update proximity hints. */
+  update?(px: number, py: number): void;
 }
 export type Direction = 'down' | 'up' | 'left' | 'right';
 
@@ -64,15 +75,24 @@ export type ActionTarget =
 export type NpcActionType =
   | 'say' | 'move' | 'idle'              // core
   | 'emote'                               // future: animation key
-  | 'water' | 'eat' | 'drink' | 'nuzzle'; // future: tool / animal
+  | 'water' | 'eat' | 'drink' | 'nuzzle' // future: tool / animal
+  | 'pickup_item'                         // navigate to WorldItem, pick it up
+  | 'drop_item'                           // drop item from NPC inventory to world
+  | 'chop_tree'                           // navigate to tree and chop it
+  | 'ask_confirm'                         // ask player yes/no before proceeding
+  | 'follow_player'                       // NPC follows the player continuously
+  | 'stop_follow'                         // NPC stops following player
+  | 'dispatch';                           // NPC goes on a mission, returns 10s later with loot+story
 
 export interface NpcAction {
   type:      NpcActionType;
-  text?:     string;       // for 'say'
-  target?:   ActionTarget; // for 'move' / 'water' etc.
+  text?:     string;       // for 'say' / 'ask_confirm'
+  target?:   ActionTarget; // for 'move' / 'chop_tree' etc.
   duration?: number;       // real seconds
   tool?:     string;       // future: 'watering_can' etc.
   emote?:    string;       // future: 'wave' | 'bow' etc.
+  itemId?:   string;       // for 'pickup_item' / 'drop_item'
+  question?: string;       // for 'ask_confirm'
 }
 
 /** Backend chat response — LLM decides both reply text and actions. */
@@ -110,4 +130,59 @@ export interface GameCallbacks {
   getAuthToken?: () => string | null;
   /** Called when player picks up a world item (fruit, etc.) → add to inventory */
   onItemPickup?: (itemKey: string, quantity: number) => void;
+  /**
+   * Called when the player performs a farming action.
+   * till = scythe on grass, water = watering_can on tilled tile,
+   * plant = seed on tilled/watered tile, harvest = F on ready tile.
+   */
+  onFarmAction?: (
+    action: 'till' | 'water' | 'plant' | 'harvest',
+    tx: number,
+    ty: number,
+    itemId?: string,
+  ) => void;
+  /** NPC arrived and picked up a WorldItem — update NPC inventory in Redux */
+  onNpcPickupWorldItem?: (npcName: string, itemId: string, qty: number) => void;
+  /** NPC dropped an item from its inventory — update NPC inventory in Redux */
+  onNpcDropItem?: (npcName: string, itemId: string, qty: number, x?: number, y?: number) => void;
+  /** NPC is asking the player for confirmation before acting */
+  onAskConfirm?: (npcName: string, question: string) => void;
+  /** Called when NPC chops a tree — find the tree by ID and chop it in the scene */
+  onNpcChopTree?: (npcName: string, treeId: string) => void;
+  /** Returns current inventory of a named NPC (for /getInventory command) */
+  getNpcInventory?: (npcName: string) => Record<string, number>;
+  /** Called when local player picks up a WorldItem — for multiplay sync */
+  onWorldItemPickedUp?: (itemId: string, x: number, y: number) => void;
+  /** Emit a game event to multiplayer peers */
+  onGameEvent?: (type: string, payload: Record<string, unknown>) => void;
+  /**
+   * Called when night is skipped via beds.
+   * React can display a toast like "🌅 时间跳过至 06:00".
+   */
+  onNightSkip?: (fromTime: string, toTime: string) => void;
+  /**
+   * Called when sleep vote count changes (for optional sleep UI).
+   * `sleeping` = current sleepers count, `total` = total players.
+   */
+  onSleepVoteChanged?: (sleeping: number, total: number) => void;
+  /**
+   * Called to display a transient message to the local player
+   * (e.g. "💤 你已躺下..." or "🌞 现在还是白天").
+   */
+  onShowMessage?: (text: string) => void;
+  /**
+   * Called when the player places / uses a furniture item from their inventory.
+   * React should decrement the item count by `qty`.
+   */
+  onConsumeItem?: (itemId: string, qty: number) => void;
+  /** NPC left on a dispatch mission carrying these items (itemId → qty) */
+  onNpcDispatch?: (npcName: string, carriedItems: Record<string, number>) => void;
+  /** NPC returned from dispatch — React should call backend for story + give items */
+  onNpcDispatchReturn?: (npcName: string, carriedItems: Record<string, number>) => void;
+  /** Make a named NPC say something (from React land after async API call) */
+  makeNpcSay?: (npcName: string, text: string) => void;
 }
+
+// ─── Farm tile ────────────────────────────────────────────────────────────────
+export type FarmTileStateType =
+  | 'tilled' | 'watered' | 'seeded' | 'growing' | 'ready' | 'harvested';

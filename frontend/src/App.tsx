@@ -19,7 +19,7 @@ import {
 
 
 // Dashboard
-import { 
+import {
     Overview,
     Backpack,
     Setting,
@@ -31,6 +31,7 @@ import {
     SystemTasks,
     SystemLottery,
     SystemIdleGame,
+    DailyQuests,
  } from './Pages/Dashboard/component';
 
 
@@ -81,6 +82,7 @@ const App = () => {
                         <Route path="home" element={<Overview />} />
                         <Route path="backpack" element={<Backpack />} />
                         <Route path="tasks" element={<Tasks />} />
+                        <Route path="daily-quests" element={<DailyQuests />} />
                         <Route path="store" element={<Store />} />
                         <Route path="setting" element={<Setting />} />
                         <Route path="idle-game" element={<SystemIdleGame />} />

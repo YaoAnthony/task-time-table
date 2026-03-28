@@ -31,7 +31,29 @@
       "Bash(find 'C:\\\\my folder\\\\HTML CODE\\\\time plan' -name *.js -path */arcade/*)",
       "Bash(grep -r \"POST\\\\|GET.*npc\\\\|router\\\\.post.*npc\\\\|router\\\\.get.*npc\" 'C:/my folder/HTML CODE/time plan/backend/routes' --include=*.js)",
       "Bash(identify \"C:/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Characters/Free Chicken Sprites.png\")",
-      "Bash(node -e \"const fs=require\\(''fs''\\);const b=fs.readFileSync\\(''/c/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Characters/Free Chicken Sprites.png''\\);const w=b.readUInt32BE\\(16\\);const h=b.readUInt32BE\\(20\\);console.log\\(''Width:'',w,''Height:'',h\\);\")"
+      "Bash(node -e \"const fs=require\\(''fs''\\);const b=fs.readFileSync\\(''/c/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Characters/Free Chicken Sprites.png''\\);const w=b.readUInt32BE\\(16\\);const h=b.readUInt32BE\\(20\\);console.log\\(''Width:'',w,''Height:'',h\\);\")",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(find 'C:\\\\my folder\\\\HTML CODE\\\\time plan' -type f -name *multi* -o -name *room* -o -name *socket* -o -name *ws* -o -name *peer* -o -name *coop* -o -name *online*)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(grep -rn \"setDepth\\\\|LAYER\\\\|depth\" \"C:\\\\my folder\\\\HTML CODE\\\\time plan\\\\frontend\\\\src\\\\Pages\\\\Dashboard\\\\component\\\\SystemIdleGame\\\\world\"\" --include=\"*.ts\" | grep -v \".d.ts \")",
+      "Bash(grep -rn \"setDepth\\\\|\\\\.depth \" \"C:\\\\my folder\\\\HTML CODE\\\\time plan\\\\frontend\\\\src\\\\Pages\\\\Dashboard\\\\component\\\\SystemIdleGame\"\" --include=\"*.ts\" | grep -v \"node_modules \")",
+      "Bash(grep -rn LAYERs*= 'C:/my folder/HTML CODE/time plan/frontend/src/Pages/Dashboard/component/SystemIdleGame/world/utils.ts')",
+      "Bash(grep -rn \"export.*LAYER\\\\|LAYER\\\\s*=\" 'C:/my folder/HTML CODE/time plan/frontend/src/Pages/Dashboard/component/SystemIdleGame' --include=*.ts)",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const b=fs.readFileSync\\(''C:/my folder/HTML CODE/time plan/frontend/src/assets/Sprout-Lands/Objects/Basic_Plants.png''\\);const w=b.readUInt32BE\\(16\\);const h=b.readUInt32BE\\(20\\);console.log\\(''PNG size:'',w,''x'',h,''frameW\\(6col\\):'',w/6,''rows\\(16px\\):'',h/16\\);\")",
+      "Bash(node -e \"require\\(''jimp''\\); console.log\\(''jimp ok''\\)\")",
+      "Bash(node -e \"require\\(''sharp''\\); console.log\\(''sharp ok''\\)\")",
+      "Bash(node -e \"require\\(''canvas''\\); console.log\\(''canvas ok''\\)\")",
+      "Bash(node -e \"require\\(''pngjs''\\); console.log\\(''pngjs ok''\\)\")",
+      "Bash(grep -n \"case ''harvest''\" \"C:\\\\my folder\\\\HTML CODE\\\\time plan\\\\backend\\\\shared\\\\useGameItemService.js\")",
+      "Bash(python -c \":*)",
+      "Bash(find 'C:\\\\my folder\\\\HTML CODE\\\\time plan\\\\frontend' -name Basic_Furniture* -o -name basic_furniture* -o -name furniture*)",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const buf=fs.readFileSync\\(''./frontend/src/assets/Sprout-Lands/Objects/Basic_Furniture.png''\\);const w=buf.readUInt32BE\\(16\\);const h=buf.readUInt32BE\\(20\\);console.log\\(w+''x''+h,Math.floor\\(w/16\\)+''cols'',Math.floor\\(h/16\\)+''rows''\\);\")",
+      "Bash(py --version)",
+      "Bash(docker restart:*)",
+      "Bash(docker-compose build:*)",
+      "Bash(npm ls:*)"
     ]
   }
 }

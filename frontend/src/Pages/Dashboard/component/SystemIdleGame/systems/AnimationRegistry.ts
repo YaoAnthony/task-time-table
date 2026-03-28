@@ -73,18 +73,24 @@ export function registerAnimations(scene: Phaser.Scene): void {
   });
 
   // ── Chicken ────────────────────────────────────────────────────────────
-  // Use [0,1,2,1] ping-pong sequence so "leg-up" frames (1,3) don't flash:
-  // frame 3 at frameRate 8 looked transparent due to short-body pose.
+  // Actual pixel data (64×32, 4×2 @ 16px):
+  //   Row 0: frame 0 = walk-A (27px), frame 1 = walk-B (27px),
+  //           frame 2 = EMPTY (0px),  frame 3 = EMPTY (0px)
+  //   Row 1: frame 4 = idle-A (22px), frame 5 = idle-B (27px),
+  //           frame 6 = idle-C (22px), frame 7 = idle-D (27px)
+  //
+  // Walk: alternate between the two real walk frames.
+  // Idle: loop all four row-1 frames for a gentle head-bob.
   scene.anims.create({
     key:       'chicken-walk',
-    frames:    scene.anims.generateFrameNumbers('chicken', { frames: [0, 0, 1, 1, 2, 2, 1, 1] }),
+    frames:    scene.anims.generateFrameNumbers('chicken', { frames: [4, 5, 6, 5] }),
     frameRate: 8,
     repeat:    -1,
   });
   scene.anims.create({
     key:       'chicken-idle',
-    frames:    [{ key: 'chicken', frame: 0 }],
-    frameRate: 1,
+    frames:    scene.anims.generateFrameNumbers('chicken', { frames: [0, 1, 0, 1] }),
+    frameRate: 3,
     repeat:    -1,
   });
 }

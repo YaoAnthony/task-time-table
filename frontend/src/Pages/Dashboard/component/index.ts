@@ -10,6 +10,7 @@ import SystemStore from "./SystemStore";
 import SystemTasks from "./SystemTasks";
 import SystemLottery from "./SystemLottery";
 import SystemIdleGame from "./SystemIdleGame";
+import DailyQuests from "./DailyQuests";
 
 export {
     Overview,
@@ -24,4 +25,5 @@ export {
     SystemTasks,
     SystemLottery,
     SystemIdleGame,
+    DailyQuests,
 }
