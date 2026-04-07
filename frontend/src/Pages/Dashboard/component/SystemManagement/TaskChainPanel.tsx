@@ -2,15 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { message } from 'antd';
-import { FaGamepad, FaTrash, FaExclamationTriangle } from 'react-icons/fa';
+import { FaGamepad, FaTrash, FaExclamationTriangle, FaRobot } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
 import type { MissionListType, SystemWithMission, MissionList } from '../../../../Types/System';
 
-import TaskTree2D from './TaskTree2D';
-import TaskFormModal from './TaskFormModal';
+import TaskDependencyGraph from './TaskDependencyGraph';
+import TaskFormModal, { type EditableNode } from './TaskFormModal';
 import CreateTaskModal from './CreateTaskModal';
 import EditTaskModal from './EditTaskModal';
+import AiAssistantModal from './ai-assistant/AiAssistantModal';
 import {
     useLazyGetSystemListQuery,
     useCreateMissionListMutation,
@@ -64,6 +65,8 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
     const [showEditListForm, setShowEditListForm] = useState(false);
     const [showNodeForm, setShowNodeForm] = useState(false);
     const [nodeParentAnchor, setNodeParentAnchor] = useState('');
+    const [editingNode, setEditingNode] = useState<EditableNode | undefined>(undefined);
+    const [showAiModal, setShowAiModal] = useState(false);
 
     // Delete-confirm modal state
     const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; nodeCount: number } | null>(null);
@@ -349,6 +352,16 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                         >
                             编辑选中任务列表
                         </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => setShowAiModal(true)}
+                            className="flex items-center gap-2 bg-gradient-to-r from-violet-500 to-blue-600 hover:from-violet-400 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-bold tracking-widest transition-all shadow-[0_4px_12px_rgba(139,92,246,0.3)]"
+                        >
+                            <FaRobot className="text-sm" />
+                            AI 模式
+                        </motion.button>
                     </div>
                 </div>
 
@@ -406,19 +419,30 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
 
                     <div className="bg-white/40 dark:bg-black/40 border border-indigo-200 dark:border-indigo-500/30 rounded-xl p-1 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 z-10 pointer-events-none">
-                            <h4 className="text-md font-black tracking-widest text-indigo-500 dark:text-indigo-400 drop-shadow-[0_0_10px_rgba(99,102,241,0.2)] dark:drop-shadow-[0_0_10px_rgba(99,102,241,0.8)]">2D 任务树形图</h4>
+                            <h4 className="text-md font-black tracking-widest text-indigo-500 dark:text-indigo-400 drop-shadow-[0_0_10px_rgba(99,102,241,0.2)] dark:drop-shadow-[0_0_10px_rgba(99,102,241,0.8)]">Task Dependency View</h4>
                         </div>
                         {!selectedMissionList ? (
                             <div className="h-[500px] flex items-center justify-center bg-gray-50 dark:bg-black/80 rounded-lg border border-gray-200 dark:border-white/5">
                                 <p className="text-gray-400 dark:text-white/30 font-mono tracking-widest animate-pulse">Awaiting System Selection...</p>
                             </div>
                         ) : (
-                            <TaskTree2D 
+                            <TaskDependencyGraph
                                 taskTree={selectedMissionList.taskTree}
                                 rootNodeId={selectedMissionList.rootNodeId}
                                 onNodeClick={(nodeId) => {
-                                    console.log('Clicked edit for node', nodeId);
-                                    message.info('开发中: 编辑任务节点功能');
+                                    const node = selectedMissionList.taskTree.find(n => n.nodeId === nodeId);
+                                    if (!node) return;
+                                    setEditingNode({
+                                        nodeId:          node.nodeId,
+                                        title:           node.title,
+                                        description:     node.description,
+                                        content:         node.content,
+                                        notice:          node.notice,
+                                        timeCostMinutes: node.timeCostMinutes,
+                                        canInterrupt:    node.canInterrupt,
+                                        rewards:         node.rewards as EditableNode['rewards'],
+                                    });
+                                    setShowNodeForm(true);
                                 }}
                                 onPhantomClick={(parentId) => {
                                     setNodeParentAnchor(parentId || '');
@@ -435,11 +459,13 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                     onClose={() => {
                         setShowNodeForm(false);
                         setNodeParentAnchor('');
+                        setEditingNode(undefined);
                     }}
                     systemId={systemId}
                     selectedMissionList={selectedMissionList}
                     rewardItemOptions={rewardItemOptions}
                     initialParentNodeId={nodeParentAnchor}
+                    editNode={editingNode}
                 />
 
                 <CreateTaskModal
@@ -541,6 +567,21 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* AI Assistant Modal */}
+            <AnimatePresence>
+                {showAiModal && (
+                    <AiAssistantModal
+                        systemId={systemId}
+                        systemName={currentSystemData?.name || ''}
+                        onClose={() => setShowAiModal(false)}
+                        onCreated={(id) => {
+                            setSelectedMissionListId(id);
+                            message.success('AI 已自动创建任务列表，已为你选中');
+                        }}
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 };

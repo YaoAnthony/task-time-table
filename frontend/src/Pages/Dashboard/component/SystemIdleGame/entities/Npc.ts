@@ -492,6 +492,36 @@ export class Npc {
     }
   }
 
+  isThinking(): boolean {
+    return this._isThinking;
+  }
+
+  isAwaitingConfirm(): boolean {
+    return this.waitingForConfirm;
+  }
+
+  isFollowingPlayer(): boolean {
+    return this.isFollowing;
+  }
+
+  isOnDispatch(): boolean {
+    return this.isDispatched;
+  }
+
+  hasPlannedActions(): boolean {
+    return this.plannedActions.length > 0;
+  }
+
+  isNavigating(): boolean {
+    return this.pathing?.isMoving() ?? false;
+  }
+
+  destroy(): void {
+    this.sprite.destroy();
+    this.labelText?.destroy();
+    this.bubbleText?.destroy();
+  }
+
   private startMoveTo(tx: number, ty: number): void {
     const dx  = tx - this.sprite.x;
     const dy  = ty - this.sprite.y;

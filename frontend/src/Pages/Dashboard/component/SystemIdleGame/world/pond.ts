@@ -18,8 +18,11 @@ export function createPond(
 ): void {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      ctx.scene.add.sprite(x + c * T, y + r * T, 'water', 'water0')
-        .setOrigin(0, 0).setScale(OBJ_SCALE).setDepth(LAYER.POND);
+      ctx.scene.add.sprite(x + c * T, y + r * T, 'water')
+        .setOrigin(0, 0)
+        .setScale(OBJ_SCALE)
+        .setDepth(LAYER.POND)
+        .play({ key: 'water-tile', startFrame: Math.floor(Math.random() * 4) });
     }
   }
   addBlock(ctx, x + (cols * T) / 2, y + (rows * T) / 2, cols * T, rows * T);

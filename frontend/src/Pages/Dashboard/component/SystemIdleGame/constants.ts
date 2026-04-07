@@ -1,12 +1,12 @@
 /** Game-wide constants for the idle game. */
 
 // ─── World ────────────────────────────────────────────────────────────────────
-export const WORLD_W      = 832;   // 26 tiles × 32px
-export const WORLD_H      = 640;   // 20 tiles × 32px
-export const SPAWN_X      = 250;
-export const SPAWN_Y      = 320;
-export const NPC_X        = 300;
-export const NPC_Y        = 280;
+export const WORLD_W      = 1920;  // 60 tiles × 32px
+export const WORLD_H      = 1280;  // 40 tiles × 32px
+export const SPAWN_X      = 240;   // in front of player's house door
+export const SPAWN_Y      = 360;
+export const NPC_X        = 384;   // 老李 now starts near the farm edge
+export const NPC_Y        = 760;
 export const NPC_NAME     = '老李';
 
 // ─── Camera / rendering ───────────────────────────────────────────────────────
@@ -58,6 +58,9 @@ export const MINS_PER_DAY      = 1440;
  *  auth integration is complete.  Player-initiated chat still works fine. */
 export const NPC_THINK_INTERVAL = 999999;
 export const NPC_MAX_MEMORY     = 20;
+export const NPC_AUTONOMOUS_THINK_INTERVAL = 6;
+export const NPC_AUTONOMOUS_PAUSE_SECONDS  = 8;
+export const NPC_MEMORY_RETENTION_TICKS    = 180;
 
 // ─── Asset frame definitions (same pattern as ozguradmin/sprout-lands-portfolio)
 // (x, y, w, h) in source PNG pixels

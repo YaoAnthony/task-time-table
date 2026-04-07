@@ -25,8 +25,10 @@ import {
   addItemToNpcInventory,
   removeItemFromNpcInventory,
 } from '../../../../../Redux/Features/gameSlice';
+import type { FarmTile } from '../../../../../Redux/Features/gameSlice';
 import { gameBus }             from '../shared/EventBus';
 import type { GameScene }      from '../GameScene';
+import { applyServerFarmTileUpdate } from './useIdleGameSyncBoundary';
 
 const ITEM_NAME_MAP: Record<string, string> = {
   wheat_seed: '小麦种子', tomato_seed: '番茄种子',
@@ -57,6 +59,9 @@ export function useFarmActions(
           switch (action) {
             case 'till': {
               const res = await tillFarmTile({ tx, ty, roomId }).unwrap();
+              if (res.farmTile) {
+                applyServerFarmTileUpdate(sceneRef.current, dispatch, res.farmTile as FarmTile & { tx: number; ty: number; state: string });
+              }
               if (res.droppedSeed) {
                 const pos     = sceneRef.current?.getPlayerWorldPos();
                 const offsetX = (Math.random() - 0.5) * 30;
@@ -70,7 +75,12 @@ export function useFarmActions(
               break;
             }
             case 'water':
-              await waterFarmTile({ tx, ty, gameTick, roomId }).unwrap();
+              {
+                const res = await waterFarmTile({ tx, ty, gameTick, roomId }).unwrap();
+                if (res.farmTile) {
+                  applyServerFarmTileUpdate(sceneRef.current, dispatch, res.farmTile as FarmTile & { tx: number; ty: number; state: string });
+                }
+              }
               break;
 
             case 'plant':
@@ -79,14 +89,8 @@ export function useFarmActions(
                 const plantRes = await plantCrop({ tx, ty, itemId, gameTick, roomId }).unwrap();
                 if (plantRes.farmTiles) {
                   const tile = (plantRes.farmTiles as any[]).find((t: any) => t.tx === tx && t.ty === ty);
-                  if (tile && sceneRef.current?.farmSystem) {
-                    sceneRef.current.farmSystem.updateTileState(tx, ty, tile.state, {
-                      cropId:    tile.cropId,
-                      plantRow:  tile.plantRow  ?? 0,
-                      numStages: tile.numStages ?? 4,
-                      plantedAt: tile.plantedAt,
-                      readyAt:   tile.readyAt,
-                    });
+                  if (tile) {
+                    applyServerFarmTileUpdate(sceneRef.current, dispatch, tile as FarmTile & { tx: number; ty: number; state: string });
                   }
                 }
               }
@@ -95,6 +99,10 @@ export function useFarmActions(
             case 'harvest': {
               const tick      = sceneRef.current?.getGameTick?.() ?? 0;
               const harvestRes = await harvestCrop({ tx, ty, gameTick: tick, roomId }).unwrap();
+              const updatedTile = (harvestRes.farmTiles as any[] | undefined)?.find((tile: any) => tile.tx === tx && tile.ty === ty);
+              if (updatedTile) {
+                applyServerFarmTileUpdate(sceneRef.current, dispatch, updatedTile as FarmTile & { tx: number; ty: number; state: string });
+              }
               if (harvestRes.dropItems?.length) {
                 const T = 32;
                 const wx = tx * T + T / 2, wy = ty * T + T / 2;

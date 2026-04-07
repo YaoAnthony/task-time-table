@@ -32,9 +32,9 @@ export class Player {
     // scaleY=2, displayOriginY=24 (set before setScale call, so unscaled)
     // We want body.y ≈ sprite.y (center of sprite world origin), so offsetY=24
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    body.setSize(16, 10);
+    body.setSize(12, 10);
     body.setOffset(
-      (CHAR_FRAME_W - 16) / 2,   // = 16, center horizontally
+      (CHAR_FRAME_W - 12) / 2,   // keep the narrower body centered horizontally
       CHAR_FRAME_H / 2,           // = 24 → body.y = sprite.y + 2*(24-24) = sprite.y
     );
 

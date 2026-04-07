@@ -53,7 +53,9 @@
       "Bash(py --version)",
       "Bash(docker restart:*)",
       "Bash(docker-compose build:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(xargs ls:*)",
+      "Bash(find 'C:/my folder/HTML CODE/time plan/frontend/assets' -type f \\\\\\(-name *.png -o -name *.jpg \\\\\\))"
     ]
   }
 }

@@ -249,7 +249,7 @@ export class FarmTile implements Interactable {
   }
 
   interact(): void {
-    // Handled by FarmSystem.handlePlayerInteract()
+    // Harvest interaction is routed by FarmSystem / InteractionSystem.
   }
 
   destroy(): void {

@@ -250,7 +250,13 @@ export class DropItem {
   pickup(): void {
     if (this._gone) return;
     gameBus.emit('player:item_pickup', { itemKey: this.itemId, quantity: 1 });
-    gameBus.emit('world:item_picked_up', { itemId: this.itemId, x: this._sprite.x, y: this._sprite.y });
+    gameBus.emit('world:item_picked_up', {
+      itemId: this.itemId,
+      x: this._sprite.x,
+      y: this._sprite.y,
+      actorId: 'player',
+      source: 'local',
+    });
     this.destroy();
   }
 

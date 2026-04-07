@@ -4,7 +4,6 @@
  * 订阅的 gameBus 事件：
  *   mp:relay              → 转发 Phaser 事件到 Socket.IO
  *   mp:sleep_state        → 转发睡眠状态
- *   world:item_picked_up  → 转发物品拾取
  *   mp:room_joined        → 加入房间回调
  *   mp:peer_joined        → 对方进入房间
  *   mp:peer_left          → 对方离开房间
@@ -58,18 +57,6 @@ export function useMultiplay({
       }),
 
       // 睡眠状态同步
-      gameBus.on('mp:sleep_state', ({ sleeping }) => {
-        if (multiplayActiveRef.current && multiplayRef.current?.isConnected) {
-          multiplayRef.current.emit('player_sleep', { sleeping });
-        }
-      }),
-
-      // 物品被拾取 → 通知另一端
-      gameBus.on('world:item_picked_up', ({ itemId, x, y }) => {
-        if (multiplayActiveRef.current && multiplayRef.current?.isConnected) {
-          multiplayRef.current.emit('item_claim', { itemId, x, y });
-        }
-      }),
 
       // 成功加入房间
       gameBus.on('mp:room_joined', ({ isHost, roomId, players }) => {
@@ -102,9 +89,6 @@ export function useMultiplay({
       }),
 
       // 远端游戏事件（位移、砍树等）
-      gameBus.on('mp:game_event', (event) => {
-        sceneRef.current?.applyRemoteEvent(event.type, event.payload);
-      }),
 
       // 连接错误
       gameBus.on('mp:error', ({ message }) => {

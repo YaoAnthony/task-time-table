@@ -13,6 +13,7 @@
 import Phaser from 'phaser';
 import type { Interactable } from '../types';
 import { DropItem } from './DropItem';
+import { createObstacleBlock } from '../world/utils';
 
 // ─── Source regions (px in Basic_Grass_Biom_things.png) ──────────────────────
 export type BushStage = 'ripe' | 'empty';
@@ -32,25 +33,27 @@ export class RaspberryBush implements Interactable {
   readonly worldX: number;
   readonly worldY: number;
 
-  private scene:      Phaser.Scene;
-  private sprite:     Phaser.GameObjects.Image;
-  private stage:      BushStage;
-  private growTimer?: Phaser.Time.TimerEvent;
-  private drops:      DropItem[];   // shared array managed by GameScene
+  private scene:        Phaser.Scene;
+  private sprite:       Phaser.GameObjects.Image;
+  private stage:        BushStage;
+  private growTimer?:   Phaser.Time.TimerEvent;
+  private addDrop:      (drop: DropItem) => void;
+  private obstacleImg:  Phaser.Physics.Arcade.Image | null = null;
 
   constructor(
     scene:         Phaser.Scene,
     x:             number,
     y:             number,
     id:            string,
-    drops:         DropItem[],
+    addDrop:       (drop: DropItem) => void,
+    obstacles?:    Phaser.Physics.Arcade.StaticGroup,
     initialStage:  BushStage = 'ripe',
   ) {
     this.scene  = scene;
     this.worldX = x;
     this.worldY = y;
     this.id     = id;
-    this.drops  = drops;
+    this.addDrop = addDrop;
     this.stage  = initialStage;
 
     this.ensureTextures();
@@ -59,6 +62,11 @@ export class RaspberryBush implements Interactable {
       .image(x, y, 'bush-tex-ripe')
       .setOrigin(0.5, 1)
       .setDepth(y + 5);
+
+    // Collision body — same footprint as the static decorative bush
+    if (obstacles) {
+      this.obstacleImg = createObstacleBlock(scene, obstacles, x, y - 4, 20, 12);
+    }
 
     this.applyStage(initialStage);
 
@@ -88,6 +96,15 @@ export class RaspberryBush implements Interactable {
     this.sprite
       .setTexture(stage === 'ripe' ? 'bush-tex-ripe' : 'bush-tex-empty')
       .setDepth(this.worldY + 5);
+    // 空灌木丛可以走过去：从物理世界移除 body；有树莓时重新加回
+    if (this.obstacleImg) {
+      const body = this.obstacleImg.body as Phaser.Physics.Arcade.StaticBody;
+      if (stage === 'ripe') {
+        this.scene.physics.world.add(body);
+      } else {
+        this.scene.physics.world.remove(body);
+      }
+    }
   }
 
   private scheduleGrow(): void {
@@ -114,7 +131,7 @@ export class RaspberryBush implements Interactable {
   private harvest(): void {
     // Spawn drop item just in front of the bush base
     const drop = new DropItem(this.scene, this.worldX, this.worldY - 8, 'raspberry');
-    this.drops.push(drop);
+    this.addDrop(drop);
 
     // Floating berry icon rises and fades as visual feedback
     const icon = this.scene.add

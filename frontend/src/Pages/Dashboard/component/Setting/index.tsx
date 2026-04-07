@@ -41,6 +41,7 @@ const Setting: React.FC = () => {
     
     const systems = useSelector((state: RootState) => state.system.systems);
     const isSystemLoading = useSelector((state: RootState) => state.system.loading);
+    const profile = useSelector((state: RootState) => state.profile.profile);
     
     const [logoutApi] = useLogoutMutation();
     const [triggerGetSystemList] = useLazyGetSystemListQuery();
@@ -60,9 +61,14 @@ const Setting: React.FC = () => {
         triggerGetSystemList();
     }, [triggerGetSystemList]);
 
-    const filteredSystems = useMemo(() => {
-        return systems.filter((sys) => sys.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    }, [systems, searchQuery]);
+    const filteredOwnSystems = useMemo(() =>
+        systems.filter(s => s.profile === profile?._id && s.name.toLowerCase().includes(searchQuery.toLowerCase())),
+        [systems, profile?._id, searchQuery]
+    );
+    const filteredJoinedSystems = useMemo(() =>
+        systems.filter(s => s.profile !== profile?._id && s.name.toLowerCase().includes(searchQuery.toLowerCase())),
+        [systems, profile?._id, searchQuery]
+    );
 
     const setModule = (key: 'taskChain' | 'store' | 'lottery') => {
         setForm((prev) => ({
@@ -288,7 +294,8 @@ const Setting: React.FC = () => {
                     <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin scrollbar-thumb-black/20 dark:scrollbar-thumb-white/20 scrollbar-track-transparent">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                             <AnimatePresence mode="popLayout">
-                                {(activeTab === 'my' ? filteredSystems : searchResults).map((sys) => (
+                                {/* 我创建的系统 */}
+                                {activeTab === 'my' && filteredOwnSystems.map((sys) => (
                                     <motion.div
                                         key={sys._id}
                                         initial={{ filter: "brightness(2) contrast(1.5)", clipPath: 'inset(0 100% 0 0)' }}
@@ -373,17 +380,144 @@ const Setting: React.FC = () => {
                                         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-400/10 dark:bg-white/5 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-blue-400/20 dark:group-hover:bg-[#FFC72C]/10 transition-colors pointer-events-none" />
                                     </motion.div>
                                 ))}
+
+                                {/* 分割线（我的系统 tab，两组都有内容时显示） */}
+                                {activeTab === 'my' && filteredOwnSystems.length > 0 && filteredJoinedSystems.length > 0 && (
+                                    <div className="col-span-full flex items-center gap-4 py-2">
+                                        <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
+                                        <span className="text-[10px] font-black tracking-[0.2em] text-neutral-400 dark:text-white/30 uppercase whitespace-nowrap">已加入的系统</span>
+                                        <div className="flex-1 h-px bg-black/10 dark:bg-white/10" />
+                                    </div>
+                                )}
+
+                                {/* 我加入的系统（my tab） */}
+                                {activeTab === 'my' && filteredJoinedSystems.map((sys) => (
+                                    <motion.div
+                                        key={sys._id}
+                                        initial={{ filter: "brightness(2) contrast(1.5)", clipPath: 'inset(0 100% 0 0)' }}
+                                        animate={{ filter: "brightness(1) contrast(1)", clipPath: 'inset(0 0% 0 0)' }}
+                                        exit={{ scale: 0.95, filter: "brightness(0)" }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        layout
+                                        className="relative bg-white/60 dark:bg-black/60
+                                            border-2 border-white/80 dark:border-[#FFC72C]/30 rounded-none overflow-hidden
+                                            hover:border-blue-500 dark:hover:border-[#FFC72C]
+                                            shadow-[8px_8px_0_rgba(59,130,246,0.1)] dark:shadow-[8px_8px_0_rgba(255,199,44,0.1)]
+                                            hover:shadow-[4px_4px_0_rgba(59,130,246,0.3)] dark:hover:shadow-[4px_4px_0_rgba(255,199,44,0.3)]
+                                            hover:-translate-x-1 hover:-translate-y-1
+                                            transition-all duration-200 group"
+                                        style={{
+                                            cursor: 'pointer',
+                                            clipPath: 'polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px)'
+                                        }}
+                                        onClick={() => handleSystemCardClick(sys._id)}
+                                    >
+                                        <div className="p-6 flex flex-col h-full z-10 relative">
+                                            <div className="flex items-center gap-4 mb-4">
+                                                <div className="w-12 h-12 rounded-xl bg-white/80 dark:bg-black/40 flex items-center justify-center
+                                                    shadow-[inset_2px_2px_4px_rgba(255,255,255,1),_0_2px_5px_rgba(0,0,0,0.05)]
+                                                    dark:shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border border-white dark:border-white/10
+                                                    group-hover:border-blue-300 dark:group-hover:border-[#FFC72C]/50 transition-colors"
+                                                >
+                                                    <FaCogs className="text-2xl text-blue-500 dark:text-white/70 group-hover:text-blue-600 dark:group-hover:text-[#FFC72C] transition-colors" />
+                                                </div>
+                                                <h3 className="text-xl font-black tracking-wider text-neutral-800 dark:text-white">{sys.name}</h3>
+                                            </div>
+                                            <p className="text-neutral-600 dark:text-white/60 text-sm mb-5 min-h-[40px] font-medium leading-relaxed line-clamp-2">
+                                                {sys.description || "未记录此系统运转法则。"}
+                                            </p>
+                                            <p className="text-blue-500 dark:text-[#FFC72C]/80 text-[10px] font-bold mb-3 tracking-widest uppercase opacity-70">&gt;&gt; 允许接入 &lt;&lt;</p>
+                                            <div className="mt-auto flex gap-2 flex-wrap">
+                                                {sys.modules?.taskChain && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30 shadow-sm flex items-center gap-1.5"><FaGamepad /> 任务链</span>
+                                                )}
+                                                {sys.modules?.store && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-amber-50 dark:bg-yellow-900/40 text-amber-600 dark:text-yellow-300 border border-amber-200 dark:border-yellow-500/30 shadow-sm flex items-center gap-1.5"><FaStore /> 商城</span>
+                                                )}
+                                                {sys.modules?.lottery && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-fuchsia-50 dark:bg-purple-900/40 text-fuchsia-600 dark:text-purple-300 border border-fuchsia-200 dark:border-purple-500/30 shadow-sm flex items-center gap-1.5"><FaDice /> 祈愿池</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-400/10 dark:bg-white/5 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-blue-400/20 dark:group-hover:bg-[#FFC72C]/10 transition-colors pointer-events-none" />
+                                    </motion.div>
+                                ))}
+
+                                {/* 搜索结果（search tab） */}
+                                {activeTab === 'search' && searchResults.map((sys) => (
+                                    <motion.div
+                                        key={sys._id}
+                                        initial={{ filter: "brightness(2) contrast(1.5)", clipPath: 'inset(0 100% 0 0)' }}
+                                        animate={{ filter: "brightness(1) contrast(1)", clipPath: 'inset(0 0% 0 0)' }}
+                                        exit={{ scale: 0.95, filter: "brightness(0)" }}
+                                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                        layout
+                                        className="relative bg-white/60 dark:bg-black/60
+                                            border-2 border-white/80 dark:border-[#FFC72C]/30 rounded-none overflow-hidden
+                                            hover:border-blue-500 dark:hover:border-[#FFC72C]
+                                            shadow-[8px_8px_0_rgba(59,130,246,0.1)] dark:shadow-[8px_8px_0_rgba(255,199,44,0.1)]
+                                            hover:shadow-[4px_4px_0_rgba(59,130,246,0.3)] dark:hover:shadow-[4px_4px_0_rgba(255,199,44,0.3)]
+                                            hover:-translate-x-1 hover:-translate-y-1
+                                            transition-all duration-200 group"
+                                        style={{
+                                            cursor: 'default',
+                                            clipPath: 'polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px)'
+                                        }}
+                                    >
+                                        <div className="p-6 flex flex-col h-full z-10 relative">
+                                            <div className="flex items-center gap-4 mb-4">
+                                                <div className="w-12 h-12 rounded-xl bg-white/80 dark:bg-black/40 flex items-center justify-center
+                                                    shadow-[inset_2px_2px_4px_rgba(255,255,255,1),_0_2px_5px_rgba(0,0,0,0.05)]
+                                                    dark:shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border border-white dark:border-white/10
+                                                    group-hover:border-blue-300 dark:group-hover:border-[#FFC72C]/50 transition-colors"
+                                                >
+                                                    <FaCogs className="text-2xl text-blue-500 dark:text-white/70 group-hover:text-blue-600 dark:group-hover:text-[#FFC72C] transition-colors" />
+                                                </div>
+                                                <h3 className="text-xl font-black tracking-wider text-neutral-800 dark:text-white">{sys.name}</h3>
+                                            </div>
+                                            <p className="text-neutral-600 dark:text-white/60 text-sm mb-5 min-h-[40px] font-medium leading-relaxed line-clamp-2">
+                                                {sys.description || "未记录此系统运转法则。"}
+                                            </p>
+                                            <div className="mb-4 flex gap-2 flex-wrap">
+                                                {sys.modules?.taskChain && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-500/30 shadow-sm flex items-center gap-1.5"><FaGamepad /> 任务链</span>
+                                                )}
+                                                {sys.modules?.store && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-amber-50 dark:bg-yellow-900/40 text-amber-600 dark:text-yellow-300 border border-amber-200 dark:border-yellow-500/30 shadow-sm flex items-center gap-1.5"><FaStore /> 商城</span>
+                                                )}
+                                                {sys.modules?.lottery && (
+                                                    <span className="text-[10px] font-black tracking-wider px-2 py-1 rounded-md bg-fuchsia-50 dark:bg-purple-900/40 text-fuchsia-600 dark:text-purple-300 border border-fuchsia-200 dark:border-purple-500/30 shadow-sm flex items-center gap-1.5"><FaDice /> 祈愿池</span>
+                                                )}
+                                            </div>
+                                            <motion.button
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                                onClick={() => handleJoinSystem(sys._id, sys.name)}
+                                                disabled={isJoining}
+                                                className="mt-auto bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 dark:from-[#FFC72C] dark:to-orange-400 dark:hover:from-yellow-300 dark:hover:to-orange-300 text-white dark:text-black shadow-[0_5px_15px_rgba(59,130,246,0.3)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] px-4 py-2.5 rounded-xl font-black tracking-widest transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                <FaSignInAlt className="text-sm" />
+                                                {isJoining ? '跃迁中...' : '接入系统'}
+                                            </motion.button>
+                                        </div>
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-400/10 dark:bg-white/5 rounded-full blur-2xl -mr-16 -mt-16 group-hover:bg-blue-400/20 dark:group-hover:bg-[#FFC72C]/10 transition-colors pointer-events-none" />
+                                    </motion.div>
+                                ))}
                             </AnimatePresence>
 
-                            {(activeTab === 'my' ? filteredSystems : searchResults).length === 0 && (
+                            {/* 空状态 */}
+                            {activeTab === 'my' && filteredOwnSystems.length === 0 && filteredJoinedSystems.length === 0 && (
                                 <div className="col-span-full h-48 flex flex-col items-center justify-center text-neutral-400 dark:text-white/30">
                                     <FaCogs className="text-5xl mb-4 opacity-50 drop-shadow-md" />
                                     <p className="font-bold tracking-widest">
-                                        {activeTab === 'my' 
-                                            ? (isSystemLoading ? '系统矩阵解析中...' : '未发现匹配的系统结界坐标。')
-                                            : '输入目标结界 ID 获取访问权...'
-                                        }
+                                        {isSystemLoading ? '系统矩阵解析中...' : '未发现匹配的系统结界坐标。'}
                                     </p>
+                                </div>
+                            )}
+                            {activeTab === 'search' && searchResults.length === 0 && (
+                                <div className="col-span-full h-48 flex flex-col items-center justify-center text-neutral-400 dark:text-white/30">
+                                    <FaCogs className="text-5xl mb-4 opacity-50 drop-shadow-md" />
+                                    <p className="font-bold tracking-widest">输入目标结界 ID 获取访问权...</p>
                                 </div>
                             )}
                         </div>

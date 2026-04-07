@@ -17,6 +17,8 @@
 import type { ToolType, FarmTileStateType } from '../types';
 import type { ChestRewardItem }             from '../../../../../Types/Profile';
 import type { RemoteGameEvent, WorldSnapshot, MultiplayRoomPlayer } from '../systems/MultiplaySystem';
+import type { WorldAction, WorldActionResult } from '../systems/WorldActionSystem';
+import type { WorldSyncSource } from '../sync/syncPolicy';
 
 // ─── Event payload map ────────────────────────────────────────────────────────
 export interface GameEventMap {
@@ -67,9 +69,21 @@ export interface GameEventMap {
 
   // ── World items ───────────────────────────────────────────────────────────
   /** A world item was spawned (for multiplayer relay and future persistence). */
-  'world:item_spawned':    { itemId: string; x: number; y: number; spawnId: string };
+  'world:item_spawned':    { itemId: string; x: number; y: number; spawnId: string; actorId?: string; source?: WorldSyncSource };
   /** A world item was picked up by the local player (for multiplayer relay). */
-  'world:item_picked_up':  { itemId: string; x: number; y: number };
+  'world:item_picked_up':  { itemId: string; x: number; y: number; actorId?: string; source?: WorldSyncSource };
+  /** A world action was applied to WorldState/WorldGrid. */
+  'world:action_applied':  { action: WorldAction; result: WorldActionResult; source: WorldSyncSource };
+  /** Local player movement snapshot that may need room broadcast. */
+  'world:position_broadcast_requested': {
+    x: number;
+    y: number;
+    facing: 'up' | 'down' | 'left' | 'right';
+    velX: number;
+    velY: number;
+  };
+  /** Local sleep state changed and may need room broadcast. */
+  'world:sleep_state_changed': { sleeping: boolean };
 
   // ── Chest ─────────────────────────────────────────────────────────────────
   /** Player opened a chest — show reward UI. */

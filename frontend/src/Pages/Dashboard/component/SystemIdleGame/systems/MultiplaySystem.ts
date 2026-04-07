@@ -15,6 +15,7 @@ export type GameEventType =
   | 'farm_water'
   | 'farm_plant'
   | 'farm_harvest'
+  | 'farm_tick'
   | 'creature_state'
   | 'player_sleep'
   | 'npc_say';
@@ -34,7 +35,16 @@ export interface WorldSnapshot {
   choppedTreeIds: string[];
   worldItems: Array<{ itemId: string; x: number; y: number }>;
   /** Farm tiles — new: guest sees host's farm on join */
-  farmTiles?: Array<{ tx: number; ty: number; state: string; cropId?: string }>;
+  farmTiles?: Array<{
+    tx: number;
+    ty: number;
+    state: string;
+    cropId?: string;
+    plantRow?: number;
+    numStages?: number;
+    plantedAt?: number | null;
+    readyAt?: number | null;
+  }>;
   /** Creature states — new: guest sees host's chickens on join */
   creatureStates?: Array<{ creatureId: string; type: string; x: number; y: number; state: string }>;
   /** Host's current player position — used by guest to spawn the host as RemotePlayer */
@@ -86,8 +96,17 @@ export class MultiplaySystem {
       gameBus.emit('mp:peer_left', { userId: data.userId });
     });
 
-    socket.on('game_event', (data: RemoteGameEvent) => {
-      gameBus.emit('mp:game_event', data);
+    socket.on('game_event', (data: RemoteGameEvent | ({ type: GameEventType; fromUserId?: string } & Record<string, unknown>)) => {
+      const normalized = 'payload' in data
+        ? data
+        : {
+            type: data.type,
+            fromUserId: data.fromUserId ?? 'room',
+            payload: Object.fromEntries(
+              Object.entries(data).filter(([key]) => key !== 'type' && key !== 'fromUserId'),
+            ),
+          };
+      gameBus.emit('mp:game_event', normalized as RemoteGameEvent);
     });
 
     socket.on('room_error', (data: { message: string }) => {

@@ -33,15 +33,11 @@ const Tasks: React.FC = () => {
     const selectedSystemId = useSelector((state: RootState) => state.system.selectedSystemId);
     const profile = useSelector((state: RootState) => state.profile.profile);
 
-    // Only show systems the user has JOINED (not their own creations)
-    const systems = useMemo(
-        () => allSystems.filter(s => s.profile !== profile?._id),
-        [allSystems, profile?._id]
-    );
+    const ownSystems    = useMemo(() => allSystems.filter(s => s.profile === profile?._id),  [allSystems, profile?._id]);
+    const joinedSystems = useMemo(() => allSystems.filter(s => s.profile !== profile?._id),  [allSystems, profile?._id]);
+    // All systems combined (own first, then joined) — used for selection
+    const systems = useMemo(() => [...ownSystems, ...joinedSystems], [ownSystems, joinedSystems]);
 
-    // Derived BEFORE any hooks that depend on it.
-    // selectedSystem is always from the filtered (joined-only) list.
-    // Never use raw selectedSystemId for member API calls — it can point to an owned system.
     const selectedSystem = useMemo(() => {
         if (!systems.length) return null;
         return systems.find((sys) => sys._id === selectedSystemId) || systems[0];
@@ -217,7 +213,7 @@ const Tasks: React.FC = () => {
                 <div className="flex flex-col items-center justify-center h-full text-neutral-400 dark:text-white/40">
                     <FaTasks className="text-7xl mb-6 opacity-40 drop-shadow-md" />
                     <p className="text-2xl font-black tracking-widest mb-2">未监测到系统指令</p>
-                    <p className="text-sm font-bold tracking-wider opacity-70">请先在系统总览或系统设置中创建/加入系统结界</p>
+                    <p className="text-sm font-bold tracking-wider opacity-70">请先在系统总览或系统设置中创建或加入系统</p>
                 </div>
             </section>
         );
@@ -261,12 +257,40 @@ const Tasks: React.FC = () => {
                     )}
                 </div>
 
-                <div className="mt-6 flex flex-wrap gap-2 md:gap-3">
-                    {systems.map((sys) => (
+                <div className="mt-6 flex flex-wrap items-center gap-2 md:gap-3">
+                    {/* 我创建的系统 */}
+                    {ownSystems.map((sys) => (
                         <button
                             key={sys._id}
                             onClick={() => dispatch(setSelectedSystemId(sys._id))}
-                            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden group ${
+                            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
+                                selectedSystem?._id === sys._id
+                                    ? 'text-white dark:text-black bg-neutral-800 dark:bg-[#FFC72C] shadow-[0_4px_10px_rgba(0,0,0,0.2)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] border border-neutral-700 dark:border-transparent'
+                                    : 'text-neutral-500 dark:text-white/60 bg-white/60 dark:bg-white/5 border border-white/80 dark:border-white/15 hover:border-neutral-300 dark:hover:border-white/40 hover:bg-white dark:hover:bg-white/10'
+                            }`}
+                        >
+                            <span className="relative z-10">{sys.name}</span>
+                            {selectedSystem?._id === sys._id && (
+                                <motion.div layoutId="taskSystemTab" className="absolute inset-0 bg-neutral-800 dark:bg-[#FFC72C]" style={{ zIndex: 0 }} transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }} />
+                            )}
+                        </button>
+                    ))}
+
+                    {/* 分割线（两组都有内容时才显示）*/}
+                    {ownSystems.length > 0 && joinedSystems.length > 0 && (
+                        <div className="flex items-center gap-1.5 px-1">
+                            <div className="w-px h-5 bg-black/15 dark:bg-white/15" />
+                            <span className="text-[10px] font-bold tracking-widest text-neutral-400 dark:text-white/30 uppercase">加入</span>
+                            <div className="w-px h-5 bg-black/15 dark:bg-white/15" />
+                        </div>
+                    )}
+
+                    {/* 我加入的系统 */}
+                    {joinedSystems.map((sys) => (
+                        <button
+                            key={sys._id}
+                            onClick={() => dispatch(setSelectedSystemId(sys._id))}
+                            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
                                 selectedSystem?._id === sys._id
                                     ? 'text-white dark:text-black bg-neutral-800 dark:bg-[#FFC72C] shadow-[0_4px_10px_rgba(0,0,0,0.2)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] border border-neutral-700 dark:border-transparent'
                                     : 'text-neutral-500 dark:text-white/60 bg-white/60 dark:bg-white/5 border border-white/80 dark:border-white/15 hover:border-neutral-300 dark:hover:border-white/40 hover:bg-white dark:hover:bg-white/10'

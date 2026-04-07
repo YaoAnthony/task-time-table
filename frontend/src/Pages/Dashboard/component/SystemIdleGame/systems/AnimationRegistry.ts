@@ -72,6 +72,14 @@ export function registerAnimations(scene: Phaser.Scene): void {
     });
   });
 
+  // ── Water tile (Water.png — 4 frames × 16px, 64×16) ───────────────────
+  scene.anims.create({
+    key:       'water-tile',
+    frames:    scene.anims.generateFrameNumbers('water', { start: 0, end: 3 }),
+    frameRate: 4,
+    repeat:    -1,
+  });
+
   // ── Chicken ────────────────────────────────────────────────────────────
   // Actual pixel data (64×32, 4×2 @ 16px):
   //   Row 0: frame 0 = walk-A (27px), frame 1 = walk-B (27px),

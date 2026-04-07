@@ -87,6 +87,7 @@ export interface Mission {
     nodes: Array<{
         nodeId: string;
         parentNodeId: string | null;
+        prerequisiteNodeIds?: string[];
         title: string;
         description?: string;
         content?: string;
@@ -97,6 +98,9 @@ export interface Mission {
         isActive: boolean;
         canStart: boolean;
         canRestart: boolean;
+        isLocked?: boolean;
+        blockedByNodeIds?: string[];
+        blockedByTitles?: string[];
         rewards?: {
             experience?: Array<{ name: string; value: number }>;
             coins?: number;
@@ -151,6 +155,7 @@ interface MissionNodeReward {
 interface MissionNode {
     nodeId: string;
     parentNodeId: string | null;
+    prerequisiteNodeIds?: string[];
     title: string;
     description?: string;
     content?: string;
@@ -230,6 +235,7 @@ export interface CreateMissionListPayload {
 export interface CreateMissionNodePayload {
     nodeId?: string;
     parentNodeId?: string | null;
+    prerequisiteNodeIds?: string[];
     title: string;
     description?: string;
     content?: string;

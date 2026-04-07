@@ -67,7 +67,7 @@ export class SleepManager {
     }
 
     this._localSleeping = true;
-    gameBus.emit('mp:sleep_state', { sleeping: true });
+    gameBus.emit('world:sleep_state_changed', { sleeping: true });
     gameBus.emit('day:sleep_vote', { sleeping: this.sleepingCount, total: this._totalPlayers });
 
     if (this._checkThreshold()) {
@@ -105,7 +105,7 @@ export class SleepManager {
     const wasSleeping   = this._localSleeping;
     this._localSleeping = false;
     this._remoteSleeping.clear();
-    if (wasSleeping) gameBus.emit('mp:sleep_state', { sleeping: false });
+    if (wasSleeping) gameBus.emit('world:sleep_state_changed', { sleeping: false });
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ export class SleepManager {
     const wasSleeping   = this._localSleeping;
     this._localSleeping = false;
     this._remoteSleeping.clear();
-    if (wasSleeping) gameBus.emit('mp:sleep_state', { sleeping: false });
+    if (wasSleeping) gameBus.emit('world:sleep_state_changed', { sleeping: false });
 
     const msg = '💤 进入梦乡... 时间加速到天明';
     gameBus.emit('ui:show_message', { text: msg });

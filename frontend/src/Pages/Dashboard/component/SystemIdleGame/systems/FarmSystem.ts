@@ -15,6 +15,8 @@ import {
 import { T } from '../world/utils';
 import { gameBus } from '../shared/EventBus';
 import { WorldGrid, ObjectType } from '../shared/WorldGrid';
+import { WorldStateManager } from '../shared/WorldStateManager';
+import type { WorldActionDispatcher } from './WorldActionSystem';
 
 export interface FarmTileBackendData {
   tx:        number;
@@ -32,14 +34,21 @@ export class FarmSystem {
   private tiles       = new Map<string, FarmTile>();
   private scene:      Phaser.Scene;
   private grid:       WorldGrid | null;
+  private worldState: WorldStateManager | null;
+  private actionDispatcher: WorldActionDispatcher | null = null;
   /** Set of tile keys whose sensor is currently overlapping the player */
   private overlapping = new Set<string>();
 
-  constructor(scene: Phaser.Scene, grid?: WorldGrid | null) {
+  constructor(scene: Phaser.Scene, grid?: WorldGrid | null, worldState?: WorldStateManager | null) {
     this.scene = scene;
     this.grid  = grid ?? null;
+    this.worldState = worldState ?? null;
     registerFarmTileTextures(scene);
     registerCropTextures(scene);
+  }
+
+  setActionDispatcher(dispatcher: WorldActionDispatcher | null): void {
+    this.actionDispatcher = dispatcher;
   }
 
   /**
@@ -101,6 +110,7 @@ export class FarmSystem {
     const tile = new FarmTile(this.scene, tx, ty, state, cropData);
     this.tiles.set(k, tile);
     this.grid?.setObject(tx, ty, ObjectType.FARM_TILLED);  // farm tiles don't block pathfinding
+    this.syncTileState(tx, ty, state, cropData);
     // If player already registered, wire up the new tile's sensor immediately
     const player = (this as any)._playerSprite as Phaser.Physics.Arcade.Sprite | undefined;
     if (player) this._addSensorOverlap(k, tile, player);
@@ -112,6 +122,7 @@ export class FarmSystem {
     const tile = this.tiles.get(this.key(tx, ty));
     if (tile) {
       tile.updateState(validState, cropData);
+      this.syncTileState(tx, ty, validState, cropData);
     } else {
       this.createTile(tx, ty, validState, cropData);
     }
@@ -123,6 +134,8 @@ export class FarmSystem {
       tile.destroy();
       this.tiles.delete(this.key(tx, ty));
       this.grid?.setObject(tx, ty, ObjectType.EMPTY);
+      this.worldState?.unregisterCrop(this.key(tx, ty));
+      this.worldState?.unregisterObject(this.key(tx, ty));
     }
   }
 
@@ -146,7 +159,11 @@ export class FarmSystem {
   update(gameTick: number): void {
     this.overlapping.clear();   // Phaser overlap fires each frame; cleared so only current frame counts
     for (const tile of this.tiles.values()) {
+      const prevState = tile.state;
       tile.updateCropVisual(gameTick);
+      if (tile.state !== prevState) {
+        this.syncTileState(tile.tx, tile.ty, tile.state, tile.cropData);
+      }
     }
   }
 
@@ -178,9 +195,16 @@ export class FarmSystem {
 
     // Scythe on bare ground → till (pass 'scythe' so backend validates capability)
     if (currentTool === 'scythe' && this.canTill(tx, ty)) {
-      gameBus.emit('farm:action', { action: 'till', tx, ty, itemId: 'scythe' });
-      this.createTile(tx, ty, 'tilled', null);
-      return true;
+      if (this.actionDispatcher) {
+        return this.actionDispatcher.dispatchAction({
+          type: 'TILL_TILE',
+          actorId: 'player',
+          tx,
+          ty,
+          itemId: 'scythe',
+        }).ok;
+      }
+      return this.applyTillTile('player', tx, ty, 'scythe');
     }
 
     const keys = this.getCandidateKeys(tx, ty, playerX, playerY);
@@ -194,14 +218,30 @@ export class FarmSystem {
 
       // Watering can (currentTool 'water' → itemId 'watering_can' for backend validation)
       if (currentTool === 'water' && ['tilled', 'seeded', 'growing', 'watered'].includes(state)) {
-        gameBus.emit('farm:action', { action: 'water', tx: cx, ty: cy, itemId: 'watering_can' });
-        return true;
+        if (this.actionDispatcher) {
+          return this.actionDispatcher.dispatchAction({
+            type: 'WATER_TILE',
+            actorId: 'player',
+            tx: cx,
+            ty: cy,
+            itemId: 'watering_can',
+          }).ok;
+        }
+        return this.applyWaterTile('player', cx, cy, 'watering_can');
       }
 
       // Seed in hand → plant
       if (heldItemId?.endsWith('_seed') && ['tilled', 'watered'].includes(state)) {
-        gameBus.emit('farm:action', { action: 'plant', tx: cx, ty: cy, itemId: heldItemId });
-        return true;
+        if (this.actionDispatcher) {
+          return this.actionDispatcher.dispatchAction({
+            type: 'PLANT_CROP',
+            actorId: 'player',
+            tx: cx,
+            ty: cy,
+            itemId: heldItemId,
+          }).ok;
+        }
+        return this.applyPlantCrop('player', cx, cy, heldItemId);
       }
     }
     return false;
@@ -230,12 +270,53 @@ export class FarmSystem {
     return false;
   }
 
-  /** @deprecated Use handleToolUse / handleInteract instead. */
-  handlePlayerInteract(
-    playerX: number, playerY: number, currentTool: string, heldItemId?: string,
-  ): boolean {
-    return this.handleToolUse(playerX, playerY, currentTool, heldItemId)
-        || this.handleInteract(playerX, playerY);
+  harvestTile(tx: number, ty: number): boolean {
+    const cropId = this.worldState?.getCrop(this.key(tx, ty))?.id ?? this.key(tx, ty);
+    if (this.actionDispatcher) {
+      return this.actionDispatcher.dispatchAction({
+        type: 'HARVEST_CROP',
+        actorId: 'player',
+        cropId,
+        tx,
+        ty,
+      }).ok;
+    }
+    return this.applyHarvestCrop('player', tx, ty, cropId);
+  }
+
+  applyHarvestCrop(_actorId: string, tx: number, ty: number, cropId: string): boolean {
+    const tile = this.tiles.get(this.key(tx, ty));
+    if (!tile || tile.state !== 'ready') return false;
+
+    gameBus.emit('farm:action', { action: 'harvest', tx: tile.tx, ty: tile.ty });
+    tile.updateState('harvested', null);
+    this.syncTileState(tx, ty, 'harvested', null);
+    this.worldState?.patchCrop(cropId, {
+      state: 'harvested',
+      readyAt: null,
+    });
+    return true;
+  }
+
+  applyTillTile(_actorId: string, tx: number, ty: number, itemId?: string): boolean {
+    if (!this.canTill(tx, ty)) return false;
+    gameBus.emit('farm:action', { action: 'till', tx, ty, itemId });
+    this.createTile(tx, ty, 'tilled', null);
+    return true;
+  }
+
+  applyWaterTile(_actorId: string, tx: number, ty: number, itemId?: string): boolean {
+    const tile = this.tiles.get(this.key(tx, ty));
+    if (!tile || !['tilled', 'seeded', 'growing', 'watered'].includes(tile.state)) return false;
+    gameBus.emit('farm:action', { action: 'water', tx, ty, itemId });
+    return true;
+  }
+
+  applyPlantCrop(_actorId: string, tx: number, ty: number, itemId: string): boolean {
+    const tile = this.tiles.get(this.key(tx, ty));
+    if (!tile || !['tilled', 'watered'].includes(tile.state)) return false;
+    gameBus.emit('farm:action', { action: 'plant', tx, ty, itemId });
+    return true;
   }
 
   // ── Accessors ─────────────────────────────────────────────────────────────
@@ -246,5 +327,44 @@ export class FarmSystem {
 
   getAllTiles(): FarmTile[] {
     return [...this.tiles.values()];
+  }
+
+  private syncTileState(
+    tx: number,
+    ty: number,
+    state: FarmTileStateType,
+    cropData?: CropData | null,
+  ): void {
+    if (!this.worldState) return;
+
+    const key = this.key(tx, ty);
+    const { cx, cy } = this.grid?.cellToWorld(tx, ty) ?? { cx: tx * T + T / 2, cy: ty * T + T / 2 };
+
+    this.worldState.registerObject({
+      id: key,
+      kind: 'farm_tile',
+      x: cx,
+      y: cy,
+      blocking: false,
+      interactable: state === 'ready',
+      state,
+      meta: {
+        tx,
+        ty,
+      },
+    });
+
+    this.worldState.registerCrop({
+      id: key,
+      tileKey: key,
+      tx,
+      ty,
+      cropId: cropData?.cropId ?? 'empty',
+      state,
+      plantedAt: cropData?.plantedAt ?? null,
+      readyAt: cropData?.readyAt ?? null,
+      numStages: cropData?.numStages,
+      plantRow: cropData?.plantRow,
+    });
   }
 }

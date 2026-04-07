@@ -15,8 +15,8 @@ import { T } from '../world/utils';
 import { WORLD_W, WORLD_H } from '../constants';
 
 // ─── Grid dimensions ─────────────────────────────────────────────────────────
-export const GRID_COLS = Math.ceil(WORLD_W / T);   // 26
-export const GRID_ROWS = Math.ceil(WORLD_H / T);   // 20
+export const GRID_COLS = Math.ceil(WORLD_W / T);   // 60
+export const GRID_ROWS = Math.ceil(WORLD_H / T);   // 40
 
 // ─── Terrain types ────────────────────────────────────────────────────────────
 export const TerrainType = {

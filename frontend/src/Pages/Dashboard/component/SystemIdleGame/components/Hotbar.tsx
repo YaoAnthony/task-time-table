@@ -20,6 +20,10 @@ import basicPlantsUrl from '../../../../../assets/Sprout-Lands/Objects/Basic_Pla
 import furnitureUrl   from '../../../../../assets/Sprout-Lands/Objects/Basic_Furniture.png';
 // @ts-ignore
 import eggNestUrl     from '../../../../../assets/Sprout-Lands/Characters/Egg_And_Nest.png';
+// @ts-ignore
+import appleRipeUrl      from '../../../../../assets/Sprout-Lands/items/apple/apple_ripe.png';
+// @ts-ignore
+import raspberryRipeUrl  from '../../../../../assets/Sprout-Lands/items/raspberry/raspberry_ripe.png';
 
 // ── Sheet type ────────────────────────────────────────────────────────────────
 type Sheet = 'tools' | 'plants' | 'furniture' | 'egg-nest';
@@ -81,6 +85,12 @@ const SPRITE_MAP: Record<string, { sheet: Sheet; x: number; y: number }> = {
   chicken_nest:          { sheet: 'egg-nest',  x: 48, y: 0 },   // frame 3: empty nest
 };
 
+// ── Standalone PNG icons (full-image, no crop needed) ────────────────────────
+const STANDALONE_IMG: Record<string, string> = {
+  fruit:     appleRipeUrl,
+  raspberry: raspberryRipeUrl,
+};
+
 // ── Tint fallback map (for items with iconX < 0, e.g. log / stone / egg) ──────
 const TINT_MAP = new Map(
   ALL_ITEM_DEFS
@@ -133,6 +143,13 @@ const SpriteCanvas: React.FC<{ sheet: Sheet; x: number; y: number; size: number 
 const SlotContent: React.FC<{ item: SlotItem; iconSize: number }> = ({ item, iconSize }) => {
   const sprite = SPRITE_MAP[item.itemId];
   if (sprite) return <SpriteCanvas sheet={sprite.sheet} x={sprite.x} y={sprite.y} size={iconSize} />;
+
+  // Standalone PNG icons (fruit, raspberry, …)
+  const imgUrl = STANDALONE_IMG[item.itemId];
+  if (imgUrl) return (
+    <img src={imgUrl} width={iconSize} height={iconSize}
+      style={{ imageRendering: 'pixelated', display: 'block' }} />
+  );
 
   // Tint circle fallback for materials (log, stone, berry, egg…)
   const tint = TINT_MAP.get(item.itemId);

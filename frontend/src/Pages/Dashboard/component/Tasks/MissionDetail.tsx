@@ -54,8 +54,14 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
     const isUrgent = listType === 'urgent';
 
     // "做完一个才会显示下一个": Filter nodes to only show actionable or currently active ones.
-    const activeNodes = nodes.filter(n => !n.completed && (n.isActive || n.failed || n.canStart || n.canRestart));
+    const visibleNodes = nodes.filter((node) => !node.completed);
+    const nodeTitleMap = new Map(nodes.map((node) => [node.nodeId, node.title]));
     const isFullyCompleted = accepted && nodes.length > 0 && nodes.every(n => n.completed);
+
+    const jumpToNode = (nodeId: string) => {
+        const target = document.getElementById(`mission-node-${nodeId}`);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
     return (
         <div className="relative h-full w-full flex flex-col bg-white/50 dark:bg-black/30 rounded-2xl overflow-hidden border border-white/50 dark:border-white/10 shadow-sm group backdrop-blur-[2px]">
             
@@ -142,22 +148,25 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                             <p className="text-xl font-black tracking-widest">委托已完成</p>
                             <p className="text-sm font-bold opacity-60 mt-2">所有的因果线均已平息</p>
                         </motion.div>
-                    ) : activeNodes.length === 0 ? (
+                    ) : visibleNodes.length === 0 ? (
                         <div className="text-center py-10 opacity-50">
                             <p className="text-sm font-bold tracking-widest">未完待续...</p>
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {activeNodes.map((node) => (
+                            {visibleNodes.map((node) => (
                                 <motion.div 
                                     key={node.nodeId}
+                                    id={`mission-node-${node.nodeId}`}
                                     initial={{ opacity: 0, x: -20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className="bg-white/60 dark:bg-black/40 border-l-4 border-amber-400 dark:border-amber-500 rounded-r-xl p-6 shadow-sm"
+                                    className={`bg-white/60 dark:bg-black/40 border-l-4 rounded-r-xl p-6 shadow-sm ${
+                                        node.isLocked ? 'border-slate-400 dark:border-slate-500' : 'border-amber-400 dark:border-amber-500'
+                                    }`}
                                 >
                                     <div className="flex items-center justify-between gap-4 mb-3">
                                         <h3 className="text-lg font-bold text-neutral-800 dark:text-white flex items-center gap-2">
-                                            <FaPlay className="text-[10px] text-amber-500" />
+                                            {node.isLocked ? <FaLock className="text-[10px] text-slate-500" /> : <FaPlay className="text-[10px] text-amber-500" />}
                                             {node.title}
                                         </h3>
                                         <span className="text-[10px] font-bold text-neutral-500 dark:text-white/50 tracking-widest uppercase bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded">
@@ -167,6 +176,25 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                     <p className="text-sm text-neutral-600 dark:text-white/70 leading-relaxed mb-6">
                                         {node.description || node.content || '跟随指示完成该阶段目标...'}
                                     </p>
+
+                                    {node.isLocked && (
+                                        <div className="mb-6 rounded-xl border border-slate-300/70 dark:border-slate-600 bg-slate-100/70 dark:bg-slate-900/30 px-4 py-3">
+                                            <p className="text-xs font-black tracking-widest text-slate-600 dark:text-slate-300 mb-2">
+                                                该任务已上锁，需要继续完成以下任务
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(node.blockedByNodeIds || []).map((blockedNodeId, index) => (
+                                                    <button
+                                                        key={blockedNodeId}
+                                                        onClick={() => jumpToNode(blockedNodeId)}
+                                                        className="text-xs px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 border border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
+                                                    >
+                                                        {(node.blockedByTitles && node.blockedByTitles[index]) || nodeTitleMap.get(blockedNodeId) || blockedNodeId}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {node.rewards && ((node.rewards.coins ?? 0) > 0 || (node.rewards.experience && node.rewards.experience.length > 0) || (node.rewards.items && node.rewards.items.length > 0)) && (
                                         <div className="mb-6 flex flex-col gap-2">
@@ -263,6 +291,11 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                             >
                                                 <FaRedo className="text-xs"/> 重新挑战
                                             </motion.button>
+                                        )}
+                                        {node.isLocked && (
+                                            <span className="text-xs font-bold tracking-widest text-slate-500 dark:text-slate-300">
+                                                等待前置任务完成后解锁
+                                            </span>
                                         )}
                                     </div>
                                 </motion.div>

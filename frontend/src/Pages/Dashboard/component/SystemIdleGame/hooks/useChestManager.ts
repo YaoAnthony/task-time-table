@@ -77,10 +77,14 @@ export function useChestManager(sceneRef: RefObject<GameScene | null>) {
       dispatch(setWalletCoins(result.wallet.coins));
       dispatch(patchWalletCoins(result.wallet.coins));
       dispatch(setInventory(result.inventory));
-      sceneRef.current?.removeChest(chestId);
+      sceneRef.current?.dispatchWorldAction({
+        type: 'REMOVE_OBJECT',
+        actorId: 'player',
+        objectId: chestId,
+        objectKind: 'chest',
+      }, 'server');
       refreshChests();
     } catch {
-      sceneRef.current?.removeChest(chestId);
       refreshChests();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

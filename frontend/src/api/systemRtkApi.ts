@@ -347,6 +347,34 @@ export const systemRtkApi = createApi({
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
         }),
 
+        updateMissionNode: builder.mutation<
+            { success: boolean },
+            {
+                systemId: string;
+                missionListId: string;
+                nodeId: string;
+                title: string;
+                description?: string;
+                content?: string;
+                notice?: string;
+                timeCostMinutes: number;
+                canInterrupt?: boolean;
+                rewards?: {
+                    coins?: number;
+                    experience?: Array<{ name: string; value: number }>;
+                    items?: Array<{ itemKey: string; quantity: number }>;
+                    unlockMissions?: Array<{ missionId: string; title: string; description?: string }>;
+                };
+            }
+        >({
+            query: ({ systemId, missionListId, nodeId, ...body }) => ({
+                url: `/system/${systemId}/mission-lists/${missionListId}/nodes/${nodeId}`,
+                method: 'PATCH',
+                body,
+            }),
+            invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }],
+        }),
+
         getMemberTaskCenter: builder.query<
             {
                 success: boolean;
@@ -765,6 +793,76 @@ export const systemRtkApi = createApi({
                 body: {},
             }),
         }),
+
+        aiTaskChat: builder.mutation<
+            {
+                reply: string;
+                action: string | null;
+                proposal?: {
+                    title: string;
+                    listType: string;
+                    description: string;
+                    imageKeywords: string;
+                    nodes: Array<{
+                        tempId: string;
+                        parentTempId: string | null;
+                        prerequisiteTempIds?: string[];
+                        title: string;
+                        description?: string;
+                        timeCostMinutes: number;
+                        rewards?: { coins?: number; items?: Array<{ itemKey: string; quantity: number }> };
+                    }>;
+                    mode?: 'create_new_list' | 'attach_to_existing_list';
+                    structureType?: 'linear' | 'branched' | 'merge';
+                    attachTargetMissionListId?: string | null;
+                    attachTargetMissionListTitle?: string;
+                    attachTargetNodeId?: string | null;
+                    attachTargetNodeTitle?: string;
+                };
+                missionList?: object;
+            },
+            { systemId: string; messages: Array<{ role: string; content: string }> }
+        >({
+            query: ({ systemId, messages }) => ({
+                url: `/system/${systemId}/ai-task-chat`,
+                method: 'POST',
+                body: { messages },
+            }),
+        }),
+
+        aiTaskConfirm: builder.mutation<
+            { success: boolean; reply: string; action: string; missionList: object },
+            {
+                systemId: string;
+                proposal: {
+                    title: string;
+                    listType: string;
+                    description: string;
+                    imageKeywords: string;
+                    nodes: Array<{
+                        tempId: string;
+                        parentTempId: string | null;
+                        prerequisiteTempIds?: string[];
+                        title: string;
+                        description?: string;
+                        timeCostMinutes: number;
+                        rewards?: { coins?: number; items?: Array<{ itemKey: string; quantity: number }> };
+                    }>;
+                    mode?: 'create_new_list' | 'attach_to_existing_list';
+                    structureType?: 'linear' | 'branched' | 'merge';
+                    attachTargetMissionListId?: string | null;
+                    attachTargetMissionListTitle?: string;
+                    attachTargetNodeId?: string | null;
+                    attachTargetNodeTitle?: string;
+                };
+            }
+        >({
+            query: ({ systemId, proposal }) => ({
+                url: `/system/${systemId}/ai-task-confirm`,
+                method: 'POST',
+                body: { proposal },
+            }),
+        }),
     }),
 });
 
@@ -788,6 +886,7 @@ export const {
     useDeleteMissionListMutation,
     useCreateMissionNodeMutation,
     useDeleteMissionNodeMutation,
+    useUpdateMissionNodeMutation,
     useGetMemberTaskCenterQuery,
     useLazyGetMemberTaskCenterQuery,
     useAcceptMissionListMutation,
@@ -829,4 +928,6 @@ export const {
     useGetMemberDailyQuestsQuery,
     useLazyGetMemberDailyQuestsQuery,
     useCompleteDailyQuestMutation,
+    useAiTaskChatMutation,
+    useAiTaskConfirmMutation,
 } = systemRtkApi;

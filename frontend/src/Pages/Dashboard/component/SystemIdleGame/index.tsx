@@ -18,9 +18,6 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../../../../Redux/store';
 
 import { clearHotbarSlot } from '../../../../Redux/Features/gameSlice';
-import type { FarmTile }   from '../../../../Redux/Features/gameSlice';
-import { upsertFarmTile }  from '../../../../Redux/Features/gameSlice';
-import type { GameChest }  from '../../../../Types/Profile';
 
 import { GameScene }       from './GameScene';
 import MultiplayPanel      from './components/MultiplayPanel';
@@ -36,6 +33,7 @@ import { useGameAuth }      from './hooks/useGameAuth';
 import { useHotbar }        from './hooks/useHotbar';
 import { useNpcChat }       from './hooks/useNpcChat';
 import { useChestManager }  from './hooks/useChestManager';
+import { useIdleGameSyncBoundary } from './hooks/useIdleGameSyncBoundary';
 import { useMultiplay }     from './hooks/useMultiplay';
 import { useFarmActions }   from './hooks/useFarmActions';
 import { usePhaserBoot }    from './hooks/usePhaserBoot';
@@ -72,6 +70,13 @@ const SystemIdleGame: React.FC = () => {
 
   // 农田/物品 gameBus 订阅（无状态，副作用）
   useFarmActions(sceneRef, multiplay.multiplayRoomIdRef);
+
+  const syncBoundary = useIdleGameSyncBoundary({
+    sceneRef,
+    multiplayActiveRef: multiplay.multiplayActiveRef,
+    setAvailableChests: chests.setAvailableChests,
+    setNpcDialog: npcChat.setDialog,
+  });
 
   // ── 附加 UI 状态 ─────────────────────────────────────────────────────────
   const [timeStr,  setTimeStr ] = useState('06:00');
@@ -124,46 +129,7 @@ const SystemIdleGame: React.FC = () => {
 
   useSSEWithReconnect({
     url: sseUrl,
-    onMessage: (event) => {
-      try {
-        const data = JSON.parse(event.data) as {
-          type:          string;
-          chest?:        GameChest;
-          npcName?:      string;
-          actions?:      import('./types').NpcAction[];
-          announcement?: string;
-          tile?:         FarmTile & { tx: number; ty: number; state: string };
-        };
-
-        if (data.type === 'game_chest_spawned' && data.chest) {
-          chests.setAvailableChests(prev =>
-            prev.some(c => c.id === data.chest!.id) ? prev : [...prev, data.chest!],
-          );
-          sceneRef.current?.addChest(data.chest);
-        }
-
-        if (data.type === 'farm_tile_updated' && data.tile) {
-          dispatch(upsertFarmTile(data.tile as FarmTile));
-          const t = data.tile as any;
-          const cropData = t.cropId ? {
-            cropId: t.cropId, plantRow: t.plantRow ?? 0,
-            numStages: t.numStages ?? 4, plantedAt: t.plantedAt, readyAt: t.readyAt,
-          } : null;
-          sceneRef.current?.farmSystem?.updateTileState?.(t.tx, t.ty, t.state, cropData);
-        }
-
-        if (data.type === 'npc_command' && data.npcName && Array.isArray(data.actions)) {
-          if (data.announcement) {
-            npcChat.setDialog({ visible: true, text: data.announcement, npcName: data.npcName });
-            setTimeout(
-              () => npcChat.setDialog(d => d.text === data.announcement ? { ...d, visible: false } : d),
-              4000,
-            );
-          }
-          sceneRef.current?.executeNpcActions(data.npcName, data.actions);
-        }
-      } catch { /* malformed SSE — ignore */ }
-    },
+    onMessage: syncBoundary.handleSseMessage,
   });
 
   // ─────────────────────────────────────────────────────────────────────────
