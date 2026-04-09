@@ -32,10 +32,10 @@ const ChatMessageList: React.FC<Props> = ({ messages, isLoading, confirmingIdx, 
                                 <FaRobot className="text-white text-[10px]" />
                             </div>
                         )}
-                        <div className={`flex flex-col gap-2 max-w-[88%] ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
+                        <div className={`flex flex-col gap-2 w-full ${message.role === 'user' ? 'items-end' : 'items-start'}`}>
                             {message.content && (
                                 <div
-                                    className={`px-4 py-3 rounded-2xl text-sm leading-relaxed select-text ${
+                                    className={`px-4 py-3 rounded-2xl text-sm leading-relaxed select-text max-w-[min(92%,860px)] ${
                                         message.role === 'user'
                                             ? 'bg-violet-500 text-white rounded-br-sm whitespace-pre-wrap'
                                             : message.isAction
@@ -77,7 +77,7 @@ const ChatMessageList: React.FC<Props> = ({ messages, isLoading, confirmingIdx, 
                             )}
 
                             {message.preview && (
-                                <div className="w-full">
+                                <div className="w-full max-w-none">
                                     <ProposalPreview
                                         proposal={message.preview}
                                         onConfirm={() => onConfirm(index, message.preview!)}

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { FaCheckCircle, FaClock, FaCoins, FaGift, FaSpinner } from 'react-icons/fa';
+import { FaCheckCircle, FaClock, FaCoins, FaSpinner } from 'react-icons/fa';
 import type { ProposalNode, Proposal } from '../types';
+import TaskGraphCanvas, { type TaskGraphNode } from '../../task-graph/TaskGraphCanvas';
 
 const listTypeLabel = (value: string) => (value === 'urgent' ? 'Urgent Mission' : 'Mainline Mission');
 
@@ -43,6 +44,23 @@ interface Props {
 const ProposalPreviewV2: React.FC<Props> = ({ proposal, onConfirm, onOther, isConfirming }) => {
     const [otherInput, setOtherInput] = useState('');
     const chain = useMemo(() => buildDisplayChain(proposal.nodes), [proposal.nodes]);
+    const graphNodes = useMemo<TaskGraphNode[]>(
+        () =>
+            proposal.nodes.map((node) => ({
+                id: node.tempId,
+                parentId: node.parentTempId,
+                prerequisiteIds: node.prerequisiteTempIds || [],
+                title: node.title,
+                description: node.description,
+                timeCostMinutes: node.timeCostMinutes,
+                childrenIds: proposal.nodes
+                    .filter((candidate) => candidate.parentTempId === node.tempId)
+                    .map((candidate) => candidate.tempId),
+                status: 'pending',
+                badgeText: 'Pending',
+            })),
+        [proposal.nodes],
+    );
     const totalCoins = proposal.nodes.reduce((sum, node) => sum + (node.rewards?.coins || 0), 0);
     const totalMinutes = proposal.nodes.reduce((sum, node) => sum + (node.timeCostMinutes || 0), 0);
 
@@ -66,6 +84,16 @@ const ProposalPreviewV2: React.FC<Props> = ({ proposal, onConfirm, onOther, isCo
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-700 dark:text-blue-300">
                         {structureTypeLabel(proposal.structureType)}
                     </span>
+                    {proposal.rewardGoalSummary && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                            Reward Goal
+                        </span>
+                    )}
+                    {typeof proposal.rewardTargetCoins === 'number' && proposal.rewardTargetCoins > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                            {proposal.rewardPlanningMode === 'user_specified' ? 'User Reward Target' : 'AI Reward Suggestion'}: {proposal.rewardTargetCoins} coins
+                        </span>
+                    )}
                     {proposal.mode === 'attach_to_existing_list' && proposal.attachTargetMissionListTitle && (
                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                             Attach to {proposal.attachTargetMissionListTitle}
@@ -74,6 +102,16 @@ const ProposalPreviewV2: React.FC<Props> = ({ proposal, onConfirm, onOther, isCo
                 </div>
                 {proposal.description && (
                     <p className="text-[11px] text-neutral-500 dark:text-white/50 leading-relaxed mt-0.5">{proposal.description}</p>
+                )}
+                {proposal.rewardGoalSummary && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed mt-1">
+                        Desired rewards: {proposal.rewardGoalSummary}
+                    </p>
+                )}
+                {proposal.rewardPlanningNote && (
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed mt-1">
+                        Reward plan: {proposal.rewardPlanningNote}
+                    </p>
                 )}
                 <div className="flex items-center gap-3 mt-2 text-[11px] text-neutral-500 dark:text-white/40">
                     <span className="flex items-center gap-1">
@@ -90,54 +128,16 @@ const ProposalPreviewV2: React.FC<Props> = ({ proposal, onConfirm, onOther, isCo
                 </div>
             </div>
 
-            <div className="px-4 py-3 space-y-2 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-violet-200 dark:scrollbar-thumb-violet-700/40 scrollbar-track-transparent">
-                {chain.map((node, index) => (
-                    <div key={node.tempId} className="flex items-start gap-2">
-                        <div className="flex flex-col items-center shrink-0 mt-1">
-                            <div className="w-5 h-5 rounded-full bg-violet-500/20 dark:bg-violet-500/30 border border-violet-300 dark:border-violet-500/50 flex items-center justify-center">
-                                <span className="text-[9px] font-black text-violet-600 dark:text-violet-300">{index + 1}</span>
-                            </div>
-                            {index < chain.length - 1 && (
-                                <div className="w-px flex-1 bg-violet-200 dark:bg-violet-700/40 mt-1 mb-0" style={{ minHeight: 10 }} />
-                            )}
-                        </div>
-
-                        <div className="flex-1 pb-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-[12px] font-semibold text-neutral-800 dark:text-white leading-tight">{node.title}</span>
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-500/15 text-slate-700 dark:text-slate-300">
-                                    Pending
-                                </span>
-                                <span className="text-[10px] text-neutral-400 dark:text-white/30 flex items-center gap-0.5">
-                                    <FaClock className="text-[8px]" />
-                                    {formatMinutes(node.timeCostMinutes)}
-                                </span>
-                                {(node.rewards?.coins || 0) > 0 && (
-                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
-                                        <FaCoins className="text-[8px]" />
-                                        {node.rewards?.coins}
-                                    </span>
-                                )}
-                                {(node.rewards?.items || []).length > 0 && (
-                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
-                                        <FaGift className="text-[8px]" />
-                                        {node.rewards?.items?.length} item rewards
-                                    </span>
-                                )}
-                            </div>
-
-                            {node.description && (
-                                <p className="text-[11px] text-neutral-400 dark:text-white/40 leading-snug mt-0.5">{node.description}</p>
-                            )}
-
-                            {(node.prerequisiteTempIds || []).length > 1 && (
-                                <p className="text-[10px] text-rose-500 dark:text-rose-300 mt-1">
-                                    Unlocks after {node.prerequisiteTempIds?.length} prerequisite nodes are completed
-                                </p>
-                            )}
-                        </div>
-                    </div>
-                ))}
+            <div className="px-4 py-3">
+                <TaskGraphCanvas
+                    nodes={graphNodes}
+                    rootNodeId={graphNodes.find((node) => node.parentId === null)?.id ?? null}
+                    readonly
+                    compact
+                    showLegend={false}
+                    className="bg-transparent min-h-[360px]"
+                    emptyTitle="No preview nodes generated yet."
+                />
             </div>
 
             <div className="px-4 py-3 border-t border-violet-200 dark:border-violet-500/30 bg-violet-50/50 dark:bg-violet-900/10 space-y-2">

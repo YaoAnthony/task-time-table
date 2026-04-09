@@ -803,6 +803,10 @@ export const systemRtkApi = createApi({
                     listType: string;
                     description: string;
                     imageKeywords: string;
+                    rewardGoalSummary?: string;
+                    rewardTargetCoins?: number | null;
+                    rewardPlanningMode?: 'user_specified' | 'ai_suggested';
+                    rewardPlanningNote?: string;
                     nodes: Array<{
                         tempId: string;
                         parentTempId: string | null;
@@ -810,7 +814,11 @@ export const systemRtkApi = createApi({
                         title: string;
                         description?: string;
                         timeCostMinutes: number;
-                        rewards?: { coins?: number; items?: Array<{ itemKey: string; quantity: number }> };
+                        rewards?: {
+                            experience?: Array<{ name: string; value: number }>;
+                            coins?: number;
+                            items?: Array<{ itemKey: string; quantity: number }>;
+                        };
                     }>;
                     mode?: 'create_new_list' | 'attach_to_existing_list';
                     structureType?: 'linear' | 'branched' | 'merge';
@@ -839,6 +847,10 @@ export const systemRtkApi = createApi({
                     listType: string;
                     description: string;
                     imageKeywords: string;
+                    rewardGoalSummary?: string;
+                    rewardTargetCoins?: number | null;
+                    rewardPlanningMode?: 'user_specified' | 'ai_suggested';
+                    rewardPlanningNote?: string;
                     nodes: Array<{
                         tempId: string;
                         parentTempId: string | null;
@@ -846,7 +858,11 @@ export const systemRtkApi = createApi({
                         title: string;
                         description?: string;
                         timeCostMinutes: number;
-                        rewards?: { coins?: number; items?: Array<{ itemKey: string; quantity: number }> };
+                        rewards?: {
+                            experience?: Array<{ name: string; value: number }>;
+                            coins?: number;
+                            items?: Array<{ itemKey: string; quantity: number }>;
+                        };
                     }>;
                     mode?: 'create_new_list' | 'attach_to_existing_list';
                     structureType?: 'linear' | 'branched' | 'merge';

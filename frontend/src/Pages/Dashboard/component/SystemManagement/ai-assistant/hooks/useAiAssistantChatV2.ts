@@ -15,7 +15,7 @@ const isStructuralValidationFailure = (message: string) =>
 export const useAiAssistantChatV2 = ({ systemId, systemName, onCreated }: Options) => {
     const greeting: Message = {
         role: 'assistant',
-        content: `I am the task planning assistant for "${systemName}". Tell me the goal you want to accomplish, and I will draft a structured task plan with branches, merge gates, and rewards when appropriate.`,
+        content: `I am the task planning assistant for "${systemName}". Tell me the goal you want to accomplish. Before I generate the task tree, I will also confirm how many coins you want to earn in total, unless you want me to suggest the reward for you.`,
     };
 
     const [messages, setMessages] = useState<Message[]>(() => loadAiAssistantMessages(systemId, [greeting]));

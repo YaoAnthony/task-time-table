@@ -6,6 +6,7 @@ export interface ProposalNode {
     description?: string;
     timeCostMinutes: number;
     rewards?: {
+        experience?: Array<{ name: string; value: number }>;
         coins?: number;
         items?: Array<{ itemKey: string; quantity: number }>;
     };
@@ -18,6 +19,10 @@ export interface Proposal {
     listType: string;
     description: string;
     imageKeywords: string;
+    rewardGoalSummary?: string;
+    rewardTargetCoins?: number | null;
+    rewardPlanningMode?: 'user_specified' | 'ai_suggested';
+    rewardPlanningNote?: string;
     attachTargetMissionListId?: string | null;
     attachTargetMissionListTitle?: string;
     attachTargetNodeId?: string | null;

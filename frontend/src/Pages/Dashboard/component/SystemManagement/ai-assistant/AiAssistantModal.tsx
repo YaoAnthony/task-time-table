@@ -35,7 +35,7 @@ const AiAssistantModal: React.FC<Props> = ({ systemId, systemName, onClose, onCr
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-5">
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -49,7 +49,7 @@ const AiAssistantModal: React.FC<Props> = ({ systemId, systemName, onClose, onCr
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="relative w-full max-w-2xl h-[640px] flex flex-col bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 overflow-hidden select-text"
+                className="relative w-full max-w-[min(96vw,1480px)] h-[min(90vh,980px)] flex flex-col bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl border border-white/20 dark:border-white/10 overflow-hidden select-text"
                 onClick={(event) => event.stopPropagation()}
             >
                 <div className="flex items-center gap-3 px-5 py-4 border-b border-black/5 dark:border-white/10 bg-gradient-to-r from-violet-500/10 to-blue-500/10">
