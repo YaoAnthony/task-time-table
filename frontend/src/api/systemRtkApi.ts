@@ -431,6 +431,16 @@ export const systemRtkApi = createApi({
                 };
                 completedNodeId?: string;
                 missionListCompleted?: boolean;
+                mergeBonus?: {
+                    tier?: 'milestone' | 'boss' | null;
+                    coins?: number;
+                    experience?: Array<{ name: string; value: number }>;
+                } | null;
+                unlockedMergeNodes?: Array<{
+                    nodeId: string;
+                    title: string;
+                    mergeTier?: 'milestone' | 'boss' | null;
+                }>;
             },
             { systemId: string; missionListId: string; nodeId: string }
         >({

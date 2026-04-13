@@ -19,7 +19,7 @@ const DeleteSystemConfirmModal: React.FC<DeleteSystemConfirmModalProps> = ({
 		<Modal
 			isOpen={isOpen}
 			onClose={onClose}
-			title="确 认 删 除 界 域"
+			title="确 认 终 结 界 域"
 		>
 			<div className="w-[min(92vw,560px)] p-6 bg-white/50 dark:bg-black/20 rounded-b-2xl">
 				<div className="flex flex-col items-center justify-center mb-6">
@@ -27,17 +27,17 @@ const DeleteSystemConfirmModal: React.FC<DeleteSystemConfirmModalProps> = ({
 						⚠️
 					</div>
 					<h3 className="text-xl font-black text-neutral-800 dark:text-white tracking-widest text-center">
-						你正在瓦解界域 <span className="text-red-500 dark:text-red-400 underline decoration-red-300 dark:decoration-red-500/50 underline-offset-4">{systemName}</span>
+						你即将令界域 <span className="text-red-500 dark:text-red-400 underline decoration-red-300 dark:decoration-red-500/50 underline-offset-4">{systemName}</span> 归于寂灭
 					</h3>
 				</div>
                 
 				<div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900/50 rounded-xl p-4 mb-6 relative overflow-hidden">
 					<div className="absolute top-0 left-0 w-1 h-full bg-orange-400 dark:bg-orange-500"></div>
 					<p className="text-sm font-medium text-neutral-700 dark:text-white/80 leading-relaxed pl-3">
-						世界线的崩塌将通知所有相连的观测者。该界域产生的所有专属法则和未消化物品将被抹除（世界主宰赋予的金币能量将得以保留），且界域将从时空中<strong className="text-red-600 dark:text-red-400">永久抹除</strong>。
+						一旦降下终末谕令，所有与此界域相连的旅者都将收到感应。该界域所孕育的专属法则、未收纳之物与残留痕迹都将化作尘埃（唯有世界主宰赐下的金币能量得以留存），而这片地界也将自时空中<strong className="text-red-600 dark:text-red-400">永久隐没</strong>。
 					</p>
 					<p className="text-sm font-black text-red-600 dark:text-red-400 mt-3 pl-3 tracking-wider">
-						此操作不可逆转，请慎重抉择。
+						此乃不可回溯之抉择，还请再三思量。
 					</p>
 				</div>
 
@@ -49,7 +49,7 @@ const DeleteSystemConfirmModal: React.FC<DeleteSystemConfirmModalProps> = ({
 						className="px-6 py-2.5 rounded-xl text-sm font-bold tracking-widest border transition-all duration-300 disabled:opacity-50
                         bg-white dark:bg-white/5 text-neutral-600 dark:text-white/70 border-neutral-200 dark:border-white/10 hover:bg-neutral-50 dark:hover:bg-white/10 hover:text-neutral-800 dark:hover:text-white shadow-sm"
 					>
-						取 消 并 保 留
+						暂 且 收 回 谕 令
 					</button>
 					<button
 						type="button"
@@ -59,7 +59,7 @@ const DeleteSystemConfirmModal: React.FC<DeleteSystemConfirmModalProps> = ({
                         bg-red-500 hover:bg-red-600 text-white border-transparent
                         dark:bg-red-600 dark:hover:bg-red-500 dark:text-white dark:border-red-500/50 shadow-red-500/30"
 					>
-						{isDeleting ? '正在执行崩坏程序...' : '执 行 抹 除 指 令'}
+						{isDeleting ? '正在引导终焉之力...' : '降 下 终 末 谕 令'}
 					</button>
 				</div>
 			</div>

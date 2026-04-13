@@ -38,16 +38,27 @@ const TaskDependencyGraph: React.FC<TaskDependencyGraphProps> = ({
     onPhantomClick,
     onNodeDelete,
 }) => {
-    const graphNodes: TaskGraphNode[] = taskTree.map((node) => ({
-        id: node.nodeId,
-        parentId: node.parentNodeId,
-        prerequisiteIds: node.prerequisiteNodeIds || [],
-        title: node.title,
-        description: node.description,
-        timeCostMinutes: node.timeCostMinutes,
-        childrenIds: node.childrenNodeIds,
-        status: node.status,
-    }));
+    const graphNodes: TaskGraphNode[] = taskTree.map((node) => {
+        const incomingCount = new Set([node.parentNodeId, ...(node.prerequisiteNodeIds || [])].filter(Boolean)).size;
+        const isMergeNode = incomingCount > 1;
+        const nodeKind = isMergeNode ? (incomingCount >= 3 ? 'boss' : 'milestone') : 'standard';
+
+        return {
+            id: node.nodeId,
+            parentId: node.parentNodeId,
+            prerequisiteIds: node.prerequisiteNodeIds || [],
+            title: node.title,
+            description: node.description,
+            timeCostMinutes: node.timeCostMinutes,
+            childrenIds: node.childrenNodeIds,
+            status: node.status,
+            isMergeNode,
+            nodeKind,
+            badgeText: isMergeNode ? (nodeKind === 'boss' ? 'Boss Gate' : 'Merge Gate') : undefined,
+            progressText: isMergeNode ? `Needs all ${incomingCount} incoming branches to clear.` : undefined,
+            rewardHint: isMergeNode ? (nodeKind === 'boss' ? 'Boss-tier merge reward node' : 'Milestone reward node') : undefined,
+        };
+    });
 
     return (
         <TaskGraphCanvas

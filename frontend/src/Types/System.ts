@@ -101,6 +101,18 @@ export interface Mission {
         isLocked?: boolean;
         blockedByNodeIds?: string[];
         blockedByTitles?: string[];
+        completedPrerequisiteNodeIds?: string[];
+        completedPrerequisiteTitles?: string[];
+        totalPrerequisiteCount?: number;
+        completedPrerequisiteCount?: number;
+        remainingPrerequisiteCount?: number;
+        isMergeNode?: boolean;
+        mergeSourceCount?: number;
+        mergeTier?: 'milestone' | 'boss' | null;
+        mergeBonusPreview?: {
+            coins?: number;
+            experience?: Array<{ name: string; value: number }>;
+        } | null;
         rewards?: {
             experience?: Array<{ name: string; value: number }>;
             coins?: number;

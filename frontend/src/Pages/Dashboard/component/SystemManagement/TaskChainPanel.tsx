@@ -1,52 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSelector } from 'react-redux';
 import { message } from 'antd';
-import { FaGamepad, FaTrash, FaExclamationTriangle, FaRobot } from 'react-icons/fa';
+import { FaRobot } from 'react-icons/fa';
 
 import { RootState } from '../../../../Redux/store';
-import type { MissionListType, SystemWithMission, MissionList } from '../../../../Types/System';
-
+import type { MissionList, SystemWithMission } from '../../../../Types/System';
 import TaskDependencyGraph from './TaskDependencyGraph';
 import TaskFormModal, { type EditableNode } from './TaskFormModal';
 import CreateTaskModal from './CreateTaskModal';
 import EditTaskModal from './EditTaskModal';
 import AiAssistantModal from './ai-assistant/AiAssistantModal';
-import {
-    useLazyGetSystemListQuery,
-    useCreateMissionListMutation,
-    useUpdateMissionListMutation,
-    useDeleteMissionListMutation,
-    useDeleteMissionNodeMutation,
-} from '../../../../api/systemRtkApi';
-
-const createInitialListForm = () => ({
-    listType: 'mainline' as MissionListType,
-    title: '',
-    image: '',
-    description: '',
-    unlockType: 'direct' as 'direct' | 'attributeLevel',
-    unlockAttributeName: '',
-    unlockMinLevel: 0,
-    failureEnabled: false,
-    pointPenaltyAttributeName: '',
-    pointPenaltyValue: 1,
-    itemPenaltyItemKey: '',
-    itemPenaltyQuantity: 1,
-});
+import DeleteMissionListDialog from './task-chain/components/DeleteMissionListDialog';
+import MissionListSidebar from './task-chain/components/MissionListSidebar';
+import { useTaskChainPanelController } from './task-chain/hooks/useTaskChainPanelController';
+import type { TaskRewardItemOption } from './task-chain/taskChainForms';
 
 const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
     const systems = useSelector((state: RootState) => state.system.systems);
-    const currentSystemData = systems.find((sys) => sys._id === systemId) as SystemWithMission | undefined;
+    const currentSystemData = systems.find((system) => system._id === systemId) as SystemWithMission | undefined;
     const missionLists = useMemo(() => currentSystemData?.missionLists || [], [currentSystemData]);
     const obtainableItems = useMemo(() => currentSystemData?.obtainableItems || [], [currentSystemData]);
-    const rewardItemOptions = useMemo(() => {
-        const options: Array<{ key: string; label: string; source: 'store' | 'obtainable' }> = [];
+    const rewardItemOptions = useMemo<TaskRewardItemOption[]>(() => {
+        const options: TaskRewardItemOption[] = [];
         const keySet = new Set<string>();
 
         for (const product of currentSystemData?.storeProducts || []) {
-            if (product.type !== 'item') continue;
-            if (keySet.has(product._id)) continue;
+            if (product.type !== 'item' || keySet.has(product._id)) continue;
             keySet.add(product._id);
             options.push({ key: product._id, label: product.name, source: 'store' });
         }
@@ -60,284 +40,20 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
         return options;
     }, [currentSystemData, obtainableItems]);
 
-    const [selectedMissionListId, setSelectedMissionListId] = useState<string>('');
-    const [showListForm, setShowListForm] = useState(false);
-    const [showEditListForm, setShowEditListForm] = useState(false);
-    const [showNodeForm, setShowNodeForm] = useState(false);
-    const [nodeParentAnchor, setNodeParentAnchor] = useState('');
-    const [editingNode, setEditingNode] = useState<EditableNode | undefined>(undefined);
-    const [showAiModal, setShowAiModal] = useState(false);
-
-    // Delete-confirm modal state
-    const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; nodeCount: number } | null>(null);
-
-    const [listForm, setListForm] = useState(createInitialListForm);
-    const [editListForm, setEditListForm] = useState(createInitialListForm);
-
-    const [triggerGetSystemList, { isLoading }] = useLazyGetSystemListQuery();
-    const [createMissionList, { isLoading: isCreatingList }] = useCreateMissionListMutation();
-    const [updateMissionList, { isLoading: isUpdatingList }] = useUpdateMissionListMutation();
-    const [deleteMissionList, { isLoading: isDeletingList }] = useDeleteMissionListMutation();
-    const [deleteMissionNode, { isLoading: isDeletingNode }] = useDeleteMissionNodeMutation();
-
-    useEffect(() => {
-        triggerGetSystemList();
-    }, [triggerGetSystemList]);
-
-    useEffect(() => {
-        if (!selectedMissionListId && missionLists.length > 0) {
-            setSelectedMissionListId(missionLists[0]._id);
-        }
-    }, [missionLists, selectedMissionListId]);
-
-    const selectedMissionList = missionLists.find((list) => list._id === selectedMissionListId);
-
-    const resetListForm = () => {
-        setListForm(createInitialListForm());
-    };
-
-    const fillEditListForm = (missionList: MissionList) => {
-        setEditListForm({
-            listType: missionList.listType,
-            title: missionList.title || '',
-            image: missionList.image || '',
-            description: missionList.description || '',
-            unlockType: missionList.unlockCondition?.type === 'attributeLevel' ? 'attributeLevel' : 'direct',
-            unlockAttributeName: missionList.unlockCondition?.attributeName || '',
-            unlockMinLevel: Number(missionList.unlockCondition?.minLevel || 0),
-            failureEnabled: !!missionList.failureMechanism?.enabled,
-            pointPenaltyAttributeName: missionList.failureMechanism?.pointPenalty?.[0]?.attributeName || '',
-            pointPenaltyValue: Number(missionList.failureMechanism?.pointPenalty?.[0]?.value || 1),
-            itemPenaltyItemKey: missionList.failureMechanism?.itemPenalty?.[0]?.itemKey || '',
-            itemPenaltyQuantity: Number(missionList.failureMechanism?.itemPenalty?.[0]?.quantity || 1),
-        });
-    };
-
-    const handleCreateMissionList = async () => {
-        if (!listForm.title.trim()) {
-            message.error('请填写任务列表标题');
-            return;
-        }
-
-        if (listForm.unlockType === 'attributeLevel' && !listForm.unlockAttributeName.trim()) {
-            message.error('请填写解锁所需属性名称');
-            return;
-        }
-
-        try {
-            const payload = {
-                systemId,
-                listType: listForm.listType,
-                title: listForm.title.trim(),
-                image: listForm.image.trim() || undefined,
-                description: listForm.description.trim(),
-                unlockCondition: {
-                    type: listForm.unlockType,
-                    attributeName: listForm.unlockType === 'attributeLevel' ? listForm.unlockAttributeName.trim() : null,
-                    minLevel: listForm.unlockType === 'attributeLevel' ? Math.max(0, listForm.unlockMinLevel) : 0,
-                },
-                failureMechanism: {
-                    enabled: listForm.failureEnabled,
-                    pointPenalty: listForm.failureEnabled && listForm.pointPenaltyAttributeName.trim()
-                        ? [{
-                            attributeName: listForm.pointPenaltyAttributeName.trim(),
-                            value: Math.max(1, listForm.pointPenaltyValue),
-                        }]
-                        : [],
-                    itemPenalty: listForm.failureEnabled && listForm.itemPenaltyItemKey
-                        ? [{
-                            itemKey: listForm.itemPenaltyItemKey,
-                            quantity: Math.max(1, listForm.itemPenaltyQuantity),
-                        }]
-                        : [],
-                },
-            };
-
-            const res = await createMissionList(payload).unwrap() as { missionList?: MissionList };
-            message.success('任务列表创建成功');
-            setShowListForm(false);
-            resetListForm();
-            await triggerGetSystemList().unwrap();
-
-            if (res?.missionList?._id) {
-                setSelectedMissionListId(res.missionList._id);
-            }
-        } catch (error) {
-            const err = error as { data?: { message?: string } };
-            message.error(err?.data?.message || '任务列表创建失败');
-        }
-    };
-
-    const openEditMissionListModal = () => {
-        if (!selectedMissionList) {
-            message.warning('请先选择任务列表');
-            return;
-        }
-        fillEditListForm(selectedMissionList);
-        setShowEditListForm(true);
-    };
-
-    const handleUpdateMissionList = async () => {
-        if (!selectedMissionList) {
-            message.error('请先选择任务列表');
-            return;
-        }
-
-        if (!editListForm.title.trim()) {
-            message.error('请填写任务列表标题');
-            return;
-        }
-
-        if (editListForm.unlockType === 'attributeLevel' && !editListForm.unlockAttributeName.trim()) {
-            message.error('请填写解锁所需属性名称');
-            return;
-        }
-
-        try {
-            await updateMissionList({
-                systemId,
-                missionListId: selectedMissionList._id,
-                listType: editListForm.listType,
-                title: editListForm.title.trim(),
-                image: editListForm.image.trim() || undefined,
-                description: editListForm.description.trim(),
-                unlockCondition: {
-                    type: editListForm.unlockType,
-                    attributeName: editListForm.unlockType === 'attributeLevel' ? editListForm.unlockAttributeName.trim() : null,
-                    minLevel: editListForm.unlockType === 'attributeLevel' ? Math.max(0, editListForm.unlockMinLevel) : 0,
-                },
-                failureMechanism: {
-                    enabled: editListForm.failureEnabled,
-                    pointPenalty: editListForm.failureEnabled && editListForm.pointPenaltyAttributeName.trim()
-                        ? [{
-                            attributeName: editListForm.pointPenaltyAttributeName.trim(),
-                            value: Math.max(1, editListForm.pointPenaltyValue),
-                        }]
-                        : [],
-                    itemPenalty: editListForm.failureEnabled && editListForm.itemPenaltyItemKey
-                        ? [{
-                            itemKey: editListForm.itemPenaltyItemKey,
-                            quantity: Math.max(1, editListForm.itemPenaltyQuantity),
-                        }]
-                        : [],
-                },
-            }).unwrap();
-
-            message.success('任务列表已更新');
-            setShowEditListForm(false);
-            await triggerGetSystemList().unwrap();
-        } catch (error) {
-            const err = error as { data?: { message?: string } };
-            message.error(err?.data?.message || '任务列表更新失败');
-        }
-    };
-
-    /** Open the confirm modal for a mission list. */
-    const handleRequestDeleteMissionList = (listId: string, title: string, nodeCount: number) => {
-        setDeleteTarget({ id: listId, title, nodeCount });
-    };
-
-    /** Called when user clicks "确认删除" in the confirm modal. */
-    const handleConfirmDeleteMissionList = async () => {
-        if (!deleteTarget) return;
-        const { id, title } = deleteTarget;
-        setDeleteTarget(null);
-        setShowEditListForm(false);
-
-        try {
-            await deleteMissionList({ systemId, missionListId: id }).unwrap();
-            message.success(`已删除任务列表「${title}」及其所有任务`);
-            if (selectedMissionListId === id) setSelectedMissionListId('');
-            await triggerGetSystemList().unwrap();
-        } catch (error) {
-            const err = error as { data?: { message?: string } };
-            message.error(err?.data?.message || '任务列表删除失败');
-        }
-    };
-
-    const handleDeleteMissionNode = async (nodeId: string) => {
-        if (!selectedMissionList) return;
-
-        const taskTree = selectedMissionList.taskTree || [];
-        const targetNode = taskTree.find((n) => n.nodeId === nodeId);
-        if (!targetNode) return;
-
-        const isRoot = selectedMissionList.rootNodeId === nodeId;
-        const childCount = targetNode.childrenNodeIds?.length ?? 0;
-
-        // 计算会被级联删除的子树节点数（用于提示）
-        const collectSubtreeIds = (rootId: string): string[] => {
-            const ids: string[] = [];
-            const queue = [rootId];
-            while (queue.length > 0) {
-                const curr = queue.shift()!;
-                ids.push(curr);
-                const n = taskTree.find((nd) => nd.nodeId === curr);
-                if (n) queue.push(...n.childrenNodeIds);
-            }
-            return ids;
-        };
-
-        let confirmMsg = `确认删除节点「${targetNode.title}」？\n\n`;
-        if (isRoot && childCount > 0) {
-            const newRootNode = taskTree.find((n) => n.nodeId === targetNode.childrenNodeIds[0]);
-            const newRootTitle = newRootNode?.title ?? targetNode.childrenNodeIds[0];
-            confirmMsg += `该节点是根节点，「${newRootTitle}」将成为新的根节点。`;
-            if (childCount > 1) {
-                const slotsAvailable = 3 - (newRootNode?.childrenNodeIds?.length ?? 0);
-                const cascadeCount = childCount - 1 - slotsAvailable;
-                if (cascadeCount > 0) {
-                    const cascadeSubtreeSize = targetNode.childrenNodeIds.slice(1 + slotsAvailable)
-                        .flatMap((id) => collectSubtreeIds(id)).length;
-                    confirmMsg += `\n\n⚠️ 新根节点已无多余子节点槽位，${cascadeSubtreeSize} 个节点将被级联删除。`;
-                }
-            }
-        } else if (!isRoot && childCount > 0) {
-            const parentNode = taskTree.find((n) => n.nodeId === targetNode.parentNodeId);
-            const slotsAvailable = parentNode ? 3 - (parentNode.childrenNodeIds.length - 1) : 0;
-            const cascadeCount = Math.max(0, childCount - slotsAvailable);
-            if (cascadeCount > 0) {
-                const cascadeSubtreeSize = targetNode.childrenNodeIds.slice(slotsAvailable)
-                    .flatMap((id) => collectSubtreeIds(id)).length;
-                confirmMsg += `子节点会尽量拼接到父节点，但父节点槽位不足，${cascadeSubtreeSize} 个节点将被级联删除。`;
-            } else {
-                confirmMsg += `该节点的 ${childCount} 个子节点将拼接到父节点下。`;
-            }
-        } else {
-            confirmMsg += '此操作不可撤销。';
-        }
-
-        const confirmed = window.confirm(confirmMsg);
-        if (!confirmed) return;
-
-        try {
-            const res = await deleteMissionNode({
-                systemId,
-                missionListId: selectedMissionList._id,
-                nodeId,
-            }).unwrap();
-
-            const deletedCount = res.deletedNodeIds?.length ?? 1;
-            message.success(`节点已删除（共移除 ${deletedCount} 个节点）`);
-            await triggerGetSystemList().unwrap();
-        } catch (error) {
-            const err = error as { data?: { message?: string } };
-            message.error(err?.data?.message || '节点删除失败');
-        }
-    };
+    const controller = useTaskChainPanelController({ systemId, missionLists });
 
     return (
         <div className="p-8 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-white/20 scrollbar-track-transparent">
             <div className="max-w-[1600px] mx-auto w-full">
                 <div className="bg-white/50 dark:bg-white/5 border border-gray-200/50 dark:border-white/10 rounded-xl p-6 mb-6 shadow-sm dark:shadow-none">
                     <h3 className="text-lg font-bold tracking-widest mb-2 text-blue-600 dark:text-blue-300">任务链定义</h3>
-                    <p className="text-sm text-gray-500 dark:text-white/50 mb-4">支持主线任务和紧急任务，创建任务树头节点与子任务（每个节点最多3个子任务）</p>
+                    <p className="text-sm text-gray-500 dark:text-white/50 mb-4">支持主线任务和紧急任务，创建任务树头节点与子任务（每个节点最多 3 个子任务）</p>
 
                     <div className="flex flex-wrap gap-3">
                         <motion.button
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => setShowListForm(true)}
+                            onClick={() => controller.setShowListForm(true)}
                             className="bg-blue-500 hover:bg-blue-400 text-white px-6 py-2 rounded-lg font-bold tracking-widest transition-colors"
                         >
                             + 创建系列任务
@@ -346,8 +62,8 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                         <motion.button
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={openEditMissionListModal}
-                            disabled={!selectedMissionList}
+                            onClick={controller.openEditMissionListModal}
+                            disabled={!controller.selectedMissionList}
                             className="bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-2 rounded-lg font-bold tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             编辑选中任务列表
@@ -356,7 +72,7 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                         <motion.button
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => setShowAiModal(true)}
+                            onClick={() => controller.setShowAiModal(true)}
                             className="flex items-center gap-2 bg-gradient-to-r from-violet-500 to-blue-600 hover:from-violet-400 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-bold tracking-widest transition-all shadow-[0_4px_12px_rgba(139,92,246,0.3)]"
                         >
                             <FaRobot className="text-sm" />
@@ -366,217 +82,109 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_2.5fr] gap-6">
-                    <div className="bg-white/50 dark:bg-white/5 border border-gray-200/50 dark:border-white/10 rounded-xl p-6 shadow-sm dark:shadow-none">
-                        <h4 className="text-md font-bold tracking-widest mb-4 text-blue-600 dark:text-blue-200">任务列表</h4>
-                        {isLoading ? (
-                            <p className="text-gray-500 dark:text-white/50">加载中...</p>
-                        ) : missionLists.length === 0 ? (
-                            <div className="text-center py-12 text-gray-400 dark:text-white/30 bg-white/30 dark:bg-transparent rounded-xl border border-dashed border-gray-300 dark:border-white/10">
-                                <FaGamepad className="text-5xl mb-4 opacity-30 mx-auto" />
-                                <p className="tracking-widest">暂无任务列表，先定义一个任务列表</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {missionLists.map((list) => (
-                                    <div
-                                        key={list._id}
-                                        className={`relative group rounded-lg border transition-colors ${selectedMissionListId === list._id
-                                            ? 'border-blue-400 bg-blue-50 dark:bg-blue-500/10'
-                                            : 'border-gray-200 dark:border-white/10 bg-white/40 dark:bg-black/20 hover:border-gray-300 dark:hover:border-white/30 shadow-sm dark:shadow-none'
-                                        }`}
-                                    >
-                                        {/* Selectable area */}
-                                        <button
-                                            onClick={() => setSelectedMissionListId(list._id)}
-                                            className="w-full text-left p-4 pr-10"
-                                        >
-                                            <div className="flex items-center justify-between mb-1">
-                                                <p className="font-bold tracking-wider text-gray-800 dark:text-inherit">{list.title}</p>
-                                                <span className={`text-xs px-2 py-1 rounded ${list.listType === 'urgent' ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300'}`}>
-                                                    {list.listType === 'urgent' ? '紧急' : '主线'}
-                                                </span>
-                                            </div>
-                                            <p className="text-xs text-gray-500 dark:text-white/50 mb-1">节点数: {list.taskTree?.length || 0}</p>
-                                            <p className="text-xs text-gray-500 dark:text-white/50">状态: {list.hasFailed ? '已失败（不可重开）' : '进行中'}</p>
-                                        </button>
-
-                                        {/* Delete icon — visible on hover */}
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleRequestDeleteMissionList(list._id, list.title, list.taskTree?.length || 0);
-                                            }}
-                                            title="删除任务列表"
-                                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-all duration-150"
-                                        >
-                                            <FaTrash className="text-xs" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    <MissionListSidebar
+                        missionLists={missionLists}
+                        isLoading={controller.isLoading}
+                        selectedMissionListId={controller.selectedMissionListId}
+                        onSelect={controller.setSelectedMissionListId}
+                        onRequestDelete={controller.handleRequestDeleteMissionList}
+                    />
 
                     <div className="bg-white/40 dark:bg-black/40 border border-indigo-200 dark:border-indigo-500/30 rounded-xl p-1 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 z-10 pointer-events-none">
                             <h4 className="text-md font-black tracking-widest text-indigo-500 dark:text-indigo-400 drop-shadow-[0_0_10px_rgba(99,102,241,0.2)] dark:drop-shadow-[0_0_10px_rgba(99,102,241,0.8)]">Task Dependency View</h4>
                         </div>
-                        {!selectedMissionList ? (
+                        {!controller.selectedMissionList ? (
                             <div className="h-[500px] flex items-center justify-center bg-gray-50 dark:bg-black/80 rounded-lg border border-gray-200 dark:border-white/5">
                                 <p className="text-gray-400 dark:text-white/30 font-mono tracking-widest animate-pulse">Awaiting System Selection...</p>
                             </div>
                         ) : (
                             <TaskDependencyGraph
-                                taskTree={selectedMissionList.taskTree}
-                                rootNodeId={selectedMissionList.rootNodeId}
+                                taskTree={controller.selectedMissionList.taskTree}
+                                rootNodeId={controller.selectedMissionList.rootNodeId}
                                 onNodeClick={(nodeId) => {
-                                    const node = selectedMissionList.taskTree.find(n => n.nodeId === nodeId);
+                                    const node = controller.selectedMissionList?.taskTree.find((item: MissionList['taskTree'][number]) => item.nodeId === nodeId);
                                     if (!node) return;
-                                    setEditingNode({
-                                        nodeId:          node.nodeId,
-                                        title:           node.title,
-                                        description:     node.description,
-                                        content:         node.content,
-                                        notice:          node.notice,
+                                    controller.openEditNodeForm({
+                                        nodeId: node.nodeId,
+                                        title: node.title,
+                                        description: node.description,
+                                        content: node.content,
+                                        notice: node.notice,
                                         timeCostMinutes: node.timeCostMinutes,
-                                        canInterrupt:    node.canInterrupt,
-                                        rewards:         node.rewards as EditableNode['rewards'],
+                                        canInterrupt: node.canInterrupt,
+                                        rewards: node.rewards as EditableNode['rewards'],
                                     });
-                                    setShowNodeForm(true);
                                 }}
-                                onPhantomClick={(parentId) => {
-                                    setNodeParentAnchor(parentId || '');
-                                    setShowNodeForm(true);
-                                }}
-                                onNodeDelete={isDeletingNode ? undefined : handleDeleteMissionNode}
+                                onPhantomClick={(parentId) => controller.openCreateNodeForm(parentId || '')}
+                                onNodeDelete={controller.isDeletingNode ? undefined : controller.handleDeleteMissionNode}
                             />
                         )}
                     </div>
                 </div>
 
                 <TaskFormModal
-                    visible={showNodeForm}
-                    onClose={() => {
-                        setShowNodeForm(false);
-                        setNodeParentAnchor('');
-                        setEditingNode(undefined);
-                    }}
+                    visible={controller.showNodeForm}
+                    onClose={controller.closeNodeForm}
                     systemId={systemId}
-                    selectedMissionList={selectedMissionList}
+                    selectedMissionList={controller.selectedMissionList}
                     rewardItemOptions={rewardItemOptions}
-                    initialParentNodeId={nodeParentAnchor}
-                    editNode={editingNode}
+                    initialParentNodeId={controller.nodeParentAnchor}
+                    editNode={controller.editingNode}
                 />
 
                 <CreateTaskModal
-                    visible={showListForm}
-                    isCreatingList={isCreatingList}
-                    listForm={listForm}
+                    visible={controller.showListForm}
+                    isCreatingList={controller.isCreatingList}
+                    listForm={controller.listForm}
                     rewardItemOptions={rewardItemOptions}
-                    onListFormChange={setListForm}
-                    onCreate={handleCreateMissionList}
-                    onClose={() => setShowListForm(false)}
+                    onListFormChange={controller.setListForm}
+                    onCreate={controller.handleCreateMissionList}
+                    onClose={() => controller.setShowListForm(false)}
                     onCancel={() => {
-                        resetListForm();
-                        setShowListForm(false);
+                        controller.resetListForm();
+                        controller.setShowListForm(false);
                     }}
                 />
 
                 <EditTaskModal
-                    visible={showEditListForm}
-                    selectedTitle={selectedMissionList?.title}
-                    isUpdating={isUpdatingList}
-                    isDeleting={isDeletingList}
-                    listForm={editListForm}
+                    visible={controller.showEditListForm}
+                    selectedTitle={controller.selectedMissionList?.title}
+                    isUpdating={controller.isUpdatingList}
+                    isDeleting={controller.isDeletingList}
+                    listForm={controller.editListForm}
                     rewardItemOptions={rewardItemOptions}
-                    onListFormChange={setEditListForm}
-                    onSave={handleUpdateMissionList}
+                    onListFormChange={controller.setEditListForm}
+                    onSave={controller.handleUpdateMissionList}
                     onDelete={() => {
-                        if (selectedMissionList) {
-                            handleRequestDeleteMissionList(
-                                selectedMissionList._id,
-                                selectedMissionList.title,
-                                selectedMissionList.taskTree?.length || 0,
+                        if (controller.selectedMissionList) {
+                            controller.handleRequestDeleteMissionList(
+                                controller.selectedMissionList._id,
+                                controller.selectedMissionList.title,
+                                controller.selectedMissionList.taskTree?.length || 0,
                             );
                         }
                     }}
-                    onClose={() => setShowEditListForm(false)}
-                    onCancel={() => setShowEditListForm(false)}
+                    onClose={() => controller.setShowEditListForm(false)}
+                    onCancel={() => controller.setShowEditListForm(false)}
                 />
 
-                {/* ── Delete confirm modal ───────────────────────────────── */}
-                <AnimatePresence>
-                    {deleteTarget && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-[10000001] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-                            onClick={() => setDeleteTarget(null)}
-                        >
-                            <motion.div
-                                initial={{ scale: 0.92, opacity: 0, y: 12 }}
-                                animate={{ scale: 1, opacity: 1, y: 0 }}
-                                exit={{ scale: 0.92, opacity: 0, y: 12 }}
-                                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="bg-white dark:bg-[#111] border border-red-300/50 dark:border-red-500/30 rounded-2xl shadow-2xl p-7 w-[90vw] max-w-md"
-                            >
-                                <div className="flex items-center gap-3 mb-4">
-                                    <div className="w-10 h-10 rounded-xl bg-red-100 dark:bg-red-500/20 flex items-center justify-center shrink-0">
-                                        <FaExclamationTriangle className="text-red-500 dark:text-red-400 text-lg" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-black tracking-widest text-gray-900 dark:text-white text-base">删除任务列表</h3>
-                                        <p className="text-xs text-gray-400 dark:text-white/40 mt-0.5">此操作不可撤销</p>
-                                    </div>
-                                </div>
-
-                                <p className="text-sm text-gray-700 dark:text-white/80 mb-2 leading-relaxed">
-                                    即将删除任务列表{' '}
-                                    <span className="font-bold text-red-500 dark:text-red-400">「{deleteTarget.title}」</span>
-                                </p>
-                                <ul className="text-xs text-gray-500 dark:text-white/50 space-y-1 mb-6 pl-4 list-disc">
-                                    <li>列表内 <span className="font-bold text-gray-700 dark:text-white/80">{deleteTarget.nodeCount}</span> 个任务节点将被一并删除</li>
-                                    <li>所有成员的接取状态、进行中任务、完成记录将同步清除</li>
-                                    <li>此操作会通过 SSE 实时通知所有在线成员</li>
-                                </ul>
-
-                                <div className="flex gap-3">
-                                    <motion.button
-                                        whileHover={{ scale: 1.03 }}
-                                        whileTap={{ scale: 0.97 }}
-                                        onClick={handleConfirmDeleteMissionList}
-                                        disabled={isDeletingList}
-                                        className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-black tracking-widest text-sm transition-colors disabled:opacity-60"
-                                    >
-                                        {isDeletingList ? '删除中...' : '确认删除'}
-                                    </motion.button>
-                                    <motion.button
-                                        whileHover={{ scale: 1.03 }}
-                                        whileTap={{ scale: 0.97 }}
-                                        onClick={() => setDeleteTarget(null)}
-                                        disabled={isDeletingList}
-                                        className="flex-1 py-2.5 rounded-xl bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-white font-black tracking-widest text-sm transition-colors"
-                                    >
-                                        取消
-                                    </motion.button>
-                                </div>
-                            </motion.div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                <DeleteMissionListDialog
+                    deleteTarget={controller.deleteTarget}
+                    isDeleting={controller.isDeletingList}
+                    onConfirm={controller.handleConfirmDeleteMissionList}
+                    onCancel={() => controller.setDeleteTarget(null)}
+                />
             </div>
 
-            {/* AI Assistant Modal */}
             <AnimatePresence>
-                {showAiModal && (
+                {controller.showAiModal && (
                     <AiAssistantModal
                         systemId={systemId}
                         systemName={currentSystemData?.name || ''}
-                        onClose={() => setShowAiModal(false)}
+                        onClose={() => controller.setShowAiModal(false)}
                         onCreated={(id) => {
-                            setSelectedMissionListId(id);
+                            controller.setSelectedMissionListFromCreated(id);
                             message.success('AI 已自动创建任务列表，已为你选中');
                         }}
                     />
@@ -587,5 +195,4 @@ const TaskChainPanel: React.FC<{ systemId: string }> = ({ systemId }) => {
 };
 
 export default TaskChainPanel;
-
 

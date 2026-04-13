@@ -46,19 +46,28 @@ const ProposalPreviewV2: React.FC<Props> = ({ proposal, onConfirm, onOther, isCo
     const chain = useMemo(() => buildDisplayChain(proposal.nodes), [proposal.nodes]);
     const graphNodes = useMemo<TaskGraphNode[]>(
         () =>
-            proposal.nodes.map((node) => ({
-                id: node.tempId,
-                parentId: node.parentTempId,
-                prerequisiteIds: node.prerequisiteTempIds || [],
-                title: node.title,
-                description: node.description,
-                timeCostMinutes: node.timeCostMinutes,
-                childrenIds: proposal.nodes
-                    .filter((candidate) => candidate.parentTempId === node.tempId)
-                    .map((candidate) => candidate.tempId),
-                status: 'pending',
-                badgeText: 'Pending',
-            })),
+            proposal.nodes.map((node) => {
+                const incomingCount = new Set([node.parentTempId, ...(node.prerequisiteTempIds || [])].filter(Boolean)).size;
+                const isMergeNode = incomingCount > 1;
+                const nodeKind = isMergeNode ? (incomingCount >= 3 ? 'boss' : 'milestone') : 'standard';
+                return {
+                    id: node.tempId,
+                    parentId: node.parentTempId,
+                    prerequisiteIds: node.prerequisiteTempIds || [],
+                    title: node.title,
+                    description: node.description,
+                    timeCostMinutes: node.timeCostMinutes,
+                    childrenIds: proposal.nodes
+                        .filter((candidate) => candidate.parentTempId === node.tempId)
+                        .map((candidate) => candidate.tempId),
+                    status: 'pending',
+                    badgeText: isMergeNode ? (nodeKind === 'boss' ? 'Boss Gate' : 'Pending Merge') : 'Pending',
+                    isMergeNode,
+                    nodeKind,
+                    progressText: isMergeNode ? `Unlocks after all ${incomingCount} incoming branches are complete.` : undefined,
+                    rewardHint: isMergeNode ? 'Includes merge milestone bonus.' : undefined,
+                };
+            }),
         [proposal.nodes],
     );
     const totalCoins = proposal.nodes.reduce((sum, node) => sum + (node.rewards?.coins || 0), 0);

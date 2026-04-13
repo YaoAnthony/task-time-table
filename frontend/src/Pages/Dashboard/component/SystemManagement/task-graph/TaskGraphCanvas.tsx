@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { FaEdit, FaLink, FaPlus, FaProjectDiagram, FaTrash } from 'react-icons/fa';
+import { FaCrown, FaEdit, FaLink, FaPlus, FaProjectDiagram, FaStar, FaTrash } from 'react-icons/fa';
 
 export type TaskGraphStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
@@ -13,6 +13,10 @@ export interface TaskGraphNode {
     childrenIds?: string[];
     status: TaskGraphStatus;
     badgeText?: string;
+    isMergeNode?: boolean;
+    nodeKind?: 'standard' | 'milestone' | 'boss';
+    progressText?: string;
+    rewardHint?: string;
 }
 
 interface TaskGraphCanvasProps {
@@ -55,6 +59,12 @@ const statusLabels: Record<TaskGraphStatus, string> = {
     in_progress: 'In Progress',
     completed: 'Completed',
     failed: 'Failed',
+};
+
+const kindAccentStyles: Record<NonNullable<TaskGraphNode['nodeKind']>, string> = {
+    standard: '',
+    milestone: 'ring-2 ring-amber-300/80 dark:ring-amber-500/40 bg-gradient-to-br from-amber-50/70 to-white/80 dark:from-amber-500/10 dark:to-black/20',
+    boss: 'ring-2 ring-fuchsia-300/80 dark:ring-fuchsia-500/40 bg-gradient-to-br from-fuchsia-50/80 to-white/80 dark:from-fuchsia-500/10 dark:to-black/20',
 };
 
 const dedupeIds = (ids: Array<string | null | undefined>) => {
@@ -332,25 +342,52 @@ const TaskGraphCanvas: React.FC<TaskGraphCanvasProps> = ({
                                                 )}
                                             </div>
                                         </div>
-                                        {incomingIds.length > 1 && (
-                                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300/80 bg-amber-100/80 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300">
-                                                <FaLink className="text-[9px]" />
-                                                Merge
+                                        {node.isMergeNode && (
+                                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${
+                                                node.nodeKind === 'boss'
+                                                    ? 'border border-fuchsia-300/80 bg-fuchsia-100/80 text-fuchsia-700 dark:border-fuchsia-400/40 dark:bg-fuchsia-500/10 dark:text-fuchsia-300'
+                                                    : 'border border-amber-300/80 bg-amber-100/80 text-amber-700 dark:border-amber-400/40 dark:bg-amber-500/10 dark:text-amber-300'
+                                            }`}>
+                                                {node.nodeKind === 'boss' ? <FaCrown className="text-[9px]" /> : <FaStar className="text-[9px]" />}
+                                                {node.nodeKind === 'boss' ? 'Boss Merge' : 'Merge'}
                                             </span>
                                         )}
                                     </div>
 
                                     <div className="mt-3 flex-1 space-y-2 text-xs opacity-80">
-                                        <div className="rounded-xl bg-white/50 px-3 py-2 dark:bg-black/20">
+                                        <div className={`rounded-xl px-3 py-2 dark:bg-black/20 ${node.nodeKind ? kindAccentStyles[node.nodeKind] : 'bg-white/50'}`}>
                                             {node.description?.trim() || 'No description yet.'}
                                         </div>
                                         <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em]">
                                             <span>{Math.max(1, node.timeCostMinutes || 0)} min</span>
                                             <span>{childCount}/3 children</span>
                                         </div>
-                                        {incomingIds.length > 1 && (
+                                        {node.isMergeNode && (
+                                            <div className={`rounded-xl px-3 py-2 text-[11px] ${
+                                                node.nodeKind === 'boss'
+                                                    ? 'border border-fuchsia-300/70 bg-fuchsia-50/80 text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-500/10 dark:text-fuchsia-200'
+                                                    : 'border border-amber-300/70 bg-amber-50/80 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200'
+                                            }`}>
+                                                <div className="flex items-center gap-1 font-bold uppercase tracking-[0.18em] mb-1">
+                                                    <FaLink className="text-[10px]" />
+                                                    {node.nodeKind === 'boss' ? 'Boss Gate' : 'Merge Gate'}
+                                                </div>
+                                                <div>{node.progressText || 'This task needs every incoming branch to be completed before it unlocks.'}</div>
+                                                {node.rewardHint && (
+                                                    <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-80">
+                                                        {node.rewardHint}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {!node.isMergeNode && incomingIds.length > 1 && (
                                             <div className="rounded-xl border border-amber-300/70 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-200">
                                                 This task needs every incoming branch to be completed before it unlocks.
+                                            </div>
+                                        )}
+                                        {node.nodeKind === 'boss' && (
+                                            <div className="rounded-xl border border-fuchsia-300/60 bg-fuchsia-50/80 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-fuchsia-700 dark:border-fuchsia-400/30 dark:bg-fuchsia-500/10 dark:text-fuchsia-200">
+                                                Boss milestone: best suited for major rewards and key unlocks.
                                             </div>
                                         )}
                                     </div>
