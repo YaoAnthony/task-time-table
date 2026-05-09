@@ -44,7 +44,6 @@ const paypalScriptOptions: PayPalScriptOptions = {
   components: "buttons"
 };
 
-console.log("Environment Variables:", { googleClientId, paypalClientId });
 createRoot(document.getElementById('root')!).render(
     <GoogleOAuthProvider clientId={googleClientId}>
       <Provider store={store}>
@@ -62,4 +61,3 @@ createRoot(document.getElementById('root')!).render(
     </GoogleOAuthProvider>
   ,
 )
-

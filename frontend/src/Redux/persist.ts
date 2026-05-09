@@ -13,6 +13,7 @@ const saveSubsetFilters = [
   createFilter("user", ["accessToken", "expiresAt", "user"]),
   createFilter("theme", ["mode"]),
   createFilter("profile", ["profile", "status"]),
+  createFilter("game", ["settings"]),
 ];
 
 // 迁移：不要动 _persist，不要从 oldState.state 取
@@ -48,7 +49,7 @@ export const makePersistConfig = <S>(): PersistConfig<S> => ({
   key: "root",
   version: 1,
   storage,
-  whitelist: ["theme", "profile", "user"],
+  whitelist: ["theme", "profile", "user", "game"],
   transforms: saveSubsetFilters,
   stateReconciler: autoMergeLevel2,
   migrate: createMigrate(migrations, { debug: false }),

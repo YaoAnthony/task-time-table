@@ -23,8 +23,8 @@ import type { WorldSyncSource } from '../sync/syncPolicy';
 // ─── Event payload map ────────────────────────────────────────────────────────
 export interface GameEventMap {
   // ── Time / Day cycle ──────────────────────────────────────────────────────
-  /** Fired every frame (throttled to ~1s) with current game time. */
-  'tick:update':          { gameTick: number; timeStr: string };
+  /** Fired every frame (throttled to ~1s) with current game time + date. */
+  'tick:update':          { gameTick: number; timeStr: string; dateStr: string; dateTimeStr: string };
   /** Night was skipped by sleeping. */
   'day:night_skip':       { fromTime: string; toTime: string };
   /** Sleep vote count changed (for multiplayer "waiting for X players" UI). */

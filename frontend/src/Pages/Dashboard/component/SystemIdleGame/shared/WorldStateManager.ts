@@ -12,6 +12,7 @@ import type {
   WorldState,
 } from './worldStateTypes';
 import { StateBackedWorldGrid } from './StateBackedWorldGrid';
+import { createInitialWorldState, migrateWorldState } from '../state';
 
 interface WithPosition {
   id: string;
@@ -31,24 +32,11 @@ export class WorldStateManager {
   private readonly grid: StateBackedWorldGrid;
   private readonly state: WorldState;
 
-  constructor(grid: StateBackedWorldGrid) {
+  constructor(grid: StateBackedWorldGrid, initialState?: Partial<WorldState> | null) {
     this.grid = grid;
-    this.state = {
-      grid: { cols: grid.cols, rows: grid.rows },
-      entities: {},
-      objects: {},
-      drops: {},
-      crops: {},
-      chickens: {},
-      trees: {},
-      nests: {},
-      npcMinds: {},
-      meta: {
-        tick: 0,
-        dayTime: '06:00',
-        version: 0,
-      },
-    };
+    this.state = initialState
+      ? migrateWorldState(initialState, grid.cols, grid.rows)
+      : createInitialWorldState(grid.cols, grid.rows);
   }
 
   initialize(meta?: Partial<WorldMetaState>): void {

@@ -1,82 +1,105 @@
+// ── Pixel Game HUD — Desktop Top Navigation ───────────────────────────────────
+// Fills the 52px HUD bar. Logo left, controls right.
+// No DarkLightSwitch (game forces dark mode).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { motion } from "framer-motion";
 import { useSelector } from "react-redux";
 import { Tooltip } from "antd";
 import { FaUserCircle } from 'react-icons/fa';
 
-// types
 import { RootState } from "../../../Redux/store";
-// auth modal
 import { useAuthModal } from "../../../Features/Authentication/component/ModalAuthContext";
-// components
 import DropDownBar from "./DropDownBar";
-import DarkLightSwitch from "../../DarkLightSwitch";
 import ShowIcon from "../../ShowIcon";
 
 const DeskTopNav = () => {
-  const [isOpen, setIsOpen] = useState(false);
+    const [isOpen, setIsOpen] = useState(false);
+    const isAuthenticated = useSelector((state: RootState) => state.user.isLoggedIn);
+    const { user } = useSelector((state: RootState) => state.user);
+    const { showAuthModal } = useAuthModal();
 
-  const isAuthenticated = useSelector((state: RootState) => state.user.isLoggedIn);
-  const { user } = useSelector((state: RootState) => state.user);
-  const { showAuthModal } = useAuthModal();
-
-  return (
-    <nav className="hidden md:flex w-full items-center justify-between px-8 xl:px-16">
-      <div className="flex items-center gap-10 xl:gap-14">
-          {/* Logo */}
-          <NavLink to="/" className="flex items-end gap-1 shrink-0 cursor-pointer group hover:opacity-90 transition-opacity">
-               <div className="text-4xl font-black text-white tracking-widest filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                   幻星<span className="text-[#FFC72C] group-hover:text-yellow-300 transition-colors">纪元</span>
-               </div>
-          </NavLink>
-      </div>
-
-      {/* Auth / Right Side */}
-      <div className="flex items-center justify-end gap-6 mt-1">
-        <DarkLightSwitch />
-        <ShowIcon />
-        {isAuthenticated ? (
-          <Tooltip
-            placement="bottomRight"
-            color="white"
-            onOpenChange={() => setIsOpen(false)}
-            fresh={true}
-            title={<DropDownBar />}
-            styles={{
-              root: { whiteSpace: "normal", maxWidth: "none", padding: 0 },
-            }}
-          >
-            <div
-              onClick={() => setIsOpen(!isOpen)}
-              className="flex gap-2 items-center tracking-wide cursor-pointer"
+    return (
+        <nav
+            className="hidden md:flex w-full h-full items-center justify-between"
+            style={{ padding: '0 20px' }}
+        >
+            {/* ── Logo ── */}
+            <NavLink
+                to="/"
+                style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <div onMouseEnter={() => setIsOpen(true)} className="flex items-center gap-2 select-none">
-                <img
-                  src={user?.image_url || 'https://placehold.co/150x150/1e1e2f/06b6d4.png?text=User'}
-                  alt="avatar"
-                  className="w-10 h-10 rounded-full border-2 border-white/80 hover:border-[#FFC72C] transition-colors shadow-lg"
-                />
-              </div>
-            </div>
-          </Tooltip>
-        ) : (
-          <motion.button 
-              onClick={() => showAuthModal()}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-2 text-white hover:text-[#FFC72C] transition-colors py-2 px-3 group mr-4"
-          >
-              <div className="bg-black/40 p-1.5 rounded-full border border-white/20 backdrop-blur-sm group-hover:border-[#FFC72C]/50 transition-colors">
-                  <FaUserCircle className="text-xl drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]" />
-              </div>
-              <span className="tracking-widest drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] text-[15px] font-bold">登入</span>
-          </motion.button>
-        )}
+                <span
+                    style={{
+                        fontFamily: '"Press Start 2P", monospace',
+                        fontSize: '13px',
+                        color: '#e6edf3',
+                        textShadow: '2px 2px 0 rgba(0,0,0,0.8)',
+                        letterSpacing: '0.05em',
+                    }}
+                >
+                    幻星<span style={{ color: '#ffd700' }}>纪元</span>
+                </span>
+            </NavLink>
 
-      </div>
-    </nav>
-  );
+            {/* ── Right HUD: coins + avatar ── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* Coin display */}
+                <ShowIcon />
+
+                {/* Avatar / Login */}
+                {isAuthenticated ? (
+                    <Tooltip
+                        placement="bottomRight"
+                        color="#161b22"
+                        onOpenChange={() => setIsOpen(false)}
+                        fresh={true}
+                        title={<DropDownBar />}
+                        styles={{ root: { whiteSpace: "normal", maxWidth: "none", padding: 0 } }}
+                    >
+                        <div
+                            onClick={() => setIsOpen(!isOpen)}
+                            onMouseEnter={() => setIsOpen(true)}
+                            style={{ cursor: 'pointer' }}
+                        >
+                            <img
+                                src={user?.image_url || 'https://placehold.co/40x40/161b22/ffd700.png?text=U'}
+                                alt="avatar"
+                                style={{
+                                    width: '36px',
+                                    height: '36px',
+                                    border: '2px solid var(--px-border-gold)',
+                                    imageRendering: 'pixelated',
+                                    display: 'block',
+                                }}
+                            />
+                        </div>
+                    </Tooltip>
+                ) : (
+                    <button
+                        onClick={() => showAuthModal()}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            background: 'var(--px-surface2)',
+                            border: '2px solid var(--px-border-gold)',
+                            color: 'var(--px-gold)',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            letterSpacing: '0.05em',
+                        }}
+                    >
+                        <FaUserCircle />
+                        登入
+                    </button>
+                )}
+            </div>
+        </nav>
+    );
 };
 
 export default DeskTopNav;

@@ -4,6 +4,7 @@ import type {
   NpcIntentState,
   NpcMemoryRecord,
   NpcMindState,
+  NpcRelationshipEntry,
 } from '../shared/worldStateTypes';
 import type {
   PerceivedCrop,
@@ -105,6 +106,32 @@ export class NpcMemorySystem {
     };
     this.worldStateManager.registerNpcMindState(next);
     return next;
+  }
+
+  /**
+   * Increment relationship counters when the player chats with this NPC.
+   * Familiarity grows fast in the early game then slows (sub-linear).
+   */
+  recordPlayerChat(npcId: string, gameTick: number, actorId = 'player'): NpcRelationshipEntry {
+    const current = this.ensureNpcMindState(npcId, gameTick);
+    const relationships = { ...(current.relationships ?? {}) };
+    const prev = relationships[actorId] ?? { familiarity: 0, lastChatTick: 0, chatCount: 0 };
+    // Sub-linear growth: +1 per chat at first, slower as familiarity climbs.
+    const gain = prev.familiarity < 30 ? 2.5 : prev.familiarity < 60 ? 1.5 : 0.7;
+    const next: NpcRelationshipEntry = {
+      familiarity:  Math.min(100, prev.familiarity + gain),
+      lastChatTick: gameTick,
+      chatCount:    prev.chatCount + 1,
+    };
+    relationships[actorId] = next;
+    this.worldStateManager.patchNpcMindState(npcId, { relationships });
+    return next;
+  }
+
+  /** Read relationship for any actor (defaults to 'player'). */
+  getRelationship(npcId: string, actorId = 'player'): NpcRelationshipEntry | null {
+    const mind = this.worldStateManager.getNpcMindState(npcId);
+    return mind?.relationships?.[actorId] ?? null;
   }
 
   pauseNpc(npcId: string, untilTick: number, reason?: string): NpcMindState {

@@ -211,6 +211,46 @@ export interface NpcIntentState {
   updatedAtTick: number;
 }
 
+export interface NpcNeeds {
+  /** 0-100. Drains during work, restored by sleep. <30 = tired. */
+  energy: number;
+  /** 0-100. Drains over time, restored by meals. <30 = hungry. */
+  hunger: number;
+  /** 0-100. Drains over time, restored by chatting with player. <30 = lonely. */
+  social: number;
+  /** Last in-game minute the needs were ticked, used so resume after pause is correct. */
+  lastTickMinuteOfDay: number;
+  /** Last gameTick an autonomous needs-utterance fired (rate-limit). */
+  lastUtteranceTick: number;
+}
+
+export interface NpcRelationshipEntry {
+  /** 0-100 familiarity score. Increments per chat, decays slowly when not interacted. */
+  familiarity: number;
+  /** Last gameTick the actor (usually 'player') chatted with this NPC. */
+  lastChatTick: number;
+  /** Total number of chat exchanges. */
+  chatCount: number;
+}
+
+export type NpcDailyActivity =
+  | 'sleep'
+  | 'breakfast'
+  | 'work_farm'
+  | 'lunch'
+  | 'work_forest'
+  | 'dinner'
+  | 'relax';
+
+export interface NpcScheduleState {
+  /** Activity currently in progress (last slot the schedule system applied). */
+  currentActivity: NpcDailyActivity | null;
+  /** Game minute (0-1439) when the current activity started. */
+  startedAtMinuteOfDay: number;
+  /** gameTick when the current activity started (used for "I've been here for X minutes" memory). */
+  startedAtTick: number;
+}
+
 export interface NpcMindState {
   npcId: string;
   lastPerceivedTick: number;
@@ -220,6 +260,12 @@ export interface NpcMindState {
   currentIntent: NpcIntentState;
   recentMemories: Record<string, NpcMemoryRecord>;
   knownLandmarks: Record<string, NpcMemoryRecord>;
+  /** Internal drives — energy/hunger/social. */
+  needs?: NpcNeeds;
+  /** Relationship counters keyed by actor id ('player', or other npc id). */
+  relationships?: Record<string, NpcRelationshipEntry>;
+  /** Daily routine progress. */
+  schedule?: NpcScheduleState;
   meta?: Record<string, unknown>;
 }
 

@@ -54,6 +54,16 @@ export interface SlotRef {
   index: number;
 }
 
+export type GameWeatherSetting = 'clear' | 'rain';
+
+export interface GameSettingsState {
+  timeMinute: number;
+  weather: GameWeatherSetting;
+  physicsDebug: boolean;
+  sleepThreshold: number;
+  agentBrainEnabled: boolean;
+}
+
 // ── Slice State ───────────────────────────────────────────────────────────────
 
 export const HOTBAR_SIZE  = 10;
@@ -69,6 +79,7 @@ export interface GameReduxState {
   creatures:     CreatureState[];
   /** NPC inventories — keyed by NPC name, value is itemId → quantity */
   npcInventories: Record<string, Record<string, number>>;
+  settings: GameSettingsState;
 }
 
 const initialState: GameReduxState = {
@@ -78,6 +89,13 @@ const initialState: GameReduxState = {
   farmTiles:      [],
   creatures:      [],
   npcInventories: {},
+  settings: {
+    timeMinute:     360,
+    weather:        'clear',
+    physicsDebug:   false,
+    sleepThreshold: 0,
+    agentBrainEnabled: true,
+  },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -199,6 +217,45 @@ const gameSlice = createSlice({
       state.gameInventory = rebuildInventory(state.hotbarSlots, state.backpackSlots);
     },
 
+    setGameTimeMinute(state, action: PayloadAction<number>) {
+      state.settings.timeMinute = Math.max(0, Math.min(1439, Math.round(action.payload)));
+    },
+
+    setGameSettings(state, action: PayloadAction<Partial<GameSettingsState>>) {
+      const next = action.payload;
+      if (typeof next.timeMinute === 'number') {
+        state.settings.timeMinute = Math.max(0, Math.min(1439, Math.round(next.timeMinute)));
+      }
+      if (next.weather === 'clear' || next.weather === 'rain') {
+        state.settings.weather = next.weather;
+      }
+      if (typeof next.physicsDebug === 'boolean') {
+        state.settings.physicsDebug = next.physicsDebug;
+      }
+      if (typeof next.sleepThreshold === 'number') {
+        state.settings.sleepThreshold = Math.max(0, Math.min(1, next.sleepThreshold));
+      }
+      if (typeof next.agentBrainEnabled === 'boolean') {
+        state.settings.agentBrainEnabled = next.agentBrainEnabled;
+      }
+    },
+
+    setGameWeather(state, action: PayloadAction<GameWeatherSetting>) {
+      state.settings.weather = action.payload;
+    },
+
+    setGamePhysicsDebug(state, action: PayloadAction<boolean>) {
+      state.settings.physicsDebug = action.payload;
+    },
+
+    setGameSleepThreshold(state, action: PayloadAction<number>) {
+      state.settings.sleepThreshold = Math.max(0, Math.min(1, action.payload));
+    },
+
+    setGameAgentBrainEnabled(state, action: PayloadAction<boolean>) {
+      state.settings.agentBrainEnabled = action.payload;
+    },
+
     /**
      * Move/swap items between any two slots (hotbar ↔ backpack, within same zone).
      * This is the drag-and-drop action.
@@ -288,6 +345,12 @@ export const {
   upsertGameInventoryItem,
   initSlotsFromInventory,
   addItemToBackpack,
+  setGameSettings,
+  setGameTimeMinute,
+  setGameWeather,
+  setGamePhysicsDebug,
+  setGameSleepThreshold,
+  setGameAgentBrainEnabled,
   moveSlot,
   clearHotbarSlot,
   setFarmTiles,

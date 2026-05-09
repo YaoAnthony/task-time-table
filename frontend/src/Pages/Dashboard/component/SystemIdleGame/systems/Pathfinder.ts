@@ -83,6 +83,8 @@ export class Pathfinder {
   findPath(sx: number, sy: number, ex: number, ey: number): [number, number][] {
     let sc = this.wc(sx), sr = this.wr(sy);
     let ec = this.wc(ex), er = this.wr(ey);
+    let targetX = ex;
+    let targetY = ey;
 
     // Snap blocked start/end to nearest walkable
     if (!this.walkable(sc, sr)) {
@@ -94,8 +96,10 @@ export class Pathfinder {
       const n = this.nearest(ec, er);
       if (!n) return [];
       [ec, er] = n;
+      targetX = this.cx(ec);
+      targetY = this.cy(er);
     }
-    if (sc === ec && sr === er) return [[ex, ey]];
+    if (sc === ec && sr === er) return [[targetX, targetY]];
 
     const h   = (c: number, r: number) => Math.abs(c - ec) + Math.abs(r - er);
     const key = (c: number, r: number) => r * this.cols + c;
@@ -114,7 +118,7 @@ export class Pathfinder {
         const pts: [number, number][] = [];
         let n: ANode | null = cur;
         while (n) { pts.unshift([this.cx(n.c), this.cy(n.r)]); n = n.parent; }
-        pts.push([ex, ey]);
+        pts.push([targetX, targetY]);
         return this.simplify(pts);
       }
 

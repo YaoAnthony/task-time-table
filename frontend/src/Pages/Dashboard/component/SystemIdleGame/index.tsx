@@ -10,23 +10,26 @@
  */
 
 import React, {
-  useRef, useState, useCallback,
+  useRef, useState, useCallback, useEffect,
 } from 'react';
 import Phaser          from 'phaser';
 import { useDispatch } from 'react-redux';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../../../Redux/store';
 
-import { clearHotbarSlot } from '../../../../Redux/Features/gameSlice';
+import { clearHotbarSlot, type GameSettingsState } from '../../../../Redux/Features/gameSlice';
 
 import { GameScene }       from './GameScene';
-import MultiplayPanel      from './components/MultiplayPanel';
-import { HUD }             from './components/HUD';
-import { Hotbar }          from './components/Hotbar';
-import { DialogBox }       from './components/DialogBox';
-import { ChatInput }       from './components/ChatInput';
-import ChestRewardUI       from './components/ChestRewardUI';
+import {
+  ChestRewardUI,
+  ChatInput,
+  DialogBox,
+  Hotbar,
+  HUD,
+  MultiplayPanel,
+} from './ui';
 import useSSEWithReconnect from '../../../../hook/useSSEWithReconnect';
+import { gameBus } from './shared/EventBus';
 
 // ── Custom hooks ─────────────────────────────────────────────────────────────
 import { useGameAuth }      from './hooks/useGameAuth';
@@ -37,9 +40,7 @@ import { useIdleGameSyncBoundary } from './hooks/useIdleGameSyncBoundary';
 import { useMultiplay }     from './hooks/useMultiplay';
 import { useFarmActions }   from './hooks/useFarmActions';
 import { usePhaserBoot }    from './hooks/usePhaserBoot';
-import {
-  useSaveIdleGameMutation,
-} from '../../../../api/profileStateRtkApi';
+import { useSaveIdleGameMutation } from './api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const SystemIdleGame: React.FC = () => {
@@ -79,18 +80,45 @@ const SystemIdleGame: React.FC = () => {
   });
 
   // ── 附加 UI 状态 ─────────────────────────────────────────────────────────
-  const [timeStr,  setTimeStr ] = useState('06:00');
+  const [timeStr,  setTimeStr ] = useState('2026-01-01 06:00');
   const [isSaving, setIsSaving] = useState(false);
+  /** Closest NPC name to player (refreshed @4Hz) — drives the talk-button label. */
+  const [nearbyNpc, setNearbyNpc] = useState<string | null>(null);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNearbyNpc(sceneRef.current?.getNearestNpcName?.(220) ?? null);
+    }, 250);
+    return () => clearInterval(id);
+  }, []);
 
   // ── 存档快捷 ─────────────────────────────────────────────────────────────
+  const rawGameSettings = useSelector((s: RootState) => s.game.settings);
+  const gameSettings: GameSettingsState = {
+    ...rawGameSettings,
+    agentBrainEnabled: rawGameSettings.agentBrainEnabled !== false,
+  };
+  const gameSettingsRef = useRef(gameSettings);
+  gameSettingsRef.current = gameSettings;
+
+  const withWorldSettings = useCallback((state: ReturnType<GameScene['getGameState']>, settings: GameSettingsState) => ({
+    ...state,
+    worldState: {
+      schemaVersion: 1 as const,
+      beds: [],
+      nests: [],
+      ...(state.worldState ?? {}),
+      settings,
+    },
+  }), []);
+
   const [saveIdleGame] = useSaveIdleGameMutation();
   const handleSave = useCallback(async () => {
     if (!sceneRef.current) return;
     setIsSaving(true);
-    try { await saveIdleGame(sceneRef.current.getGameState()).unwrap(); }
+    try { await saveIdleGame(withWorldSettings(sceneRef.current.getGameState(), gameSettingsRef.current)).unwrap(); }
     catch { /* best-effort */ }
     finally { setIsSaving(false); }
-  }, [saveIdleGame]);
+  }, [saveIdleGame, withWorldSettings]);
 
   // ── Q 键 drop 物品（由 usePhaserBoot 调用） ───────────────────────────────
   const onDropItem = useCallback((slot: number, itemId: string) => {
@@ -105,6 +133,30 @@ const SystemIdleGame: React.FC = () => {
   savedIdleGameRef.current = savedIdleGame;
   const username = (profile as any)?.profile?.user?.username ?? '';
 
+  const applyGameSettings = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    scene.executeCommand(`/time set ${gameSettings.timeMinute}`);
+    scene.executeCommand(`/weather ${gameSettings.weather}`);
+    scene.executeCommand(`/debug ${gameSettings.physicsDebug ? 'on' : 'off'}`);
+    scene.executeCommand(`/sleep threshold ${gameSettings.sleepThreshold}`);
+    scene.executeCommand(`/agent brain ${gameSettings.agentBrainEnabled ? 'on' : 'off'}`);
+  }, [
+    gameSettings.agentBrainEnabled,
+    gameSettings.physicsDebug,
+    gameSettings.sleepThreshold,
+    gameSettings.timeMinute,
+    gameSettings.weather,
+  ]);
+
+  useEffect(() => {
+    const unsubscribe = gameBus.on('game:ready', applyGameSettings);
+    applyGameSettings();
+    return unsubscribe;
+  }, [applyGameSettings]);
+
+
   // ── Phaser 启动（包含 game:ready 数据加载、键盘、自动存档） ───────────────
   usePhaserBoot({
     containerRef,
@@ -114,6 +166,7 @@ const SystemIdleGame: React.FC = () => {
     hotbarSlotsRef:    hotbar.hotbarSlotsRef,
     selectedSlotRef:   hotbar.selectedSlotRef,
     savedIdleGameRef,
+    gameSettingsRef,
     tokenRef:          auth.tokenRef,
     npcInventoriesRef: npcChat.npcInventoriesRef,
     multiplayRoomIdRef: multiplay.multiplayRoomIdRef,
@@ -197,7 +250,7 @@ const SystemIdleGame: React.FC = () => {
         text={npcChat.dialog.text}
       />
 
-      {/* 对话按钮 */}
+      {/* 对话按钮 — 动态显示最近 NPC 名字；附近无人时按钮变灰但仍可点击（点击会提示） */}
       {!npcChat.chat.open && (
         <button
           onClick={() => sceneRef.current?.triggerInteract()}
@@ -206,9 +259,9 @@ const SystemIdleGame: React.FC = () => {
             bottom:        90,
             right:         16,
             zIndex:        200,
-            background:    '#4a3500',
-            color:         '#fffde8',
-            border:        '2px solid #c8a850',
+            background:    nearbyNpc ? '#4a3500' : '#2a1f00',
+            color:         nearbyNpc ? '#fffde8' : '#9a8866',
+            border:        `2px solid ${nearbyNpc ? '#c8a850' : '#6a5530'}`,
             borderRadius:  6,
             padding:       '6px 18px',
             fontSize:      13,
@@ -217,7 +270,7 @@ const SystemIdleGame: React.FC = () => {
             letterSpacing: 0.5,
           }}
         >
-          💬 [Enter] 和老李对话
+          {nearbyNpc ? `💬 [Enter] 和${nearbyNpc}对话` : '💬 附近没有人'}
         </button>
       )}
 

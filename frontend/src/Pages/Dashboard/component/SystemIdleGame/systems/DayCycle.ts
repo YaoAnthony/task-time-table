@@ -21,7 +21,14 @@
  */
 
 import Phaser from 'phaser';
-import { GAME_MINS_PER_SEC, MINS_PER_DAY } from '../constants';
+import {
+  GAME_MINS_PER_SEC,
+  MINS_PER_DAY,
+  SECS_PER_GAME_DAY,
+  GAME_EPOCH_YEAR,
+  GAME_EPOCH_MONTH,
+  GAME_EPOCH_DAY,
+} from '../constants';
 
 // ─── Keyframe definition ──────────────────────────────────────────────────────
 interface Keyframe {
@@ -202,6 +209,55 @@ export class DayCycle {
   /** Returns the fraction of the 24-hour cycle elapsed (0 = midnight, 0.5 = noon). */
   getDayProgress(): number {
     return this._currentMinute() / MINS_PER_DAY;
+  }
+
+  /** Returns the current in-game minute of the day (0-1439). Public so schedule systems can dispatch routines. */
+  getCurrentMinute(): number {
+    return this._currentMinute();
+  }
+
+  /** Integer day count since the game epoch (2026-01-01 = day 0). */
+  getDayCount(): number {
+    return Math.floor(this.gameTick / SECS_PER_GAME_DAY);
+  }
+
+  /**
+   * Resolve the full in-game calendar from gameTick.
+   * Uses JS Date for proper month length / leap year arithmetic.
+   * Returns: { year, month (1-12), day (1-31), hour (0-23), minute (0-59), dayOfWeek (0=Sunday) }
+   */
+  getDateInfo(): {
+    year: number; month: number; day: number;
+    hour: number; minute: number; dayOfWeek: number; dayCount: number;
+  } {
+    const dayCount   = this.getDayCount();
+    const totalMins  = this._currentMinute();
+    const hour       = Math.floor(totalMins / 60);
+    const minute     = totalMins % 60;
+    const epoch      = new Date(GAME_EPOCH_YEAR, GAME_EPOCH_MONTH - 1, GAME_EPOCH_DAY);
+    epoch.setDate(epoch.getDate() + dayCount);
+    return {
+      year:      epoch.getFullYear(),
+      month:     epoch.getMonth() + 1,
+      day:       epoch.getDate(),
+      hour,
+      minute,
+      dayOfWeek: epoch.getDay(),
+      dayCount,
+    };
+  }
+
+  /** "YYYY-MM-DD" using the in-game date. */
+  getDateStr(): string {
+    const d = this.getDateInfo();
+    return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`;
+  }
+
+  /** "YYYY-MM-DD HH:MM" — primary HUD format. */
+  getDateTimeStr(): string {
+    const d = this.getDateInfo();
+    return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')} ` +
+           `${String(d.hour).padStart(2, '0')}:${String(d.minute).padStart(2, '0')}`;
   }
 
   /**

@@ -7,10 +7,18 @@ export type ToolType = 'empty' | 'water' | 'axe' | 'scythe';
 // ─── World-state persistence (beds, nests, future furniture) ──────────────────
 export interface BedSaveState  { color: 'green' | 'blue' | 'pink'; x: number; y: number }
 export interface NestSaveState { x: number; y: number; state: 'empty' | 'has_egg' }
+export interface GameWorldSettingsState {
+  timeMinute: number;
+  weather: 'clear' | 'rain';
+  physicsDebug: boolean;
+  sleepThreshold: number;
+  agentBrainEnabled: boolean;
+}
 export interface GameWorldState {
   schemaVersion: 1;
   beds:  BedSaveState[];
   nests: NestSaveState[];
+  settings?: GameWorldSettingsState;
 }
 
 // ─── General world-object interaction (F key) ─────────────────────────────────

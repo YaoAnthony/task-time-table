@@ -3,6 +3,7 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
 //redux
 import { setProfile, setStatus, setError } from "../Redux/Features/profileSlice";
+import { setGameSettings } from "../Redux/Features/gameSlice";
 import { setToken, logout, setUser } from "../Redux/Features/userSlice";
 
 //types
@@ -125,6 +126,7 @@ export const profileApi = createApi({
                     // 更新 Redux store 里的 profile和 user
                     dispatch(setUser(data.user));
                     dispatch(setProfile(data.profile));
+                    dispatch(setGameSettings(data.profile.idleGame?.worldState?.settings ?? {}));
                     dispatch(setStatus("authenticated"));
                 } catch (err) {
                     // 错误处理
@@ -158,6 +160,7 @@ export const profileApi = createApi({
                     // 请求成功 → 更新 Redux store 里的 profile
                     const { data } = await queryFulfilled;
                     dispatch(setProfile(data));
+                    dispatch(setGameSettings(data.idleGame?.worldState?.settings ?? {}));
                 } catch (err) {
                     // 错误处理（逻辑和上面类似）
                     const e = err as { error: FetchBaseQueryError };
@@ -251,6 +254,7 @@ export const profileApi = createApi({
 
 export const {
     useGetActiveSystemTasksQuery,
+    useGetProfileAndUserQuery,
     useLazyGetActiveSystemTasksQuery,
     useLazyGetProfileAndUserQuery,
     useLazyGetProfileQuery,

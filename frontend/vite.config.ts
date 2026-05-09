@@ -5,6 +5,11 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/', // if we need deploy to github pages, we need to set base to '/xxxx/'
+  build: {
+    rollupOptions: {
+      output: {},
+    },
+  },
   server: {
     port: 7777,
     allowedHosts: ['a.h.g191919.com'],

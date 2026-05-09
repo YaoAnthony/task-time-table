@@ -44,6 +44,7 @@ export class Npc {
 
   // AI cooldown
   private thinkCooldown = NPC_THINK_INTERVAL;
+  private brainEnabled = true;
 
   // ── Confirmation gate (ask_confirm action pauses the queue) ────────────
   private waitingForConfirm = false;
@@ -212,7 +213,14 @@ export class Npc {
 
     if (this.pathing) {
       this.pathing.navigateTo(this.sprite.x, this.sprite.y, tx, ty, onArrive);
-      this.mode = 'walk';
+      if (this.pathing.status === 'failed') {
+        this.velX = 0;
+        this.velY = 0;
+        this.mode = 'idle';
+        this.timer = 1.5;
+      } else {
+        this.mode = 'walk';
+      }
     } else {
       // No pathfinder — head straight
       this.startMoveTo(tx, ty);
@@ -257,10 +265,12 @@ export class Npc {
     if (this.isDispatched) return;
 
     // AI think cooldown
-    this.thinkCooldown -= dt;
-    if (this.thinkCooldown <= 0) {
-      this.thinkCooldown = NPC_THINK_INTERVAL;
-      this.think(gameTick);
+    if (this.brainEnabled) {
+      this.thinkCooldown -= dt;
+      if (this.thinkCooldown <= 0) {
+        this.thinkCooldown = NPC_THINK_INTERVAL;
+        this.think(gameTick);
+      }
     }
 
     // ── Follow-player mode ─────────────────────────────────────────────────
@@ -285,6 +295,11 @@ export class Npc {
       const status = this.pathing.update(this.sprite, this.scene, 300);
       if (status === 'arrived') {
         this.mode  = 'idle';
+        this.timer = 1.5;
+      } else if (status === 'failed') {
+        this.mode = 'idle';
+        this.velX = 0;
+        this.velY = 0;
         this.timer = 1.5;
       } else if (status === 'moving') {
         const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -494,6 +509,18 @@ export class Npc {
 
   isThinking(): boolean {
     return this._isThinking;
+  }
+
+  setBrainEnabled(enabled: boolean): void {
+    this.brainEnabled = enabled;
+    if (!enabled) {
+      this.thinkCooldown = NPC_THINK_INTERVAL;
+      this.setThinking(false);
+    }
+  }
+
+  isBrainEnabled(): boolean {
+    return this.brainEnabled;
   }
 
   isAwaitingConfirm(): boolean {

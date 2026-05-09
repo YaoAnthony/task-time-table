@@ -1,42 +1,36 @@
 //react
-import { useLayoutEffect } from 'react'
+import { lazy, Suspense, useLayoutEffect } from 'react'
 
 //react route dom
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 
 //api
-import { profileApi } from "./api/profileApi";
-//redux
-import { store } from './Redux/store';
+import { useGetProfileAndUserQuery } from "./api/profileApi";
 //motion
 import { AnimatePresence } from 'motion/react';
 
-//pages
-import {
-    MainPage,
-    Dashboard,
-} from './Pages'
+const MainPage = lazy(() => import('./Pages/MainPage'));
+const Dashboard = lazy(() => import('./Pages/Dashboard'));
 
 
-// Dashboard
-import {
-    Overview,
-    Backpack,
-    Setting,
-    Tasks,
-    Store,
-    SystemRouter,
-    SystemUsage,
-    SystemStore,
-    SystemTasks,
-    SystemLottery,
-    SystemIdleGame,
-    DailyQuests,
- } from './Pages/Dashboard/component';
+const Overview = lazy(() => import('./Pages/Dashboard/component/Overview'));
+const Backpack = lazy(() => import('./Pages/Dashboard/component/Backpack'));
+const Setting = lazy(() => import('./Pages/Dashboard/component/Setting'));
+const GameSettings = lazy(() => import('./Pages/Dashboard/component/GameSettings'));
+const Tasks = lazy(() => import('./Pages/Dashboard/component/Tasks'));
+const Store = lazy(() => import('./Pages/Dashboard/component/Store'));
+const SystemRouter = lazy(() => import('./Pages/Dashboard/component/SystemRouter'));
+const SystemUsage = lazy(() => import('./Pages/Dashboard/component/SystemUsage'));
+const SystemStore = lazy(() => import('./Pages/Dashboard/component/SystemStore'));
+const SystemTasks = lazy(() => import('./Pages/Dashboard/component/SystemTasks'));
+const SystemLottery = lazy(() => import('./Pages/Dashboard/component/SystemLottery'));
+const SystemIdleGame = lazy(() => import('./Pages/Dashboard/component/SystemIdleGame'));
+const DailyQuests = lazy(() => import('./Pages/Dashboard/component/DailyQuests'));
 
 
-//feature page
-import { LoginRegisterPage, GithubCallback, LoginCallBackPage } from './Features';
+const LoginRegisterPage = lazy(() => import('./Features/Authentication/pages/LoginRegisterPage'));
+const GithubCallback = lazy(() => import('./Features/Authentication/pages/GithubCallback'));
+const LoginCallBackPage = lazy(() => import('./Features/Authentication/pages/LoginCallBackPage'));
 
 // theme
 import { useThemeSync } from './hook/useThemeSync';
@@ -59,7 +53,7 @@ const App = () => {
     // 处理主题
     useThemeSync();
     
-    store.dispatch(profileApi.endpoints.getProfileAndUser.initiate());
+    useGetProfileAndUserQuery();
     
     return (
         
@@ -67,7 +61,7 @@ const App = () => {
             <ScrollToTop />
             
             <AnimatePresence mode="wait">
-                
+                <Suspense fallback={null}>
                 <Routes location={location} key={location.pathname}>
                     <Route path="/" element={<MainPage />} />
 
@@ -85,6 +79,7 @@ const App = () => {
                         <Route path="daily-quests" element={<DailyQuests />} />
                         <Route path="store" element={<Store />} />
                         <Route path="setting" element={<Setting />} />
+                        <Route path="game-settings" element={<GameSettings />} />
                         <Route path="idle-game" element={<SystemIdleGame />} />
                         
                         {/* 系统路由 - 嵌套路由 */}
@@ -102,6 +97,7 @@ const App = () => {
                         <Route path="teams" element={<Navigate to="/dashboard/tasks" replace />} />
                     </Route>
                 </Routes>
+                </Suspense>
             </AnimatePresence>
         </div>
         

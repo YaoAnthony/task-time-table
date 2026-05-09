@@ -24,6 +24,7 @@ import {
   useLazyGetCreaturesQuery,
 } from '../../../../../api/profileStateRtkApi';
 import { initSlotsFromInventory } from '../../../../../Redux/Features/gameSlice';
+import type { GameSettingsState } from '../../../../../Redux/Features/gameSlice';
 import { gameBus }            from '../shared/EventBus';
 import { GameScene }          from '../GameScene';
 import { NPC_NAME }           from '../constants';
@@ -44,6 +45,8 @@ interface UsePhaserBootProps {
   selectedSlotRef:  RefObject<number>;
   /** 上次保存的 IdleGame 状态 */
   savedIdleGameRef: RefObject<IdleGameState | null>;
+  /** Current settings saved inside idleGame.worldState. */
+  gameSettingsRef:  RefObject<GameSettingsState>;
   /** auth token ref */
   tokenRef:         RefObject<string | null>;
   /** NPC 背包 ref */
@@ -66,6 +69,7 @@ export function usePhaserBoot({
   hotbarSlotsRef,
   selectedSlotRef,
   savedIdleGameRef,
+  gameSettingsRef,
   tokenRef,
   npcInventoriesRef,
   multiplayRoomIdRef,
@@ -93,8 +97,8 @@ export function usePhaserBoot({
 
     // ── gameBus 订阅 ──────────────────────────────────────────────────────
     const unsubs = [
-      // 时间 HUD
-      gameBus.on('tick:update', ({ timeStr: ts }) => setTimeStr(ts)),
+      // 时间 HUD — 显示完整日期+时间 ("2026-01-01 06:00")
+      gameBus.on('tick:update', ({ dateTimeStr }) => setTimeStr(dateTimeStr)),
 
       // 场景就绪 → 连接 NPC 提供者 + 加载持久数据
       gameBus.on('game:ready', () => {
@@ -159,10 +163,11 @@ export function usePhaserBoot({
     gameRef.current = new Phaser.Game(config);
 
     // ── 键盘快捷键 ──────────────────────────────────────────────────────────
-    // openChat 发出 npc:interact 事件，useNpcChat 的订阅者会处理
+    // openChat 委托给 GameScene.triggerInteract — 它会查找最近 NPC，
+    // 如果范围内没人，就会发出 'ui:show_message' 而不是空打开 chat。
     // setChat / chatOpenRef / pauseInput 均由 useNpcChat 侧完成。
     const openChat = (initialValue: string) => {
-      gameBus.emit('npc:interact', { npcName: NPC_NAME, initialValue });
+      sceneRef.current?.triggerInteract(initialValue);
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -199,7 +204,17 @@ export function usePhaserBoot({
     const saveTimer = setInterval(() => {
       const s = sceneRef.current;
       if (!s) return;
-      const gameState   = s.getGameState();
+      const rawGameState = s.getGameState();
+      const gameState: IdleGameState = {
+        ...rawGameState,
+        worldState: {
+          schemaVersion: 1,
+          beds: [],
+          nests: [],
+          ...(rawGameState.worldState ?? {}),
+          settings: gameSettingsRef.current,
+        },
+      };
       saveIdleGame(gameState).catch(() => {});
 
       const currentTick = gameState.gameTick ?? s.getGameTick?.() ?? 0;

@@ -51,6 +51,12 @@ export const CHICKEN_LAY_MS           = 5000; // ms spent laying
 // ─── Time ─────────────────────────────────────────────────────────────────────
 export const GAME_MINS_PER_SEC = 5;   // 5 in-game minutes per real second
 export const MINS_PER_DAY      = 1440;
+/** Real seconds per in-game day = 1440 / 5 = 288. */
+export const SECS_PER_GAME_DAY = MINS_PER_DAY / GAME_MINS_PER_SEC;
+/** Calendar epoch — gameTick 0 == 2026-01-01 00:00 in-game. */
+export const GAME_EPOCH_YEAR  = 2026;
+export const GAME_EPOCH_MONTH = 1;    // 1-12
+export const GAME_EPOCH_DAY   = 1;    // 1-31
 
 // ─── NPC AI ───────────────────────────────────────────────────────────────────
 /** Real seconds between autonomous GPT think calls.

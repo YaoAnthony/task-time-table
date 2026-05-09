@@ -63,6 +63,9 @@ import { RenderSyncSystem } from './systems/RenderSyncSystem';
 import { SleepManager }        from './systems/SleepManager';
 import { NpcMemorySystem } from './systems/NpcMemorySystem';
 import { NpcThinkSystem } from './systems/NpcThinkSystem';
+import { NpcScheduleSystem } from './systems/NpcScheduleSystem';
+import { NpcNeedsSystem } from './systems/NpcNeedsSystem';
+import { NpcGossipSystem } from './systems/NpcGossipSystem';
 import { StateBackedWorldGrid } from './shared/StateBackedWorldGrid';
 import { SpatialIndex }          from './shared/SpatialIndex';
 import { WorldStateManager }     from './shared/WorldStateManager';
@@ -164,9 +167,13 @@ export class GameScene extends Phaser.Scene {
   private worldFacade!: WorldFacade;
   private npcMemorySystem!: NpcMemorySystem;
   private npcThinkSystem!: NpcThinkSystem;
+  private npcScheduleSystem?: NpcScheduleSystem;
+  private npcNeedsSystem?: NpcNeedsSystem;
+  private npcGossipSystem?: NpcGossipSystem;
   worldGrid!: StateBackedWorldGrid;
   worldStateManager!: WorldStateManager;
   private physicsDebugEnabled = false;
+  private agentBrainEnabled = true;
 
   // ── Perception system ─────────────────────────────────────────────────────
   private perceptionSystem!: PerceptionSystem;
@@ -208,7 +215,34 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getNpcRegistrations(): Array<{ id: string; npc: Npc }> {
-    return [{ id: this.npc.name, npc: this.npc }];
+    const all: Array<{ id: string; npc: Npc }> = [{ id: this.npc.name, npc: this.npc }];
+    for (const n of this.extraNpcs) all.push({ id: n.name, npc: n });
+    return all;
+  }
+
+  /** Linear-search any NPC by name (main + extras). */
+  private findNpcByName(name: string): Npc | null {
+    if (this.npc?.name === name) return this.npc;
+    return this.extraNpcs.find(n => n.name === name) ?? null;
+  }
+
+  /** Iterate all NPCs (main + extras). */
+  private allNpcs(): Npc[] {
+    return [this.npc, ...this.extraNpcs];
+  }
+
+  /** Closest NPC to (x,y) within radius (px). Returns null if none in range. */
+  private findNearestNpc(x: number, y: number, radius: number): Npc | null {
+    let best: Npc | null = null;
+    let bestD2 = radius * radius;
+    for (const n of this.allNpcs()) {
+      if (!n?.sprite) continue;
+      const dx = n.sprite.x - x;
+      const dy = n.sprite.y - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { best = n; bestD2 = d2; }
+    }
+    return best;
   }
 
   private spawnChickenAt(x: number, y: number, id?: string): ChickenView {
@@ -659,6 +693,32 @@ export class GameScene extends Phaser.Scene {
       getChatOpen: () => this._chatOpen,
     });
 
+    // ── NPC daily routine + internal drives ──────────────────────────────
+    // Schedule pushes time-of-day actions (work_farm at 08:00, lunch at 12:00, etc.)
+    // Needs ticks energy/hunger/social and emits autonomous lines when low.
+    // Both ultimately call npc.say(...) which fires npc:speak → DialogBox.
+    this.npcScheduleSystem = new NpcScheduleSystem({
+      worldStateManager:   this.worldStateManager,
+      dayCycle:            this.dayCycle,
+      npcMemorySystem:     this.npcMemorySystem,
+      getNpcRegistrations: () => this.getNpcRegistrations(),
+    });
+    this.npcNeedsSystem = new NpcNeedsSystem({
+      worldStateManager:   this.worldStateManager,
+      dayCycle:            this.dayCycle,
+      npcMemorySystem:     this.npcMemorySystem,
+      getNpcRegistrations: () => this.getNpcRegistrations(),
+      getPlayerPosition:   () =>
+        this.player ? { x: this.player.sprite.x, y: this.player.sprite.y } : null,
+    });
+
+    // Gossip — when one NPC speaks, nearby NPCs can chime in (canned reactions, no GPT).
+    this.npcGossipSystem = new NpcGossipSystem({
+      scene:               this,
+      getNpcRegistrations: () => this.getNpcRegistrations(),
+    });
+    this.npcGossipSystem.start();
+
     // ── Tool pickups inside the house ────────────────────────────────────────
     // House-1 interior: x:112–368, y:112–256 (cols 1-8, rows 1-4)
     // Place tools on a shelf row near the back wall (row 2)
@@ -739,7 +799,12 @@ export class GameScene extends Phaser.Scene {
     // ── Emit time string to React HUD (max once per real second) ─────────
     if (time - this._lastTimeEmit > 1000) {
       this._lastTimeEmit = time;
-      gameBus.emit('tick:update', { gameTick: this.dayCycle.gameTick, timeStr: this.dayCycle.getTimeStr() });
+      gameBus.emit('tick:update', {
+        gameTick:    this.dayCycle.gameTick,
+        timeStr:     this.dayCycle.getTimeStr(),
+        dateStr:     this.dayCycle.getDateStr(),
+        dateTimeStr: this.dayCycle.getDateTimeStr(),
+      });
     }
 
     // ── F-key: general world-object interaction ───────────────────────────
@@ -777,7 +842,11 @@ export class GameScene extends Phaser.Scene {
 
     // ── House doors (player or any NPC triggers each door) ───────────────
     this.syncDynamicEntityStates();
-    this.npcThinkSystem?.update(dt, this.dayCycle.gameTick);
+    if (this.agentBrainEnabled) {
+      this.npcThinkSystem?.update(dt, this.dayCycle.gameTick);
+      this.npcScheduleSystem?.update(dt, this.dayCycle.gameTick);
+      this.npcNeedsSystem?.update(dt, this.dayCycle.gameTick);
+    }
     const _hpx = this.player.sprite.x, _hpy = this.player.sprite.y;
     this.house.update(_hpx, _hpy, this.npc.sprite.x, this.npc.sprite.y);
     this.npcHouse?.update(_hpx, _hpy,
@@ -1185,10 +1254,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   // ── Interaction triggers (called from React keydown handler) ─────────────
-  /** E key / Talk button — open chat with the NPC. */
-  triggerInteract(): void {
-    this.npcThinkSystem?.pauseNpc(this.npc.name, this.dayCycle.gameTick, 10, 'player_interaction');
-    gameBus.emit('npc:interact', { npcName: this.npc.name });
+  /**
+   * Enter key / Talk button — open chat with the closest NPC within range.
+   * If no NPC is near, fires a system message instead of opening an empty chat.
+   */
+  triggerInteract(initialValue: string = ''): void {
+    if (!this.player) return;
+    const px = this.player.sprite.x;
+    const py = this.player.sprite.y;
+    const target = this.findNearestNpc(px, py, 220);   // ~7 tiles
+    if (!target) {
+      gameBus.emit('ui:show_message', { text: '附近没有人可以说话。' });
+      return;
+    }
+    this.npcThinkSystem?.pauseNpc(target.name, this.dayCycle.gameTick, 10, 'player_interaction');
+    gameBus.emit('npc:interact', { npcName: target.name, initialValue });
+  }
+
+  /** Closest NPC name to player within radius. Used by React UI for the button label. */
+  getNearestNpcName(radius = 220): string | null {
+    if (!this.player) return null;
+    const n = this.findNearestNpc(this.player.sprite.x, this.player.sprite.y, radius);
+    return n?.name ?? null;
   }
 
   /** Space key — use current tool: axe→chop, scythe→till, water→irrigate, seed→plant. */
@@ -1272,30 +1359,48 @@ export class GameScene extends Phaser.Scene {
 
   /** Show / hide the thinking indicator on a named NPC's speech bubble. */
   setNpcThinking(npcName: string, thinking: boolean): void {
-    if (this.npc.name === npcName) {
-      this.npc.setThinking(thinking);
-      if (thinking) {
-        this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'chat_request');
-      }
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    target.setThinking(thinking);
+    if (thinking) {
+      this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'chat_request');
     }
   }
 
   /** Record a player message in the NPC's memory. */
   addPlayerMessageToNpc(npcName: string, text: string): void {
-    if (this.npc.name === npcName) this.npc.addMemory(text, 'player', this.dayCycle.gameTick);
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    const tick = this.dayCycle.gameTick;
+    target.addMemory(text, 'player', tick);
+    // Bump relationship counters + refill social drive — both are local-only
+    // (not yet persisted to DB) but feed straight into the next chat prompt.
+    this.npcMemorySystem?.recordPlayerChat(npcName, tick);
+    this.npcNeedsSystem?.bumpSocial(npcName, tick, 25);
+  }
+
+  /** Familiarity score (0-100) — sent to backend in chat body so the LLM tone evolves. */
+  getNpcFamiliarity(npcName: string): number {
+    return this.npcMemorySystem?.getRelationship(npcName)?.familiarity ?? 0;
+  }
+
+  /** Total chat count between player and NPC — also sent to backend. */
+  getNpcChatCount(npcName: string): number {
+    return this.npcMemorySystem?.getRelationship(npcName)?.chatCount ?? 0;
   }
 
   /** Make the NPC speak a reply (shows bubble + triggers React dialog). */
   npcReply(npcName: string, text: string): void {
-    if (this.npc.name === npcName) {
-      this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'chat_reply');
-      this.npc.say(text, this.dayCycle.gameTick);
-    }
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'chat_reply');
+    target.say(text, this.dayCycle.gameTick);
   }
 
   /** Return the current (local-cache) memory array for a named NPC. */
   getNpcMemory(npcName: string): NpcMemoryEntry[] {
-    return this.npc.name === npcName ? [...this.npc.memory] : [];
+    const target = this.findNpcByName(npcName);
+    return target ? [...target.memory] : [];
   }
 
   getNpcMindState(npcId = this.npc.name): NpcMindState | null {
@@ -1317,20 +1422,26 @@ export class GameScene extends Phaser.Scene {
    * Always appends the built-in location memory so 老李 knows where the room is.
    */
   loadNpcMemories(npcName: string, entries: NpcMemoryEntry[]): void {
-    if (this.npc.name !== npcName) return;
-    const locationMemory: NpcMemoryEntry = {
-      id:           'builtin-house-location',
-      gameTick:     0,
-      text:         '我知道地图右边有一间木屋，那是我和玩家共同的房间。' +
-                    '木屋大门入口坐标约(502, 336)，房间内部中心坐标约(550, 240)。' +
-                    '当玩家说"去房间里"时，我应该回复我要去，然后去房间。' +
-                    '当玩家说"出来找我"时，我应该出来到玩家身边。',
-      source:       'event',
-      importance:   9,
-      keywords:     ['房间', '木屋', '大门', '室内', '里面', '进去', '出来', '找我'],
-      lastAccessed: 0,
-    };
-    this.npc.loadMemories([locationMemory, ...entries]);
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    // Only inject the built-in house-location memory for the main NPC (老李).
+    if (target === this.npc) {
+      const locationMemory: NpcMemoryEntry = {
+        id:           'builtin-house-location',
+        gameTick:     0,
+        text:         '我知道地图右边有一间木屋，那是我和玩家共同的房间。' +
+                      '木屋大门入口坐标约(502, 336)，房间内部中心坐标约(550, 240)。' +
+                      '当玩家说"去房间里"时，我应该回复我要去，然后去房间。' +
+                      '当玩家说"出来找我"时，我应该出来到玩家身边。',
+        source:       'event',
+        importance:   9,
+        keywords:     ['房间', '木屋', '大门', '室内', '里面', '进去', '出来', '找我'],
+        lastAccessed: 0,
+      };
+      target.loadMemories([locationMemory, ...entries]);
+    } else {
+      target.loadMemories(entries);
+    }
   }
 
   // ── NPC action execution (called from React after player message / SSE) ────
@@ -1340,9 +1451,10 @@ export class GameScene extends Phaser.Scene {
    * Used by both chat replies and SSE npc_command events.
    */
   executeNpcActions(npcName: string, actions: import('./types').NpcAction[]): void {
-    if (this.npc.name !== npcName) return;
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
     this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'external_action_queue');
-    this.actionExecutor.execute(this.npc, actions, this.dayCycle.gameTick);
+    this.actionExecutor.execute(target, actions, this.dayCycle.gameTick);
   }
 
   /** Return the player's current world position (used to pass to backend for context). */
@@ -1471,20 +1583,23 @@ export class GameScene extends Phaser.Scene {
 
   /** Make a named NPC say text (called from React after async API returns). */
   makeNpcSay(npcName: string, text: string): void {
-    if (this.npc.name === npcName) {
-      this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'async_speech');
-      this.npc.say(text, this.dayCycle.gameTick);
-    }
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'async_speech');
+    target.say(text, this.dayCycle.gameTick);
   }
 
   /**
    * Return a description of what the NPC can currently observe.
    * Passed to the backend as LLM context before a chat request.
+   * Optionally scoped to a specific NPC name.
    */
-  getPerceptionReport(): string {
-    const result = this.perceptionSystem?.perceiveEntity(this.npc.name) ?? null;
+  getPerceptionReport(npcName?: string): string {
+    const target = npcName ? this.findNpcByName(npcName) : this.npc;
+    if (!target) return '';
+    const result = this.perceptionSystem?.perceiveEntity(target.name) ?? null;
     const report = result ? formatPerceptionForNpcPrompt(result) : '';
-    console.log(`[GameScene] perceptionReport (npc at ${Math.round(this.npc.sprite.x)},${Math.round(this.npc.sprite.y)}): "${report.slice(0, 200)}"`);
+    console.log(`[GameScene] perceptionReport (${target.name} at ${Math.round(target.sprite.x)},${Math.round(target.sprite.y)}): "${report.slice(0, 200)}"`);
     return report;
   }
 
@@ -1492,10 +1607,10 @@ export class GameScene extends Phaser.Scene {
    * Resume or cancel the NPC's queued actions after an ask_confirm dialog.
    */
   confirmNpcAction(npcName: string, confirmed: boolean): void {
-    if (this.npc.name === npcName) {
-      this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 4, 'confirm_resolution');
-      this.npc.respondToConfirm(confirmed);
-    }
+    const target = this.findNpcByName(npcName);
+    if (!target) return;
+    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 4, 'confirm_resolution');
+    target.respondToConfirm(confirmed);
   }
 
   /**
@@ -1773,6 +1888,14 @@ export class GameScene extends Phaser.Scene {
     return this.commands.execute(input);
   }
 
+  private setAgentBrainEnabled(enabled: boolean): void {
+    this.agentBrainEnabled = enabled;
+    this.npc?.setBrainEnabled(enabled);
+    for (const npc of this.extraNpcs ?? []) {
+      npc.setBrainEnabled(enabled);
+    }
+  }
+
   private setPhysicsDebug(enabled: boolean): void {
     const world = this.physics.world;
 
@@ -1860,6 +1983,30 @@ export class GameScene extends Phaser.Scene {
           return '碰撞调试已关闭';
         }
         return `当前状态: ${this.physicsDebugEnabled ? 'on' : 'off'}。用法: /debug on | /debug off`;
+      },
+    );
+
+    this.commands.register(
+      'agent',
+      'control NPC autonomy — /agent brain stop | start | status',
+      (args) => {
+        const scope = args[0]?.toLowerCase();
+        const mode = args[1]?.toLowerCase();
+        if (scope !== 'brain') {
+          return '用法: /agent brain stop | /agent brain start | /agent brain status';
+        }
+        if (mode === 'stop' || mode === 'off') {
+          this.setAgentBrainEnabled(false);
+          return 'Agent brain 已停止。NPC 不会再自主思考、日程行动或需求驱动。';
+        }
+        if (mode === 'start' || mode === 'on') {
+          this.setAgentBrainEnabled(true);
+          return 'Agent brain 已开启。NPC 将恢复自主思考。';
+        }
+        if (mode === 'status' || !mode) {
+          return `Agent brain: ${this.agentBrainEnabled ? 'on' : 'off'}`;
+        }
+        return '用法: /agent brain stop | /agent brain start | /agent brain status';
       },
     );
 

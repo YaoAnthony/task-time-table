@@ -3,6 +3,7 @@ import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolk
 import type { RootState } from '../Redux/store';
 import { getEnv } from '../config/env';
 import { setToken, logout } from '../Redux/Features/userSlice';
+import { setProfile } from '../Redux/Features/profileSlice';
 import {
     setInventory,
     setProfileState,
@@ -176,6 +177,18 @@ export const profileStateRtkApi = createApi({
                 method: 'PATCH',
                 body,
             }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...currentProfile,
+                            idleGame: data.idleGame,
+                        }));
+                    }
+                } catch (_) {}
+            },
         }),
 
         /**
@@ -194,6 +207,10 @@ export const profileStateRtkApi = createApi({
                 perception?:    string;
                 /** NPC's current inventory — so LLM knows what NPC has. */
                 npcInventory?:  Record<string, number>;
+                /** Familiarity score (0-100) — feeds LLM prompt so tone evolves with relationship. */
+                familiarity?:   number;
+                /** Total chat count between player + NPC. */
+                chatCount?:     number;
             }
         >({
             query: (body) => ({

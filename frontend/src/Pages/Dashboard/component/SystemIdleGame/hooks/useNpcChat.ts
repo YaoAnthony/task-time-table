@@ -112,7 +112,7 @@ export function useNpcChat(
             );
           });
         } catch {
-          sceneRef.current?.makeNpcSay(npcName, '属实跑了一趟，没带啥好东西回来，下次吧');
+          sceneRef.current?.makeNpcSay(npcName, '跑了一趟，没带回啥东西，下次再说吧。');
         }
       }),
     ];
@@ -173,6 +173,8 @@ export function useNpcChat(
       const gameTick   = sceneRef.current.getGameTick();
       const playerPos  = sceneRef.current.getPlayerPosition();
       const perception = sceneRef.current.getPerceptionReport?.() ?? '';
+      const familiarity = sceneRef.current.getNpcFamiliarity?.(npcName) ?? 0;
+      const chatCount   = sceneRef.current.getNpcChatCount?.(npcName)   ?? 0;
       const result     = await npcChat({
         npcName,
         playerMessage: text,
@@ -181,6 +183,8 @@ export function useNpcChat(
         playerY:       playerPos.y,
         perception,
         npcInventory:  npcInventoriesRef.current[npcName] ?? {},
+        familiarity,
+        chatCount,
       }).unwrap();
 
       sceneRef.current.npcReply(npcName, result.reply ?? '……');

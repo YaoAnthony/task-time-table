@@ -2,12 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --border: rgba(255, 255, 255, 0.1); /* 比如一个淡白色边框 */
-  --layer: #1f1f1f; /* 深灰色浮层背景 */
+/* ═══════════════════════════════════════════
+   PIXEL GAME THEME — 幻星纪元
+   ═══════════════════════════════════════════ */
 
+/* Pixel font "Press Start 2P" loaded via index.html <link> */
+
+:root {
+  --border: rgba(255, 255, 255, 0.1);
+  --layer: #1f1f1f;
   --card-height: 45vh;
   --card-width: calc(var(--card-height) / 1.5);
+
+  /* ── Pixel Game Palette ── */
+  --px-bg:          #0d1117;   /* main dark canvas */
+  --px-surface:     #161b22;   /* panel / sidebar surface */
+  --px-surface2:    #21262d;   /* slightly lighter surface */
+  --px-border:      #30363d;   /* default border */
+  --px-border-gold: #b8960c;   /* gold accent border */
+  --px-gold:        #ffd700;   /* active / highlight gold */
+  --px-gold-dim:    #c8a84b;   /* dimmed gold */
+  --px-blue:        #388bfd;   /* info / link blue */
+  --px-text:        #e6edf3;   /* primary text */
+  --px-muted:       #7d8590;   /* secondary text */
+  --px-danger:      #da3633;   /* red */
+}
+
+/* ── Pixel Panel — sharp-corner box with inner bevel ── */
+.px-panel {
+  background: var(--px-surface);
+  border: 2px solid var(--px-border);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,255,255,0.06),
+    inset -1px -1px 0 rgba(0,0,0,0.4);
+  border-radius: 0;
+}
+
+/* Gold-accent active panel */
+.px-panel-gold {
+  background: var(--px-surface);
+  border: 2px solid var(--px-border-gold);
+  box-shadow:
+    inset 1px 1px 0 rgba(255,215,0,0.08),
+    inset -1px -1px 0 rgba(0,0,0,0.4),
+    0 0 12px rgba(184,150,12,0.15);
+}
+
+/* Subtle pixel grid background overlay */
+.px-grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Pixel scanline overlay (subtle CRT effect) */
+.px-scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.04) 2px,
+    rgba(0,0,0,0.04) 4px
+  );
+  z-index: 9999;
 }
 
 .markdown-container {
@@ -30,10 +92,9 @@ html {
 }
 
 .screen-max-width {
-  margin-inline-start: auto;
-  margin-inline-end: auto;
+  /* Full-screen layout — no max-width constraint */
   position: relative;
-  max-width: 1600px;
+  width: 100%;
 }
 
 /* 在你的全局 CSS 中添加，比如 index.css 或 tailwind.config.js 的 content 部分包含它 */
@@ -288,44 +349,157 @@ html {
   }
 }
 
-/* System Management Tabs Styling */
+/* ════════════════════════════════════════════════════════════════════════════
+   PIXEL GAME — Inner page panel overrides
+   Targets everything inside #px-content (the Outlet wrapper).
+   Strips glassmorphism from all 24+ page components without touching them.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Height fix: replace h-[85vh] with full flex fill ───────────────────── */
+#px-content {
+  display: flex;
+  flex-direction: column;
+}
+#px-content > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Outer page section/wrapper ─────────────────────────────────────────── */
+#px-content section,
+#px-content > div > section,
+#px-content > div > div > section {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--px-surface) !important;
+  border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  /* Let the section fill the available flex space instead of 85vh */
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+/* ── White/frosted inner cards ──────────────────────────────────────────── */
+#px-content .rounded-3xl,
+#px-content .rounded-2xl,
+#px-content .rounded-xl {
+  border-radius: 0 !important;
+}
+
+/* Remove glass tint on white/black translucent backgrounds */
+#px-content [class*="bg-white/"],
+#px-content [class*="bg-black/"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Inner panels / cards with white background → dark surface */
+#px-content .bg-white\/40,
+#px-content .bg-white\/60,
+#px-content .bg-white\/80,
+#px-content .bg-white,
+#px-content [class*="bg-white"] {
+  background-color: var(--px-surface2) !important;
+}
+
+/* Borders → dark grid border */
+#px-content [class*="border-white/"],
+#px-content [class*="border-black/"] {
+  border-color: var(--px-border) !important;
+}
+
+/* Text: dark/neutral text → light px-text */
+#px-content .text-neutral-800,
+#px-content .text-neutral-900,
+#px-content .text-gray-800,
+#px-content .text-gray-900 {
+  color: var(--px-text) !important;
+}
+#px-content .text-neutral-500,
+#px-content .text-neutral-400,
+#px-content .text-gray-500,
+#px-content .text-gray-400 {
+  color: var(--px-muted) !important;
+}
+
+/* ── System Management Tabs — Pixel Game Style ── */
 .system-tabs .ant-tabs-nav {
   margin-bottom: 0;
+  background: var(--px-surface);
+  border-bottom: 2px solid var(--px-border) !important;
 }
 
 .system-tabs .ant-tabs-tab {
-  color: #6b7280; /* text-gray-500 */
-  font-weight: 600;
-  transition: all 0.3s;
+  color: var(--px-muted);
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  transition: color 0.15s;
+  margin: 0 !important;
+  padding: 10px 16px !important;
 }
 
 .system-tabs .ant-tabs-tab:hover {
-  color: #111827; /* text-gray-900 */
-}
-
-/* Dark mode overrides for system-tabs wrapper */
-.dark .system-tabs .ant-tabs-tab {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.dark .system-tabs .ant-tabs-tab:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--px-text) !important;
 }
 
 .system-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: #ffc72c !important;
-  text-shadow: 0 0 10px rgba(255, 199, 44, 0.3);
+  color: var(--px-gold) !important;
 }
 
 .system-tabs .ant-tabs-ink-bar {
-  background: #ffc72c;
-  box-shadow: 0 0 10px rgba(255, 199, 44, 0.5);
+  background: var(--px-gold) !important;
+  height: 2px !important;
 }
 
 .system-tabs .ant-tabs-content {
   height: 100%;
 }
-
 .system-tabs .ant-tabs-tabpane {
   height: 100%;
+}
+
+/* ── Force dark background for Ant Design modals ── */
+.ant-modal-content {
+  background: var(--px-surface) !important;
+  border: 2px solid var(--px-border) !important;
+  border-radius: 0 !important;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.8) !important;
+}
+.ant-modal-header {
+  background: var(--px-surface2) !important;
+  border-bottom: 2px solid var(--px-border) !important;
+  border-radius: 0 !important;
+}
+.ant-modal-title {
+  color: var(--px-gold) !important;
+}
+.ant-modal-close {
+  color: var(--px-muted) !important;
+}
+
+/* ── Global overrides for cards inside pages ── */
+.ant-card {
+  background: var(--px-surface) !important;
+  border: 2px solid var(--px-border) !important;
+  border-radius: 0 !important;
+}
+.ant-card-head {
+  border-bottom: 2px solid var(--px-border) !important;
+  background: var(--px-surface2) !important;
+  color: var(--px-text) !important;
+  border-radius: 0 !important;
+}
+.ant-card-body {
+  background: var(--px-surface) !important;
+  color: var(--px-text) !important;
+}
+
+/* Tooltip dark override */
+.ant-tooltip-inner {
+  background: var(--px-surface2) !important;
+  border: 1px solid var(--px-border) !important;
+  border-radius: 0 !important;
+  color: var(--px-text) !important;
 }
