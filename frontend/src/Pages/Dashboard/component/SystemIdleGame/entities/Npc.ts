@@ -13,7 +13,11 @@ import { NPC_SPEED, NPC_MAX_MEMORY, CHAR_FRAME_W, CHAR_FRAME_H } from '../consta
 import type { Pathfinder } from '../systems/Pathfinder';
 import { PathingComponent } from '../shared/PathingComponent';
 import { gameBus } from '../shared/EventBus';
+import { PLAYER_HOUSE_DOOR } from '../shared/WorldLocations';
 import type { NpcAutonomyMode } from '../systems/NpcBehaviorPolicy';
+
+const NPC_BODY_W = 10;
+const NPC_BODY_H = 8;
 
 function stableHash(input: string): number {
   let value = 0;
@@ -109,8 +113,11 @@ export class Npc {
     this.sprite.setScale(2).setTint(0x88ffaa).setCollideWorldBounds(true);
 
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    body.setSize(16, 10);
-    body.setOffset((CHAR_FRAME_W - 16) / 2, CHAR_FRAME_H - 22); // same as player
+    body.setSize(NPC_BODY_W, NPC_BODY_H);
+    body.setOffset(
+      (CHAR_FRAME_W - NPC_BODY_W) / 2,
+      CHAR_FRAME_H / 2,
+    );
     this.sprite.play('idle-up');
     this.sprite.setDepth(y + 96);
 
@@ -211,9 +218,7 @@ export class Npc {
     if (clearQueue) this.plannedActions = [];
     this.conversationPartner = partner;
     this.conversationLockTimer = Math.max(this.conversationLockTimer, duration);
-    this.velX = 0;
-    this.velY = 0;
-    this.mode = 'idle';
+    this.stopMovement();
     this.faceToward(partner.x, partner.y);
   }
 
@@ -225,7 +230,7 @@ export class Npc {
    */
   startDispatch(carriedItems: Record<string, number> = {}): void {
     this.isFollowing = false;
-    this.navigateTo(502, 336, () => {
+    this.navigateTo(PLAYER_HOUSE_DOOR.x, PLAYER_HOUSE_DOOR.y, () => {
       // Hide sprite + UI labels while away
       this.sprite.setVisible(false);
       this.labelText.setVisible(false);
@@ -237,10 +242,11 @@ export class Npc {
 
       // Return after 10 s
       this.scene.time.delayedCall(10_000, () => {
-        this.sprite.setPosition(502, 336);
+        this.sprite.setPosition(PLAYER_HOUSE_DOOR.x, PLAYER_HOUSE_DOOR.y);
         this.sprite.setVisible(true);
         this.labelText.setVisible(true);
         (this.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
+        this.stopMovement();
         this.isDispatched = false;
         gameBus.emit('npc:dispatch_return', { npcName: this.name, carriedItems });
       });
@@ -249,20 +255,15 @@ export class Npc {
 
   /**
    * Navigate to world position (tx, ty) using A*.
-   * Clears any in-progress wandering / planned move actions.
+   * Keeps the planned queue intact so multi-step tasks can continue after arrival.
    */
   navigateTo(tx: number, ty: number, onArrive?: () => void): void {
-    // Clear pending random wander (but keep speech-only planned actions)
-    this.plannedActions = this.plannedActions.filter(a => a.type === 'say');
-
     if (this.pathing) {
       this.pathing.navigateTo(this.sprite.x, this.sprite.y, tx, ty, onArrive);
       this.navigationTarget = { x: tx, y: ty };
       if (this.pathing.status === 'failed') {
         this.emitNavigationFailed('no_path');
-        this.velX = 0;
-        this.velY = 0;
-        this.mode = 'idle';
+        this.stopMovement();
         this.timer = 1.5;
       } else {
         this.mode = 'walk';
@@ -277,9 +278,7 @@ export class Npc {
   clearNavigation(): void {
     this.pathing?.clearNavigation();
     this.navigationTarget = null;
-    this.velX = 0;
-    this.velY = 0;
-    this.mode = 'idle';
+    this.stopMovement();
   }
 
   /**
@@ -302,7 +301,7 @@ export class Npc {
     this.waitingForConfirm = false;
     if (!yes) {
       this.plannedActions = [];
-      this.pathing?.clearNavigation();
+      this.clearNavigation();
     }
   }
 
@@ -314,9 +313,7 @@ export class Npc {
     const conversationLocked = this.conversationLockTimer > 0;
     if (conversationLocked) {
       this.conversationLockTimer = Math.max(0, this.conversationLockTimer - dt);
-      this.velX = 0;
-      this.velY = 0;
-      this.mode = 'idle';
+      this.stopMovement();
       if (this.conversationPartner) {
         this.faceToward(this.conversationPartner.x, this.conversationPartner.y);
       }
@@ -347,13 +344,11 @@ export class Npc {
       const status = this.pathing.update(this.sprite, this.scene, 300);
       if (status === 'arrived') {
         this.navigationTarget = null;
-        this.mode  = 'idle';
+        this.stopMovement();
         this.timer = 1.5;
       } else if (status === 'failed') {
         this.emitNavigationFailed('stuck_or_timeout');
-        this.mode = 'idle';
-        this.velX = 0;
-        this.velY = 0;
+        this.stopMovement();
         this.timer = 1.5;
       } else if (status === 'moving') {
         const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -370,9 +365,7 @@ export class Npc {
         } else if (this.plannedActions.length > 0) {
           this.executeAction(this.plannedActions.shift()!, gameTick);
         } else if (!this.allowsIdleAutonomy()) {
-          this.velX = 0;
-          this.velY = 0;
-          this.mode = 'idle';
+          this.stopMovement();
           this.timer = 1.5;
         } else {
           this.randomWander();
@@ -428,8 +421,7 @@ export class Npc {
         break;
       }
       case 'idle':
-        this.velX = 0; this.velY = 0;
-        this.mode = 'idle';
+        this.stopMovement();
         this.timer = action.duration ?? 3;
         break;
 
@@ -576,8 +568,7 @@ export class Npc {
       }
 
       default:
-        this.velX = 0; this.velY = 0;
-        this.mode = 'idle';
+        this.stopMovement();
         this.timer = 3;
     }
   }
@@ -687,6 +678,12 @@ export class Npc {
     return this.pathing?.isMoving() ?? false;
   }
 
+  getPathDebugPoints(): [number, number][] {
+    const waypoints = this.pathing?.getWaypoints() ?? [];
+    if (waypoints.length === 0) return [];
+    return [[this.sprite.x, this.sprite.y], ...waypoints];
+  }
+
   private emitNavigationFailed(reason: string): void {
     const target = this.navigationTarget;
     if (!target) return;
@@ -722,6 +719,14 @@ export class Npc {
     }
   }
 
+  private stopMovement(): void {
+    this.velX = 0;
+    this.velY = 0;
+    this.mode = 'idle';
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body | null;
+    body?.setVelocity(0, 0);
+  }
+
   faceToward(tx: number, ty: number): void {
     const dx = tx - this.sprite.x;
     const dy = ty - this.sprite.y;
@@ -737,8 +742,7 @@ export class Npc {
       this.mode  = 'walk';
       this.timer = 1.2 + Math.random() * 2;
     } else {
-      this.velX = 0; this.velY = 0;
-      this.mode  = 'idle';
+      this.stopMovement();
       this.timer = 1.5 + Math.random() * 2.5;
     }
   }

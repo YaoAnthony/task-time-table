@@ -1,6 +1,7 @@
 import { User } from "./User";
 import type { SystemLite } from "./System";
 import type { GameWorldState } from '../Pages/Dashboard/component/SystemIdleGame/types';
+import type { GameSaveV1 } from '../Pages/Dashboard/component/SystemIdleGame/persistence/save/GameSaveTypes';
 
 
 export type AttributeKey =
@@ -83,4 +84,5 @@ export interface Profile {
     attributes?: Record<AttributeKey, AttributeValue>;
     inventory?: InventoryItem[];
     idleGame?: IdleGameState;
+    gameSave?: GameSaveV1 | null;
 }

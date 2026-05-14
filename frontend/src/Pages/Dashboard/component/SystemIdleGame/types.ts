@@ -116,6 +116,14 @@ export interface NpcAction {
 export interface NpcChatResponse {
   reply:   string;
   actions: NpcAction[];
+  mcp?: {
+    enabled: boolean;
+    toolCalls: Array<{
+      name?: string;
+      ok?: boolean;
+      action?: NpcAction | null;
+    }>;
+  };
 }
 
 /** SSE npc_command event payload — server can push NPC behavior at any time. */

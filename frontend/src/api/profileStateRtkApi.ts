@@ -19,6 +19,7 @@ import type { IdleGameState, GameChest } from '../Types/Profile';
 import type { NpcMemoryEntry, NpcChatResponse } from '../Pages/Dashboard/component/SystemIdleGame/types';
 import type { GameInventoryItem, FarmTile, CreatureState } from '../Redux/Features/gameSlice';
 import { setGameInventory, setFarmTiles, upsertFarmTile } from '../Redux/Features/gameSlice';
+import type { GameSaveV1 } from '../Pages/Dashboard/component/SystemIdleGame/persistence/save/GameSaveTypes';
 
 const { backendUrl } = getEnv();
 
@@ -70,6 +71,17 @@ export type NpcPersonaSkill = {
     content: string;
     body: string;
     files?: Array<{ path: string; content: string; kind?: string }>;
+};
+
+export type GameNpcShopItem = {
+    id: string;
+    name: string;
+    role: string;
+    title: string;
+    description: string;
+    price: number;
+    owned: boolean;
+    ownedByDefault?: boolean;
 };
 
 export const profileStateRtkApi = createApi({
@@ -204,6 +216,104 @@ export const profileStateRtkApi = createApi({
             },
         }),
 
+        getGameSave: builder.query<{ success: boolean; gameSave: GameSaveV1 }, string | void>({
+            query: (roomId) => roomId ? `/profile/game/save?roomId=${encodeURIComponent(roomId)}` : '/profile/game/save',
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...currentProfile,
+                            gameSave: data.gameSave,
+                        }));
+                    }
+                } catch (_) {}
+            },
+        }),
+
+        saveGameSave: builder.mutation<
+            { success: boolean; gameSave: GameSaveV1 },
+            { gameSave: GameSaveV1; roomId?: string | null }
+        >({
+            query: ({ gameSave, roomId }) => ({
+                url: '/profile/game/save',
+                method: 'PUT',
+                body: { gameSave, roomId },
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...currentProfile,
+                            gameSave: data.gameSave,
+                        }));
+                    }
+                } catch (_) {}
+            },
+        }),
+
+        getGameNpcShop: builder.query<
+            {
+                success: boolean;
+                wallet: { coins: number };
+                unlockedNpcs: string[];
+                npcs: GameNpcShopItem[];
+                gameSave: GameSaveV1;
+            },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/npc-shop?roomId=${encodeURIComponent(roomId)}` : '/profile/game/npc-shop',
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...currentProfile,
+                            wallet: data.wallet,
+                            gameSave: data.gameSave,
+                        }));
+                    }
+                } catch (_) {}
+            },
+        }),
+
+        purchaseGameNpc: builder.mutation<
+            {
+                success: boolean;
+                alreadyOwned?: boolean;
+                npc: GameNpcShopItem;
+                wallet: { coins: number };
+                unlockedNpcs: string[];
+                gameSave: GameSaveV1;
+            },
+            { npcId: string; roomId?: string | null }
+        >({
+            query: (body) => ({
+                url: '/profile/game/npc-shop/purchase',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...currentProfile,
+                            wallet: data.wallet,
+                            gameSave: data.gameSave,
+                        }));
+                    }
+                } catch (_) {}
+            },
+        }),
+
         /**
          * Send a player message to an NPC and receive a short GPT reply.
          * Memory is now owned entirely by the backend — no need to send it.
@@ -225,6 +335,8 @@ export const profileStateRtkApi = createApi({
                 familiarity?:   number;
                 /** Total chat count between player + NPC. */
                 chatCount?:     number;
+                /** When false, backend must not run LLM/MCP tools. */
+                agentBrainEnabled?: boolean;
             }
         >({
             query: (body) => ({
@@ -447,6 +559,10 @@ export const {
     usePurchaseFromSystemStoreMutation,
     useUseInventoryItemMutation,
     useSaveIdleGameMutation,
+    useLazyGetGameSaveQuery,
+    useSaveGameSaveMutation,
+    useGetGameNpcShopQuery,
+    usePurchaseGameNpcMutation,
     useNpcChatMutation,
     useNpcDispatchReturnMutation,
     useLazyGetNpcMemoriesQuery,

@@ -456,6 +456,27 @@ export class WorldStateManager {
     return this.state;
   }
 
+  exportSaveData(): WorldState {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(this.state);
+    }
+    return JSON.parse(JSON.stringify(this.state)) as WorldState;
+  }
+
+  importSaveData(input: Partial<WorldState> | null | undefined): void {
+    const next = migrateWorldState(input, this.state.grid.cols, this.state.grid.rows);
+    this.state.grid = next.grid;
+    this.state.entities = next.entities;
+    this.state.objects = next.objects;
+    this.state.drops = next.drops;
+    this.state.crops = next.crops;
+    this.state.chickens = next.chickens;
+    this.state.trees = next.trees;
+    this.state.nests = next.nests;
+    this.state.npcMinds = next.npcMinds;
+    this.state.meta = next.meta;
+  }
+
   syncEntity(entity: WithPosition): void {
     if (!this.state.entities[entity.id]) return;
     this.updateEntityPosition(entity.id, entity.x, entity.y);

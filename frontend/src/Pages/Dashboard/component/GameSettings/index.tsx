@@ -2,9 +2,10 @@ import React, { useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import type { RootState } from '../../../../Redux/store';
-import { useSaveIdleGameMutation } from '../../../../api/profileStateRtkApi';
+import { useSaveGameSaveMutation } from '../../../../api/profileStateRtkApi';
 import {
   setGameAgentBrainEnabled,
+  setGamePathLineEnabled,
   setGamePhysicsDebug,
   setGameSettings,
   setGameSleepThreshold,
@@ -13,8 +14,6 @@ import {
   type GameSettingsState,
   type GameWeatherSetting,
 } from '../../../../Redux/Features/gameSlice';
-import type { GameWorldState } from '../SystemIdleGame/types';
-import type { IdleGameState } from '../../../../Types/Profile';
 import { GAME_MINS_PER_SEC, MINS_PER_DAY } from '../SystemIdleGame/constants';
 
 const SECS_PER_GAME_DAY = MINS_PER_DAY / GAME_MINS_PER_SEC;
@@ -52,28 +51,24 @@ const GameSettings: React.FC = () => {
   const rawSettings = useSelector((state: RootState) => state.game.settings);
   const settings: GameSettingsState = {
     ...rawSettings,
+    pathLineEnabled: Boolean(rawSettings.pathLineEnabled),
     agentBrainEnabled: rawSettings.agentBrainEnabled !== false,
   };
-  const savedIdleGame = useSelector((state: RootState) => state.profile.profile?.idleGame ?? null);
-  const savedWorldState = savedIdleGame?.worldState ?? null;
-  const [saveIdleGame] = useSaveIdleGameMutation();
+  const savedGameSave = useSelector((state: RootState) => state.profile.profile?.gameSave ?? null);
+  const [saveGameSave] = useSaveGameSaveMutation();
 
   const persistSettings = useCallback((next: GameSettingsState, patch: Partial<GameSettingsState> = {}) => {
-    const worldState: GameWorldState = {
-      schemaVersion: 1,
-      beds: [],
-      nests: [],
-      ...(savedWorldState ?? {}),
-      settings: next,
+    if (!savedGameSave) return;
+    const gameSave = structuredClone(savedGameSave);
+    gameSave.worldStatus.settings = {
+      ...gameSave.worldStatus.settings,
+      ...next,
     };
-    const payload: Partial<IdleGameState> = { worldState };
-
     if (typeof patch.timeMinute === 'number') {
-      payload.gameTick = tickWithMinuteOfDay(savedIdleGame?.gameTick ?? 0, patch.timeMinute);
+      gameSave.worldStatus.gameTick = tickWithMinuteOfDay(gameSave.worldStatus.gameTick ?? 0, patch.timeMinute);
     }
-
-    saveIdleGame(payload).catch(() => {});
-  }, [saveIdleGame, savedIdleGame?.gameTick, savedWorldState]);
+    saveGameSave({ gameSave, roomId: gameSave.worldStatus.roomId }).catch(() => {});
+  }, [saveGameSave, savedGameSave]);
 
   const updateSettings = useCallback((patch: Partial<GameSettingsState>) => {
     const next: GameSettingsState = {
@@ -88,6 +83,7 @@ const GameSettings: React.FC = () => {
     `/time set ${settings.timeMinute}`,
     `/weather ${settings.weather}`,
     `/debug ${settings.physicsDebug ? 'on' : 'off'}`,
+    `/pathline ${settings.pathLineEnabled ? 'on' : 'off'}`,
     `/sleep threshold ${settings.sleepThreshold.toFixed(2)}`,
     `/agent brain ${settings.agentBrainEnabled ? 'on' : 'off'}`,
   ];
@@ -231,6 +227,36 @@ const GameSettings: React.FC = () => {
                     const physicsDebug = event.target.checked;
                     dispatch(setGamePhysicsDebug(physicsDebug));
                     updateSettings({ physicsDebug });
+                  }}
+                  style={{ width: 22, height: 22 }}
+                />
+              </label>
+
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 14,
+                  padding: 12,
+                  border: '1px solid var(--px-border)',
+                  borderRadius: 4,
+                  background: 'var(--px-surface2)',
+                }}
+              >
+                <span>
+                  <strong>Path Lines</strong>
+                  <span style={{ display: 'block', color: 'var(--px-muted)', fontSize: 12, marginTop: 3 }}>
+                    对应 /pathline on | off，显示 NPC 当前寻路路线。
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.pathLineEnabled}
+                  onChange={(event) => {
+                    const pathLineEnabled = event.target.checked;
+                    dispatch(setGamePathLineEnabled(pathLineEnabled));
+                    updateSettings({ pathLineEnabled });
                   }}
                   style={{ width: 22, height: 22 }}
                 />

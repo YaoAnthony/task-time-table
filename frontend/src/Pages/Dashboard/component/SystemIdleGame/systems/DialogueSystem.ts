@@ -116,6 +116,10 @@ export class DialogueSystem {
   private emitPlayerHeardEvents(text: string, listeners: HeardNpc[]): void {
     const now = this.scene.time?.now ?? Date.now();
     const shouldFavorReply = isQuestion(text);
+    const forcedListener = listeners.find((listener) => (
+      !listener.npc.isOnDispatch()
+      && !listener.npc.isAwaitingConfirm()
+    )) ?? null;
     const replyCandidates = listeners
       .filter((listener) => this.canReplyToPlayer(listener, now, shouldFavorReply))
       .filter((listener, index) => {
@@ -125,6 +129,10 @@ export class DialogueSystem {
         return roll <= chance;
       })
       .slice(0, this.maxReplies);
+    if (forcedListener && !replyCandidates.some((listener) => listener.id === forcedListener.id)) {
+      replyCandidates.unshift(forcedListener);
+      replyCandidates.length = Math.min(replyCandidates.length, this.maxReplies);
+    }
     const replyIds = new Set(replyCandidates.map((listener) => listener.id));
 
     listeners.forEach((listener) => {

@@ -1,5 +1,75 @@
 {
-    player: [
-        
-    ]
+  schemaVersion: 2,
+
+  worldStatus: {
+    gameTick: 1000,
+    dayTime: "2026-01-04 12:30",
+    version: 18,
+
+    settings: {
+      agentBrainEnabled: false,
+      sleepThreshold: 1,
+      weather: "clear",
+      physicsDebug: false
+    },
+
+    entities: {
+      trees: [],
+      beds: [],
+      nests: [],
+      chests: [],
+      drops: [],
+      farmTiles: [],
+      creatures: []
+    },
+
+    npcs: {
+      "npc1": {
+        id: "npc1",
+        name: "老李",
+        position: {
+          x: 20,
+          y: 20,
+          facing: "south"
+        },
+        inventory: [
+          { itemId: "axe", quantity: 1 }
+        ],
+        mind: {
+          currentIntent: {},
+          needs: {},
+          relationships: {},
+          schedule: {},
+          recentWorldMemories: {}
+        },
+        longTermMemoryRef: "npcMemories.老李"
+      }
+    }
+  },
+
+  players: {
+    "player1-user-id": {
+      name: "abc",
+      position: {
+        x: 20,
+        y: 20,
+        facing: "south"
+      },
+      inventory: [
+        { itemId: "apple", quantity: 3 }
+      ],
+      permissionLevel: "op"
+    },
+
+    "player2-user-id": {
+      name: "abcd",
+      position: {
+        x: 20,
+        y: 20,
+        facing: "south"
+      },
+      inventory: [],
+      permissionLevel: "guest"
+    }
+  }
 }

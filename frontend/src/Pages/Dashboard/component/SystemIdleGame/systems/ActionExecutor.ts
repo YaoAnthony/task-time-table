@@ -15,6 +15,7 @@ import type { Npc } from '../entities/Npc';
 import type { Player } from '../entities/Player';
 import type { WorldItem } from '../entities/WorldItem';
 import { resolveActorLocationTarget } from '../shared/locationSlots';
+import { PLAYER_HOUSE_DOOR } from '../shared/WorldLocations';
 import type { FarmActionKind, FarmActionTarget } from './FarmSystem';
 
 // ─── WorldContext — implemented by GameScene ──────────────────────────────────
@@ -275,13 +276,22 @@ export class ActionExecutor {
     if (!actions || actions.length === 0) return;
     console.log(`[ActionExecutor] execute: npc=${npc.name} actions=`, JSON.stringify(actions));
 
-    const NAVIGATION_TYPES = ['move', 'chop_tree', 'pickup_item', 'dispatch', 'talk_with'];
-    const IMMEDIATE_WORLD_TYPES = ['use_skill', 'till_tile', 'water_tile', 'plant_crop', 'harvest_crop'];
+    const NAVIGATION_TYPES = [
+      'move',
+      'chop_tree',
+      'pickup_item',
+      'dispatch',
+      'talk_with',
+      'use_skill',
+      'till_tile',
+      'water_tile',
+      'plant_crop',
+      'harvest_crop',
+    ];
     const hasNavigation = actions.some(a => NAVIGATION_TYPES.includes(a.type));
-    const hasImmediateWorldAction = actions.some(a => IMMEDIATE_WORLD_TYPES.includes(a.type));
 
     // Queue when multiple actions include navigation — ensures proper sequencing
-    const needsSequencing = hasNavigation && actions.length > 1 && !hasImmediateWorldAction;
+    const needsSequencing = hasNavigation && actions.length > 1;
 
     if (needsSequencing) {
       // Resolve all targets now; queue into NPC's plannedActions for sequential execution
@@ -331,7 +341,7 @@ export class ActionExecutor {
     }
     // dispatch: always head to the door
     if (action.type === 'dispatch') {
-      return { ...action, target: { kind: 'coords', x: 502, y: 336 } };
+      return { ...action, target: { kind: 'coords', x: PLAYER_HOUSE_DOOR.x, y: PLAYER_HOUSE_DOOR.y } };
     }
     if (!action.target || action.target.kind === 'coords') return action;
     const coords = resolveTarget(action.target, npc, this.player);

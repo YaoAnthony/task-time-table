@@ -26,9 +26,14 @@ export class PathingComponent {
   private lastDistance       = Infinity;
   private lastProgressAt     = 0;
   private navigationStartedAt = 0;
+  private target: { x: number; y: number } | null = null;
+  private replanAttempts = 0;
+  private lastReplanAt = 0;
 
-  private static readonly STUCK_MS = 2_000;
-  private static readonly MAX_NAVIGATION_MS = 15_000;
+  private static readonly STUCK_MS = 3_500;
+  private static readonly MAX_NAVIGATION_MS = 30_000;
+  private static readonly MAX_REPLANS = 4;
+  private static readonly REPLAN_COOLDOWN_MS = 700;
   private static readonly PROGRESS_EPSILON = 2;
 
   constructor(
@@ -55,6 +60,9 @@ export class PathingComponent {
     this.lastDistance = Infinity;
     this.lastProgressAt = 0;
     this.navigationStartedAt = 0;
+    this.target = { x: tx, y: ty };
+    this.replanAttempts = 0;
+    this.lastReplanAt = 0;
 
     if (this.pathfinder) {
       const path = this.pathfinder.findPath(fromX, fromY, tx, ty);
@@ -79,6 +87,9 @@ export class PathingComponent {
     this.lastDistance     = Infinity;
     this.lastProgressAt   = 0;
     this.navigationStartedAt = 0;
+    this.target = null;
+    this.replanAttempts = 0;
+    this.lastReplanAt = 0;
   }
 
   // ── Per-frame update ───────────────────────────────────────────────────────
@@ -132,6 +143,11 @@ export class PathingComponent {
         return 'arrived';
       }
     } else if (this.isStuck(dist, now)) {
+      if (this.tryReplan(sprite.x, sprite.y, now)) {
+        sprite.setVelocity(0, 0);
+        this._status = 'moving';
+        return 'moving';
+      }
       sprite.setVelocity(0, 0);
       this.fail();
       return 'failed';
@@ -148,6 +164,11 @@ export class PathingComponent {
 
   /** True while there are remaining waypoints. */
   isMoving(): boolean { return this.waypoints.length > 0; }
+
+  /** Remaining waypoints, exposed for debug rendering. */
+  getWaypoints(): [number, number][] {
+    return this.waypoints.map(([x, y]) => [x, y]);
+  }
 
   /** Current navigation status (does not advance state). */
   get status(): PathingStatus { return this._status; }
@@ -172,6 +193,24 @@ export class PathingComponent {
     return now - this.lastProgressAt > PathingComponent.STUCK_MS;
   }
 
+  private tryReplan(fromX: number, fromY: number, now: number): boolean {
+    if (!this.pathfinder || !this.target) return false;
+    if (this.replanAttempts >= PathingComponent.MAX_REPLANS) return false;
+    if (now - this.lastReplanAt < PathingComponent.REPLAN_COOLDOWN_MS) return true;
+
+    const path = this.pathfinder.findPath(fromX, fromY, this.target.x, this.target.y);
+    if (path.length === 0) return false;
+
+    this.waypoints = path;
+    this.replanAttempts += 1;
+    this.lastReplanAt = now;
+    this.lastDistance = Infinity;
+    this.lastProgressAt = now;
+    this.navigationStartedAt = now;
+    this._status = 'moving';
+    return true;
+  }
+
   private fail(): void {
     this.waypoints = [];
     this.onArriveCallback = null;
@@ -179,5 +218,8 @@ export class PathingComponent {
     this.lastDistance = Infinity;
     this.lastProgressAt = 0;
     this.navigationStartedAt = 0;
+    this.target = null;
+    this.replanAttempts = 0;
+    this.lastReplanAt = 0;
   }
 }

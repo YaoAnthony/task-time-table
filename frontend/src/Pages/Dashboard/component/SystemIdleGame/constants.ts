@@ -5,9 +5,6 @@ export const WORLD_W      = 1920;  // 60 tiles × 32px
 export const WORLD_H      = 1280;  // 40 tiles × 32px
 export const SPAWN_X      = 240;   // in front of player's house door
 export const SPAWN_Y      = 360;
-export const NPC_X        = 384;   // 老李 now starts near the farm edge
-export const NPC_Y        = 760;
-export const NPC_NAME     = '老李';
 
 // ─── Camera / rendering ───────────────────────────────────────────────────────
 export const ZOOM         = 2.0;

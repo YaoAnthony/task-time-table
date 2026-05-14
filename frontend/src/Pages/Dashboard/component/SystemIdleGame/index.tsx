@@ -39,7 +39,7 @@ import { useIdleGameSyncBoundary } from './hooks/useIdleGameSyncBoundary';
 import { useMultiplay }     from './hooks/useMultiplay';
 import { useFarmActions }   from './hooks/useFarmActions';
 import { usePhaserBoot }    from './hooks/usePhaserBoot';
-import { useSaveIdleGameMutation } from './api';
+import { useSaveGameSaveMutation } from './api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const SystemIdleGame: React.FC = () => {
@@ -91,32 +91,44 @@ const SystemIdleGame: React.FC = () => {
 
   // ── 存档快捷 ─────────────────────────────────────────────────────────────
   const rawGameSettings = useSelector((s: RootState) => s.game.settings);
+  const gameInventory = useSelector((s: RootState) => s.game.gameInventory);
+  const backpackSlots = useSelector((s: RootState) => s.game.backpackSlots);
+  const gameInventoryRef = useRef(gameInventory);
+  const backpackSlotsRef = useRef(backpackSlots);
+  gameInventoryRef.current = gameInventory;
+  backpackSlotsRef.current = backpackSlots;
   const gameSettings: GameSettingsState = {
     ...rawGameSettings,
+    pathLineEnabled: Boolean(rawGameSettings.pathLineEnabled),
     agentBrainEnabled: rawGameSettings.agentBrainEnabled !== false,
   };
   const gameSettingsRef = useRef(gameSettings);
   gameSettingsRef.current = gameSettings;
 
-  const withWorldSettings = useCallback((state: ReturnType<GameScene['getGameState']>, settings: GameSettingsState) => ({
-    ...state,
-    worldState: {
-      schemaVersion: 1 as const,
-      beds: [],
-      nests: [],
-      ...(state.worldState ?? {}),
-      settings,
-    },
-  }), []);
-
-  const [saveIdleGame] = useSaveIdleGameMutation();
+  const [saveGameSave] = useSaveGameSaveMutation();
   const handleSave = useCallback(async () => {
     if (!sceneRef.current) return;
     setIsSaving(true);
-    try { await saveIdleGame(withWorldSettings(sceneRef.current.getGameState(), gameSettingsRef.current)).unwrap(); }
+    try {
+      const roomId = multiplay.multiplayRoomIdRef.current ?? undefined;
+      const gameSave = sceneRef.current.getGameSaveData({
+        previousSave: savedGameSaveRef.current,
+        roomId,
+        userId: auth.userId,
+        username: auth.myDisplayName,
+        settings: gameSettingsRef.current,
+        inventory: {
+          gameInventory: gameInventoryRef.current,
+          hotbarSlots: hotbar.hotbarSlotsRef.current as any,
+          backpackSlots: backpackSlotsRef.current,
+        },
+        npcInventories: npcChat.npcInventoriesRef.current,
+      });
+      await saveGameSave({ gameSave, roomId }).unwrap();
+    }
     catch { /* best-effort */ }
     finally { setIsSaving(false); }
-  }, [saveIdleGame, withWorldSettings]);
+  }, [auth.myDisplayName, auth.userId, hotbar.hotbarSlotsRef, multiplay.multiplayRoomIdRef, npcChat.npcInventoriesRef, saveGameSave]);
 
   // ── Q 键 drop 物品（由 usePhaserBoot 调用） ───────────────────────────────
   const onDropItem = useCallback((_slot: number, itemId: string) => {
@@ -126,8 +138,11 @@ const SystemIdleGame: React.FC = () => {
   // ── 从 Redux 获取存档 + username ─────────────────────────────────────────
   const profile       = useSelector((s: RootState) => s.profile);
   const savedIdleGame = useSelector((s: RootState) => s.profile.profile?.idleGame ?? null);
+  const savedGameSave = useSelector((s: RootState) => s.profile.profile?.gameSave ?? null);
   const savedIdleGameRef = useRef(savedIdleGame);
+  const savedGameSaveRef = useRef(savedGameSave);
   savedIdleGameRef.current = savedIdleGame;
+  savedGameSaveRef.current = savedGameSave;
   const username = (profile as any)?.profile?.user?.username ?? '';
 
   const applyGameSettings = useCallback(() => {
@@ -136,10 +151,12 @@ const SystemIdleGame: React.FC = () => {
 
     scene.executeCommand(`/weather ${gameSettings.weather}`);
     scene.executeCommand(`/debug ${gameSettings.physicsDebug ? 'on' : 'off'}`);
+    scene.executeCommand(`/pathline ${gameSettings.pathLineEnabled ? 'on' : 'off'}`);
     scene.executeCommand(`/sleep threshold ${gameSettings.sleepThreshold}`);
     scene.executeCommand(`/agent brain ${gameSettings.agentBrainEnabled ? 'on' : 'off'}`);
   }, [
     gameSettings.agentBrainEnabled,
+    gameSettings.pathLineEnabled,
     gameSettings.physicsDebug,
     gameSettings.sleepThreshold,
     gameSettings.weather,
@@ -161,9 +178,14 @@ const SystemIdleGame: React.FC = () => {
     hotbarSlotsRef:    hotbar.hotbarSlotsRef,
     selectedSlotRef:   hotbar.selectedSlotRef,
     savedIdleGameRef,
+    savedGameSaveRef,
     gameSettingsRef,
+    gameInventoryRef,
+    backpackSlotsRef,
     tokenRef:          auth.tokenRef,
     npcInventoriesRef: npcChat.npcInventoriesRef,
+    userId:            auth.userId,
+    username:          auth.myDisplayName,
     multiplayRoomIdRef: multiplay.multiplayRoomIdRef,
     setTimeStr,
     setAvailableChests: chests.setAvailableChests,

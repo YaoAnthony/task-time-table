@@ -1,40 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'github-markdown-css/github-markdown-light.css';
 import type { RootState } from '../../../../Redux/store';
 import {
   useLazyGetNpcMemoriesQuery,
   useLazyGetNpcSkillQuery,
   type NpcPersonaSkill,
 } from '../../../../api/profileStateRtkApi';
-import { NPC_NAME } from '../SystemIdleGame/constants';
+import {
+  GAME_NPC_CATALOG,
+  STARTER_NPC_ID,
+  getNpcDefinitionsForSave,
+} from '../SystemIdleGame/shared/GameNpcCatalog';
 import { getDefaultNpcSchedule } from '../SystemIdleGame/systems/NpcScheduleSystem';
-import { getNpcKnowledgeSkills } from '../SystemIdleGame/shared/NpcKnowledge';
-import { VILLAGE_LAYOUT } from '../SystemIdleGame/world/layouts/villageLayout';
+import { getNpcKnowledgeSkills, type NpcKnowledgeSkill } from '../SystemIdleGame/shared/NpcKnowledge';
 import type {
   NpcDailyActivity,
   NpcMemoryRecord,
   NpcMindState,
 } from '../SystemIdleGame/shared/worldStateTypes';
 
-const panelStyle: React.CSSProperties = {
-  border: '2px solid var(--px-border)',
-  borderRadius: 6,
-  background: 'var(--px-surface)',
-  boxShadow: '0 4px 0 rgba(0,0,0,0.35)',
-};
+type TabId = 'overview' | 'memory' | 'skill' | 'debug';
 
-const chipStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '4px 8px',
-  border: '1px solid var(--px-border)',
-  borderRadius: 4,
-  background: 'var(--px-surface2)',
-  color: 'var(--px-text)',
-  fontSize: 12,
-  fontWeight: 700,
-};
+const STARTER_NPC_NAME = GAME_NPC_CATALOG.find((npc) => npc.id === STARTER_NPC_ID)?.name ?? '老李';
 
 const activityLabel: Record<NpcDailyActivity, string> = {
   sleep: 'Sleep',
@@ -46,57 +38,147 @@ const activityLabel: Record<NpcDailyActivity, string> = {
   relax: 'Relax',
 };
 
-function formatMinute(minute: number): string {
-  const h = Math.floor(minute / 60).toString().padStart(2, '0');
-  const m = (minute % 60).toString().padStart(2, '0');
-  return `${h}:${m}`;
-}
+const roleLabel: Record<string, string> = {
+  starter: '初始伙伴',
+  farmer: '农夫',
+  carpenter: '木匠',
+  merchant: '商人',
+  scholar: '学者',
+  rancher: '牧场工',
+};
+
+const roleWork: Record<string, string[]> = {
+  starter: ['聊天', '基础协作', '村庄引导'],
+  farmer: ['种田', '浇水', '收菜'],
+  carpenter: ['砍树', '修家具', '造桥'],
+  merchant: ['刷新商品', '交易', '记价格'],
+  scholar: ['总结记忆', '整理任务', '记录事件'],
+  rancher: ['照顾鸡', '捡蛋', '喂水'],
+};
+
+const roleKnowledgeAllowList: Record<string, (skill: NpcKnowledgeSkill) => boolean> = {
+  farmer: (skill) => skill.id.startsWith('farm_') || skill.id === 'go_to_farm',
+  rancher: (skill) => skill.id === 'go_to_farm',
+  starter: () => true,
+};
+
+const tabs: Array<{ id: TabId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'memory', label: 'Memory' },
+  { id: 'skill', label: 'Skill' },
+  { id: 'debug', label: 'Debug' },
+];
+
+const panelStyle: React.CSSProperties = {
+  border: '1px solid var(--px-border)',
+  borderRadius: 6,
+  background: 'var(--px-surface)',
+  boxShadow: '0 3px 0 rgba(0,0,0,0.22)',
+};
+
+const subtlePanelStyle: React.CSSProperties = {
+  border: '1px solid var(--px-border)',
+  borderRadius: 4,
+  background: 'var(--px-surface2)',
+};
 
 function formatTick(tick?: number): string {
   if (typeof tick !== 'number' || !Number.isFinite(tick)) return '-';
   return tick.toFixed(0);
 }
 
+function formatMinute(minute: number): string {
+  const h = Math.floor(minute / 60).toString().padStart(2, '0');
+  const m = (minute % 60).toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
+
 function sortMemories(memories: Record<string, NpcMemoryRecord> | undefined): NpcMemoryRecord[] {
   return Object.values(memories ?? {}).sort((a, b) => b.lastSeenTick - a.lastSeenTick);
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function compactCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === 'object') return Object.keys(value).length;
+  return 0;
+}
+
+function Chip({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'good' | 'warn' }) {
+  const color = tone === 'good' ? '#4f9f65' : tone === 'warn' ? '#b57614' : 'var(--px-muted)';
   return (
-    <div style={{ ...panelStyle, padding: 14 }}>
-      <div style={{ color: 'var(--px-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        minHeight: 24,
+        padding: '3px 8px',
+        border: '1px solid var(--px-border)',
+        borderRadius: 4,
+        background: 'rgba(255,255,255,0.48)',
+        color,
+        fontSize: 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div style={{ ...subtlePanelStyle, padding: 12, minWidth: 0 }}>
+      <div style={{ color: 'var(--px-muted)', fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
         {label}
       </div>
-      <div style={{ marginTop: 6, color: 'var(--px-text)', fontSize: 18, fontWeight: 900 }}>
+      <div
+        style={{
+          marginTop: 6,
+          color: 'var(--px-text)',
+          fontSize: 17,
+          fontWeight: 900,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={typeof value === 'string' ? value : undefined}
+      >
         {value}
       </div>
     </div>
   );
 }
 
-function JsonBlock({ value }: { value: unknown }) {
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <pre
-      style={{
-        margin: 0,
-        padding: 12,
-        maxHeight: 220,
-        overflow: 'auto',
-        border: '1px solid var(--px-border)',
-        borderRadius: 4,
-        background: 'rgba(0,0,0,0.22)',
-        color: 'var(--px-muted)',
-        fontSize: 12,
-        whiteSpace: 'pre-wrap',
-        wordBreak: 'break-word',
-      }}
-    >
-      {JSON.stringify(value ?? {}, null, 2)}
-    </pre>
+    <section style={{ ...panelStyle, padding: 16, minWidth: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 16, lineHeight: 1.2 }}>{title}</h2>
+        {action}
+      </div>
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </section>
   );
 }
 
-function TextBlock({ text, maxHeight = 360 }: { text: string; maxHeight?: number }) {
+function Empty({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        padding: '16px 14px',
+        border: '1px dashed var(--px-border)',
+        borderRadius: 4,
+        color: 'var(--px-muted)',
+        background: 'rgba(255,255,255,0.36)',
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function JsonBlock({ value, maxHeight = 220 }: { value: unknown; maxHeight?: number }) {
   return (
     <pre
       style={{
@@ -106,44 +188,52 @@ function TextBlock({ text, maxHeight = 360 }: { text: string; maxHeight?: number
         overflow: 'auto',
         border: '1px solid var(--px-border)',
         borderRadius: 4,
-        background: 'rgba(0,0,0,0.22)',
+        background: 'rgba(0,0,0,0.08)',
         color: 'var(--px-muted)',
         fontSize: 12,
-        lineHeight: 1.55,
+        lineHeight: 1.45,
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
       }}
     >
-      {text}
+      {JSON.stringify(value ?? null, null, 2)}
     </pre>
   );
 }
 
-type SkillFile = NonNullable<NpcPersonaSkill['files']>[number];
+function stripFrontmatter(text: string): string {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trimStart();
+}
+
+function MarkdownBlock({ text, maxHeight = 520 }: { text: string; maxHeight?: number }) {
+  return (
+    <article
+      className="markdown-body"
+      style={{
+        padding: 18,
+        maxHeight,
+        overflow: 'auto',
+        border: '1px solid var(--px-border)',
+        borderRadius: 4,
+        background: 'rgba(255,255,255,0.72)',
+        color: 'var(--px-text)',
+        fontFamily: '"Courier New", monospace',
+        fontSize: 13,
+        lineHeight: 1.55,
+        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.45)',
+      }}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+        {text}
+      </ReactMarkdown>
+    </article>
+  );
+}
 
 function splitSkillPath(path: string): { dir: string; name: string } {
   const parts = path.split('/');
   const name = parts.pop() ?? path;
-  return {
-    dir: parts.join('/') || 'root',
-    name,
-  };
-}
-
-function groupSkillFiles(files: SkillFile[]): Array<{ dir: string; files: SkillFile[] }> {
-  const groups = new Map<string, SkillFile[]>();
-
-  files.forEach((file) => {
-    const { dir } = splitSkillPath(file.path);
-    const group = groups.get(dir) ?? [];
-    group.push(file);
-    groups.set(dir, group);
-  });
-
-  return Array.from(groups.entries()).map(([dir, groupFiles]) => ({
-    dir,
-    files: [...groupFiles].sort((a, b) => a.path.localeCompare(b.path)),
-  }));
+  return { dir: parts.join('/') || 'root', name };
 }
 
 function SkillFiles({ skill }: { skill: NpcPersonaSkill }) {
@@ -156,170 +246,163 @@ function SkillFiles({ skill }: { skill: NpcPersonaSkill }) {
   }, [fileSignature, skill.mode, skill.npcName, skill.slug]);
 
   if (skill.entryType !== 'package' || files.length <= 1) {
-    return <TextBlock text={skill.content} maxHeight={420} />;
+    return <MarkdownBlock text={skill.body || stripFrontmatter(skill.content)} maxHeight={520} />;
   }
 
   const selectedFile = files.find((file) => file.path === selectedPath) ?? files[0];
-  const groups = groupSkillFiles(files);
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '260px minmax(0, 1fr)',
-        gap: 12,
-        minHeight: 500,
-      }}
-    >
-      <div
-        style={{
-          border: '1px solid var(--px-border)',
-          borderRadius: 4,
-          background: 'rgba(0,0,0,0.16)',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            padding: '9px 12px',
-            borderBottom: '1px solid var(--px-border)',
-            background: 'var(--px-surface2)',
-            color: 'var(--px-muted)',
-            fontSize: 11,
-            fontWeight: 900,
-            textTransform: 'uppercase',
-          }}
-        >
-          Package files
-        </div>
-        <div style={{ display: 'grid', gap: 6, maxHeight: 500, overflow: 'auto', padding: 8 }}>
-          {groups.map((group) => (
-            <div key={group.dir} style={{ display: 'grid', gap: 4 }}>
-              <div
-                title={group.dir}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'auto minmax(0, 1fr)',
-                  gap: 7,
-                  alignItems: 'center',
-                  padding: '6px 7px',
-                  color: 'var(--px-gold)',
-                  fontSize: 12,
-                  fontWeight: 900,
-                }}
-              >
-                <span>[dir]</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {group.dir}
-                </span>
-              </div>
-              {group.files.map((file) => {
-                const { name } = splitSkillPath(file.path);
-                const selected = file.path === selectedFile.path;
-                return (
-                  <button
-                    key={file.path}
-                    type="button"
-                    onClick={() => setSelectedPath(file.path)}
-                    title={file.path}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'auto minmax(0, 1fr)',
-                      gap: 7,
-                      alignItems: 'center',
-                      width: '100%',
-                      padding: '7px 8px 7px 18px',
-                      border: `1px solid ${selected ? 'var(--px-gold)' : 'transparent'}`,
-                      borderRadius: 4,
-                      background: selected ? 'rgba(255,214,10,0.12)' : 'transparent',
-                      color: selected ? 'var(--px-text)' : 'var(--px-muted)',
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      fontSize: 12,
-                      fontWeight: selected ? 900 : 700,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span>[file]</span>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 12, minWidth: 0 }}>
+      <div style={{ ...subtlePanelStyle, padding: 8, display: 'grid', gap: 6, alignSelf: 'start' }}>
+        {files.map((file) => {
+          const { name } = splitSkillPath(file.path);
+          const selected = file.path === selectedFile.path;
+          return (
+            <button
+              key={file.path}
+              type="button"
+              onClick={() => setSelectedPath(file.path)}
+              title={file.path}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px 9px',
+                border: selected ? '1px solid var(--px-gold)' : '1px solid transparent',
+                borderRadius: 4,
+                background: selected ? 'rgba(255,214,10,0.12)' : 'transparent',
+                color: selected ? 'var(--px-gold)' : 'var(--px-text)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontWeight: 900,
+                textAlign: 'left',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {name}
+            </button>
+          );
+        })}
       </div>
       <div style={{ minWidth: 0 }}>
         <div
           style={{
+            marginBottom: 8,
             display: 'flex',
-            justifyContent: 'space-between',
-            gap: 12,
+            gap: 8,
             alignItems: 'center',
-            padding: '9px 12px',
-            border: '1px solid var(--px-border)',
-            borderBottom: 0,
-            borderRadius: '4px 4px 0 0',
-            background: 'var(--px-surface2)',
+            color: 'var(--px-muted)',
+            fontSize: 12,
+            fontWeight: 900,
           }}
         >
-          <span
-            title={selectedFile.path}
-            style={{
-              color: 'var(--px-gold)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontWeight: 900,
-            }}
-          >
-            {selectedFile.path}
-          </span>
-          {selectedFile.kind ? (
-            <span style={{ ...chipStyle, padding: '2px 6px', fontSize: 10 }}>
-              {selectedFile.kind}
-            </span>
-          ) : null}
+          <span>{selectedFile.path}</span>
+          {selectedFile.kind ? <Chip>{selectedFile.kind}</Chip> : null}
         </div>
-        <TextBlock text={selectedFile.content} maxHeight={456} />
+        <MarkdownBlock text={stripFrontmatter(selectedFile.content)} maxHeight={520} />
       </div>
     </div>
   );
 }
 
+function MemoryList({ memories }: { memories: NpcMemoryRecord[] }) {
+  if (memories.length === 0) return <Empty text="这个 NPC 还没有结构化记忆。" />;
+
+  return (
+    <div style={{ display: 'grid', gap: 8, maxHeight: 420, overflow: 'auto', paddingRight: 4 }}>
+      {memories.map((memory) => (
+        <article key={memory.key} style={{ ...subtlePanelStyle, padding: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <strong style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {memory.label ?? memory.type}
+            </strong>
+            <span style={{ color: 'var(--px-muted)', whiteSpace: 'nowrap' }}>tick {formatTick(memory.lastSeenTick)}</span>
+          </div>
+          <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 4 }}>
+            {memory.kind} / {memory.type} @ {Math.round(memory.x)}, {Math.round(memory.y)}
+          </div>
+          {memory.meta ? <div style={{ marginTop: 8 }}><JsonBlock value={memory.meta} maxHeight={120} /></div> : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ScheduleList({
+  schedule,
+  currentActivity,
+}: {
+  schedule: ReturnType<typeof getDefaultNpcSchedule>;
+  currentActivity?: NpcDailyActivity | null;
+}) {
+  if (schedule.length === 0) return <Empty text="这个 NPC 暂时没有固定日程。" />;
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {schedule.map((slot) => {
+        const active = currentActivity === slot.activity;
+        return (
+          <div
+            key={`${slot.startMin}-${slot.activity}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '96px 120px minmax(0, 1fr)',
+              gap: 10,
+              alignItems: 'center',
+              padding: '9px 10px',
+              border: active ? '1px solid var(--px-gold)' : '1px solid var(--px-border)',
+              borderRadius: 4,
+              background: active ? 'rgba(255,214,10,0.12)' : 'var(--px-surface2)',
+            }}
+          >
+            <strong>{formatMinute(slot.startMin)}</strong>
+            <span>{activityLabel[slot.activity]}</span>
+            <span style={{ color: 'var(--px-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {slot.locationId ?? '-'}{slot.line ? ` · ${slot.line}` : ''}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 const NPCData: React.FC = () => {
-  const [selectedNpc, setSelectedNpc] = useState(NPC_NAME);
-  const worldState = useSelector((state: RootState) => state.profile.profile?.idleGame?.worldState ?? null);
+  const [selectedNpc, setSelectedNpc] = useState(STARTER_NPC_NAME);
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const profile = useSelector((state: RootState) => state.profile.profile);
+  const savedGameSave = profile?.gameSave ?? null;
+  const worldState =
+    savedGameSave?.worldStatus?.entities?.worldState
+    ?? profile?.idleGame?.worldState
+    ?? null;
   const npcInventories = useSelector((state: RootState) => state.game.npcInventories);
   const settings = useSelector((state: RootState) => state.game.settings);
   const [fetchNpcMemories, npcMemoryResult] = useLazyGetNpcMemoriesQuery();
   const [fetchNpcSkill, npcSkillResult] = useLazyGetNpcSkillQuery();
 
-  const npcMinds = worldState?.npcMinds ?? {};
-  const npcNames = useMemo(() => {
-    return [
-      NPC_NAME,
-      ...VILLAGE_LAYOUT.extraNpcs.map((npc) => npc.name),
-    ];
-  }, []);
+  const unlockedNpcDefinitions = useMemo(() => getNpcDefinitionsForSave(savedGameSave), [savedGameSave]);
+  const unlockedNpcNames = useMemo(() => unlockedNpcDefinitions.map((npc) => npc.name), [unlockedNpcDefinitions]);
+  const lockedCount = Math.max(0, GAME_NPC_CATALOG.length - unlockedNpcDefinitions.length);
 
   useEffect(() => {
-    if (!npcNames.includes(selectedNpc)) {
-      setSelectedNpc(npcNames[0] ?? NPC_NAME);
+    if (!unlockedNpcNames.includes(selectedNpc)) {
+      setSelectedNpc(unlockedNpcNames[0] ?? STARTER_NPC_NAME);
     }
-  }, [npcNames, selectedNpc]);
+  }, [selectedNpc, unlockedNpcNames]);
 
   useEffect(() => {
-    if (selectedNpc) fetchNpcMemories(selectedNpc);
-  }, [fetchNpcMemories, selectedNpc]);
+    if (!unlockedNpcNames.includes(selectedNpc)) return;
+    fetchNpcMemories(selectedNpc);
+    fetchNpcSkill(selectedNpc);
+  }, [fetchNpcMemories, fetchNpcSkill, selectedNpc, unlockedNpcNames]);
 
-  useEffect(() => {
-    if (selectedNpc) fetchNpcSkill(selectedNpc);
-  }, [fetchNpcSkill, selectedNpc]);
-
-  const mind: NpcMindState | null = npcMinds[selectedNpc] ?? null;
+  const selectedDefinition = unlockedNpcDefinitions.find((npc) => npc.name === selectedNpc) ?? unlockedNpcDefinitions[0] ?? null;
+  const selectedName = selectedDefinition?.name ?? selectedNpc;
+  const savedNpc = savedGameSave?.worldStatus?.npcs?.[selectedName] ?? null;
+  const npcMinds = worldState?.npcMinds ?? {};
+  const mind: NpcMindState | null = savedNpc?.mind ?? npcMinds[selectedName] ?? null;
   const recentMemories = sortMemories(mind?.recentMemories);
   const landmarks = sortMemories(mind?.knownLandmarks);
   const agentWorld = (mind?.meta?.agentWorld ?? null) as {
@@ -331,11 +414,26 @@ const NPCData: React.FC = () => {
     activeGoal?: unknown;
     recentFailures?: unknown;
   } | null;
-  const inventory = npcInventories[selectedNpc] ?? {};
+  const inventory = savedNpc?.inventory ?? npcInventories[selectedName] ?? {};
   const persistentMemories = npcMemoryResult.data?.memories ?? [];
   const personaSkill = npcSkillResult.data?.skill ?? null;
-  const schedule = getDefaultNpcSchedule(selectedNpc);
-  const knowledgeSkills = getNpcKnowledgeSkills();
+  const schedule = getDefaultNpcSchedule(selectedName);
+  const allKnowledgeSkills = getNpcKnowledgeSkills();
+  const knowledgeFilter = selectedDefinition ? roleKnowledgeAllowList[selectedDefinition.role] : null;
+  const relevantKnowledgeSkills = knowledgeFilter ? allKnowledgeSkills.filter(knowledgeFilter) : [];
+  const activePlace = agentWorld?.currentPlace?.name ?? agentWorld?.currentPlace?.id ?? '未知';
+  const currentIntent = mind?.currentIntent?.kind ?? 'idle';
+  const currentActivity = mind?.schedule?.currentActivity ?? null;
+
+  if (!selectedDefinition) {
+    return (
+      <div style={{ minHeight: '100%', padding: 24, fontFamily: '"Courier New", monospace' }}>
+        <Section title="NPC data">
+          <Empty text="还没有已解锁 NPC。去 NPC 商店招募后这里才会显示数据。" />
+        </Section>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -344,285 +442,316 @@ const NPCData: React.FC = () => {
         padding: 24,
         color: 'var(--px-text)',
         fontFamily: '"Courier New", monospace',
-        background: 'linear-gradient(180deg, var(--px-bg), rgba(0,0,0,0.18))',
+        background: 'linear-gradient(180deg, var(--px-bg), rgba(0,0,0,0.08))',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>
         <div>
           <div style={{ color: 'var(--px-gold)', fontSize: 12, fontWeight: 900, letterSpacing: 1 }}>
             AGENT OBSERVABILITY
           </div>
-          <h1 style={{ margin: '6px 0 0', fontSize: 28, lineHeight: 1.1 }}>NPC data</h1>
+          <h1 style={{ margin: '6px 0 0', fontSize: 26, lineHeight: 1.1 }}>NPC data</h1>
         </div>
-        <div style={{ ...chipStyle, color: settings.agentBrainEnabled === false ? '#ff9f9f' : '#9ff3b2' }}>
-          Brain {settings.agentBrainEnabled === false ? 'OFF' : 'ON'}
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 8 }}>
+          <Chip tone={settings.agentBrainEnabled === false ? 'warn' : 'good'}>
+            Brain {settings.agentBrainEnabled === false ? 'OFF' : 'ON'}
+          </Chip>
+          <Chip>{unlockedNpcDefinitions.length} unlocked</Chip>
+          {lockedCount > 0 ? <Chip tone="warn">{lockedCount} locked</Chip> : null}
         </div>
-      </div>
+      </header>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 18, marginTop: 22 }}>
-        <aside style={{ ...panelStyle, padding: 10, alignSelf: 'start' }}>
-          <div style={{ padding: '8px 8px 12px', color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>
-            NPC LIST
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '260px minmax(0, 1fr)',
+          gap: 18,
+          marginTop: 22,
+          alignItems: 'start',
+        }}
+      >
+        <aside style={{ ...panelStyle, padding: 12, position: 'sticky', top: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <strong style={{ fontSize: 13 }}>已解锁 NPC</strong>
+            <Link
+              to="/dashboard/npc-shop"
+              style={{
+                padding: '5px 8px',
+                border: '1px solid var(--px-gold)',
+                borderRadius: 4,
+                color: 'var(--px-gold)',
+                textDecoration: 'none',
+                fontSize: 12,
+                fontWeight: 900,
+              }}
+            >
+              商店
+            </Link>
           </div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {npcNames.map((name) => {
-              const active = name === selectedNpc;
+          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+            {unlockedNpcDefinitions.map((npc) => {
+              const active = npc.name === selectedName;
+              const npcMind = savedGameSave?.worldStatus?.npcs?.[npc.name]?.mind ?? npcMinds[npc.name] ?? null;
               return (
                 <button
-                  key={name}
+                  key={npc.id}
                   type="button"
-                  onClick={() => setSelectedNpc(name)}
+                  onClick={() => setSelectedNpc(npc.name)}
                   style={{
+                    display: 'grid',
+                    gap: 4,
                     width: '100%',
-                    padding: '10px 12px',
+                    padding: '11px 12px',
                     textAlign: 'left',
                     border: active ? '2px solid var(--px-gold)' : '1px solid var(--px-border)',
                     borderRadius: 4,
-                    background: active ? 'rgba(255,215,0,0.1)' : 'var(--px-surface2)',
+                    background: active ? 'rgba(255,214,10,0.13)' : 'var(--px-surface2)',
                     color: active ? 'var(--px-gold)' : 'var(--px-text)',
-                    fontWeight: 900,
                     cursor: 'pointer',
+                    fontFamily: 'inherit',
                   }}
                 >
-                  {name}
+                  <strong style={{ fontSize: 14 }}>{npc.name}</strong>
+                  <span style={{ color: 'var(--px-muted)', fontSize: 12 }}>
+                    {roleLabel[npc.role] ?? npc.title} · {npcMind?.schedule?.currentActivity ?? 'no activity'}
+                  </span>
                 </button>
               );
             })}
           </div>
+          {lockedCount > 0 ? (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--px-border)' }}>
+              <div style={{ color: 'var(--px-muted)', fontSize: 12, lineHeight: 1.5 }}>
+                未解锁 NPC 不在这里暴露 memory、skill 或 debug data。
+              </div>
+            </div>
+          ) : null}
         </aside>
 
-        <main style={{ display: 'grid', gap: 18, minWidth: 0 }}>
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
-            <Stat label="Intent" value={mind?.currentIntent?.kind ?? 'unknown'} />
-            <Stat label="Activity" value={mind?.schedule?.currentActivity ?? 'free roam'} />
-            <Stat label="Place" value={agentWorld?.currentPlace?.id ?? 'unknown'} />
-            <Stat label="Server Memories" value={npcMemoryResult.isFetching ? '...' : persistentMemories.length} />
-          </section>
-
+        <main style={{ display: 'grid', gap: 14, minWidth: 0 }}>
           <section style={{ ...panelStyle, padding: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Agent State</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 14, marginTop: 14 }}>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <span style={chipStyle}>Last perceived: {formatTick(mind?.lastPerceivedTick)}</span>
-                  <span style={chipStyle}>Last thought: {formatTick(mind?.lastThoughtTick)}</span>
-                  <span style={chipStyle}>Last planned: {formatTick(mind?.lastPlannedTick)}</span>
-                  <span style={chipStyle}>Paused until: {formatTick(mind?.pausedUntilTick)}</span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: 16 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.15 }}>{selectedName}</h2>
+                  <Chip>{roleLabel[selectedDefinition.role] ?? selectedDefinition.title}</Chip>
                 </div>
-                <JsonBlock value={mind?.currentIntent ?? null} />
-              </div>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Needs</div>
-                <JsonBlock value={mind?.needs ?? null} />
-              </div>
-            </div>
-          </section>
-
-          <section style={{ ...panelStyle, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>World Cognition</h2>
-              <span style={chipStyle}>
-                {agentWorld?.currentPlace?.name ?? 'no generated map context'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              <span style={chipStyle}>place: {agentWorld?.currentPlace?.id ?? '-'}</span>
-              <span style={chipStyle}>type: {agentWorld?.currentPlace?.type ?? '-'}</span>
-              <span style={chipStyle}>source: {agentWorld?.currentPlace?.source ?? '-'}</span>
-              <span style={chipStyle}>local memories: {recentMemories.length}</span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Position + Goal</div>
-                <JsonBlock value={{ position: agentWorld?.position ?? null, activeGoal: agentWorld?.activeGoal ?? null }} />
-              </div>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Available Actions</div>
-                <JsonBlock value={agentWorld?.availableActions ?? []} />
-              </div>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Nearby Places</div>
-                <JsonBlock value={agentWorld?.nearbyPlaces ?? []} />
-              </div>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Visible Objects + Failures</div>
-                <JsonBlock value={{
-                  visibleObjects: agentWorld?.visibleObjects ?? [],
-                  recentFailures: agentWorld?.recentFailures ?? [],
-                }} />
-              </div>
-            </div>
-          </section>
-
-          <section style={{ ...panelStyle, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Persona Skill</h2>
-              {personaSkill && (
-                <span style={chipStyle}>
-                  {personaSkill.metadata.name ?? personaSkill.slug} / {personaSkill.metadata.version ?? 'v1'}
-                </span>
-              )}
-            </div>
-            <div style={{ marginTop: 12 }}>
-              {npcSkillResult.isFetching ? (
-                <span style={{ color: 'var(--px-muted)' }}>Loading skill...</span>
-              ) : !personaSkill ? (
-                <span style={{ color: 'var(--px-muted)' }}>No backend persona skill found.</span>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '260px minmax(0, 1fr)', gap: 12 }}>
-                  <JsonBlock value={personaSkill.metadata} />
-                  <SkillFiles skill={personaSkill} />
+                <p style={{ margin: '10px 0 0', color: 'var(--px-muted)', lineHeight: 1.55 }}>
+                  {selectedDefinition.description}
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                  {(roleWork[selectedDefinition.role] ?? []).map((item) => <Chip key={item}>{item}</Chip>)}
                 </div>
-              )}
-            </div>
-          </section>
-
-          <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-            <div style={{ ...panelStyle, padding: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Inventory</h2>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                {Object.keys(inventory).length === 0 ? (
-                  <span style={{ color: 'var(--px-muted)' }}>Empty</span>
-                ) : (
-                  Object.entries(inventory).map(([itemId, qty]) => (
-                    <span key={itemId} style={chipStyle}>{itemId} x{qty}</span>
-                  ))
-                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 148px)', gap: 8 }}>
+                <Metric label="Intent" value={currentIntent} />
+                <Metric label="Activity" value={currentActivity ?? 'free'} />
+                <Metric label="Place" value={activePlace} />
+                <Metric label="Memory" value={npcMemoryResult.isFetching ? '...' : persistentMemories.length} />
               </div>
             </div>
-
-            <div style={{ ...panelStyle, padding: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Relationships</h2>
-              <JsonBlock value={mind?.relationships ?? {}} />
-            </div>
           </section>
 
-          <section style={{ ...panelStyle, padding: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Daily Schedule</h2>
-            {schedule.length === 0 ? (
-              <div style={{ marginTop: 12, color: 'var(--px-muted)' }}>No fixed schedule registered for this NPC.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-                {schedule.map((slot) => {
-                  const active = mind?.schedule?.currentActivity === slot.activity;
-                  return (
-                    <div
-                      key={`${slot.startMin}-${slot.activity}`}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '120px 140px 120px 1fr',
-                        gap: 10,
-                        padding: '10px 12px',
-                        border: active ? '2px solid var(--px-gold)' : '1px solid var(--px-border)',
-                        borderRadius: 4,
-                        background: active ? 'rgba(255,215,0,0.08)' : 'var(--px-surface2)',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <strong>{formatMinute(slot.startMin)}-{formatMinute(slot.endMin)}</strong>
-                      <span>{activityLabel[slot.activity]}</span>
-                      <span style={{ color: 'var(--px-muted)' }}>{slot.locationId ?? '-'}</span>
-                      <span style={{ color: 'var(--px-muted)' }}>{slot.line ?? ''}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section style={{ ...panelStyle, padding: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Knowledge Skills</h2>
-            <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-              {knowledgeSkills.map((skill) => (
-                <div
-                  key={skill.id}
+          <nav
+            style={{
+              display: 'flex',
+              gap: 8,
+              padding: 6,
+              border: '1px solid var(--px-border)',
+              borderRadius: 6,
+              background: 'var(--px-surface)',
+              overflowX: 'auto',
+            }}
+          >
+            {tabs.map((tab) => {
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '180px 110px 1fr',
-                    gap: 10,
-                    padding: '10px 12px',
-                    border: '1px solid var(--px-border)',
+                    minWidth: 104,
+                    padding: '9px 12px',
+                    border: active ? '1px solid var(--px-gold)' : '1px solid transparent',
                     borderRadius: 4,
-                    background: 'var(--px-surface2)',
-                    alignItems: 'start',
+                    background: active ? 'rgba(255,214,10,0.12)' : 'transparent',
+                    color: active ? 'var(--px-gold)' : 'var(--px-text)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontWeight: 900,
                   }}
                 >
-                  <strong>{skill.label}</strong>
-                  <span style={{ ...chipStyle, justifyContent: 'center' }}>{skill.id}</span>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ color: 'var(--px-muted)' }}>{skill.description}</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      <span style={chipStyle}>time: {skill.requiredTime ?? 'any'}</span>
-                      {skill.steps.map((step, index) => (
-                        <span key={`${skill.id}-${index}`} style={chipStyle}>
-                          {step.kind === 'move_to'
-                            ? `move:${step.target.kind === 'named' ? step.target.place : `${step.target.x},${step.target.y}`}`
-                            : `${step.action}:${step.itemId ?? 'any'}`}
-                        </span>
-                      ))}
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {activeTab === 'overview' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Section title="Current State">
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <Chip>last perceived: {formatTick(mind?.lastPerceivedTick)}</Chip>
+                    <Chip>last thought: {formatTick(mind?.lastThoughtTick)}</Chip>
+                    <Chip>last planned: {formatTick(mind?.lastPlannedTick)}</Chip>
+                    <Chip>paused: {formatTick(mind?.pausedUntilTick)}</Chip>
+                  </div>
+                  <div style={{ ...subtlePanelStyle, padding: 12 }}>
+                    <div style={{ color: 'var(--px-muted)', fontSize: 12, fontWeight: 900 }}>Current intent</div>
+                    <div style={{ marginTop: 6, fontWeight: 900 }}>{currentIntent}</div>
+                    <div style={{ marginTop: 6, color: 'var(--px-muted)' }}>
+                      {typeof mind?.currentIntent?.reason === 'string' ? mind.currentIntent.reason : 'no reason recorded'}
                     </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    <Metric label="Energy" value={Math.round(mind?.needs?.energy ?? 0)} />
+                    <Metric label="Hunger" value={Math.round(mind?.needs?.hunger ?? 0)} />
+                    <Metric label="Social" value={Math.round(mind?.needs?.social ?? 0)} />
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+              </Section>
 
-          <section style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-            <div style={{ ...panelStyle, padding: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Structured Memories</h2>
-              <div style={{ display: 'grid', gap: 8, marginTop: 12, maxHeight: 420, overflow: 'auto' }}>
-                {recentMemories.length === 0 ? (
-                  <span style={{ color: 'var(--px-muted)' }}>No saved structured memories yet.</span>
-                ) : recentMemories.map((memory) => (
-                  <div key={memory.key} style={{ padding: 10, border: '1px solid var(--px-border)', borderRadius: 4 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <strong>{memory.label ?? memory.type}</strong>
-                      <span style={{ color: 'var(--px-muted)' }}>tick {formatTick(memory.lastSeenTick)}</span>
-                    </div>
-                    <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 4 }}>
-                      {memory.kind} / {memory.type} @ {Math.round(memory.x)}, {Math.round(memory.y)}
-                    </div>
-                    {memory.meta && <JsonBlock value={memory.meta} />}
+              <Section title="World Awareness">
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <Metric label="Visible Objects" value={compactCount(agentWorld?.visibleObjects)} />
+                    <Metric label="Nearby Places" value={compactCount(agentWorld?.nearbyPlaces)} />
+                    <Metric label="Actions" value={compactCount(agentWorld?.availableActions)} />
+                    <Metric label="Failures" value={compactCount(agentWorld?.recentFailures)} />
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <Chip>place: {agentWorld?.currentPlace?.id ?? '-'}</Chip>
+                    <Chip>type: {agentWorld?.currentPlace?.type ?? '-'}</Chip>
+                    <Chip>source: {agentWorld?.currentPlace?.source ?? '-'}</Chip>
+                  </div>
+                </div>
+              </Section>
 
-            <div style={{ ...panelStyle, padding: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18 }}>Backend Conversation Memory</h2>
-              <div style={{ display: 'grid', gap: 8, marginTop: 12, maxHeight: 420, overflow: 'auto' }}>
+              <Section title="Inventory">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {Object.keys(inventory).length === 0 ? (
+                    <Empty text="背包为空。" />
+                  ) : (
+                    Object.entries(inventory).map(([itemId, qty]) => (
+                      <Chip key={itemId}>{itemId} x{qty}</Chip>
+                    ))
+                  )}
+                </div>
+              </Section>
+
+              <Section title="Daily Schedule">
+                <ScheduleList schedule={schedule} currentActivity={currentActivity} />
+              </Section>
+            </div>
+          ) : null}
+
+          {activeTab === 'memory' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Section title="Structured Memories" action={<Chip>{recentMemories.length}</Chip>}>
+                <MemoryList memories={recentMemories} />
+              </Section>
+              <Section title="Backend Conversation Memory" action={<Chip>{persistentMemories.length}</Chip>}>
                 {npcMemoryResult.isFetching ? (
-                  <span style={{ color: 'var(--px-muted)' }}>Loading...</span>
+                  <Empty text="正在读取后端记忆..." />
                 ) : persistentMemories.length === 0 ? (
-                  <span style={{ color: 'var(--px-muted)' }}>No backend memories saved for this NPC.</span>
-                ) : persistentMemories.slice().reverse().map((memory) => (
-                  <div key={memory.id} style={{ padding: 10, border: '1px solid var(--px-border)', borderRadius: 4 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                      <strong>{memory.source}</strong>
-                      <span style={{ color: 'var(--px-muted)' }}>tick {formatTick(memory.gameTick)}</span>
-                    </div>
-                    <div style={{ marginTop: 6 }}>{memory.text}</div>
-                    <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 6 }}>
-                      importance {memory.importance} / {memory.keywords?.join(', ') || 'no keywords'}
-                    </div>
+                  <Empty text="这个 NPC 还没有对话记忆。" />
+                ) : (
+                  <div style={{ display: 'grid', gap: 8, maxHeight: 420, overflow: 'auto', paddingRight: 4 }}>
+                    {persistentMemories.slice().reverse().map((memory) => (
+                      <article key={memory.id} style={{ ...subtlePanelStyle, padding: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <strong>{memory.source}</strong>
+                          <span style={{ color: 'var(--px-muted)' }}>tick {formatTick(memory.gameTick)}</span>
+                        </div>
+                        <div style={{ marginTop: 6, lineHeight: 1.45 }}>{memory.text}</div>
+                        <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 6 }}>
+                          importance {memory.importance} / {memory.keywords?.join(', ') || 'no keywords'}
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </Section>
+              <Section title="Known Landmarks" action={<Chip>{landmarks.length}</Chip>}>
+                {landmarks.length === 0 ? (
+                  <Empty text="还没有地标记忆。" />
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {landmarks.map((landmark) => (
+                      <Chip key={landmark.key}>
+                        {landmark.label ?? landmark.type} ({Math.round(landmark.x)}, {Math.round(landmark.y)})
+                      </Chip>
+                    ))}
+                  </div>
+                )}
+              </Section>
+              <Section title="Relationships">
+                <JsonBlock value={mind?.relationships ?? {}} maxHeight={220} />
+              </Section>
             </div>
-          </section>
+          ) : null}
 
-          <section style={{ ...panelStyle, padding: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Known Landmarks</h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              {landmarks.length === 0 ? (
-                <span style={{ color: 'var(--px-muted)' }}>No landmarks recorded yet.</span>
-              ) : landmarks.map((landmark) => (
-                <span key={landmark.key} style={chipStyle}>
-                  {landmark.label ?? landmark.type} ({Math.round(landmark.x)}, {Math.round(landmark.y)})
-                </span>
-              ))}
+          {activeTab === 'skill' ? (
+            <div style={{ display: 'grid', gap: 14 }}>
+              <Section
+                title="Persona Skill"
+                action={personaSkill ? <Chip>{personaSkill.metadata.version ?? 'v1'}</Chip> : undefined}
+              >
+                {npcSkillResult.isFetching ? (
+                  <Empty text="正在读取 persona skill..." />
+                ) : !personaSkill ? (
+                  <Empty text="后端没有返回这个 NPC 的 persona skill。" />
+                ) : (
+                  <div style={{ display: 'grid', gap: 12 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      <Chip>name: {personaSkill.metadata.name ?? personaSkill.npcName}</Chip>
+                      <Chip>role: {personaSkill.metadata.role ?? selectedDefinition.role}</Chip>
+                      <Chip>entry: {personaSkill.filename}</Chip>
+                    </div>
+                    <SkillFiles skill={personaSkill} />
+                  </div>
+                )}
+              </Section>
+              <Section title="Work Skills">
+                {relevantKnowledgeSkills.length === 0 ? (
+                  <Empty text="这个职业暂时没有接入可展示的工作 skill。" />
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {relevantKnowledgeSkills.map((skill) => (
+                      <div key={skill.id} style={{ ...subtlePanelStyle, padding: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                          <strong>{skill.label}</strong>
+                          <Chip>{skill.id}</Chip>
+                        </div>
+                        <div style={{ marginTop: 6, color: 'var(--px-muted)', lineHeight: 1.45 }}>
+                          {skill.description}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
             </div>
-          </section>
+          ) : null}
+
+          {activeTab === 'debug' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Section title="Saved NPC">
+                <JsonBlock value={savedNpc} maxHeight={360} />
+              </Section>
+              <Section title="Mind">
+                <JsonBlock value={mind} maxHeight={360} />
+              </Section>
+              <Section title="Agent World">
+                <JsonBlock value={agentWorld} maxHeight={360} />
+              </Section>
+              <Section title="Inventory Raw">
+                <JsonBlock value={inventory} maxHeight={360} />
+              </Section>
+            </div>
+          ) : null}
         </main>
       </div>
     </div>

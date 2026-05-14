@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import type { FacingDirection, IdleGameState, TreeSaveState } from '../../../../../Types/Profile';
-import type { GameWorldState } from '../types';
+import type { GameWorldState, NpcMemoryEntry } from '../types';
 import type { NpcMindState } from '../shared/worldStateTypes';
 import type { WorldStateManager } from '../shared/WorldStateManager';
 import type { Player } from '../entities/Player';
@@ -11,6 +11,11 @@ import type { DayCycle } from './DayCycle';
 import type { RenderSyncSystem } from './RenderSyncSystem';
 import type { SleepManager } from './SleepManager';
 import type { NestStateSystem } from './NestStateSystem';
+import type { GameSettingsState, CreatureState, FarmTile } from '../../../../../Redux/Features/gameSlice';
+import type { GameChest } from '../../../../../Types/Profile';
+import type { DropState } from '../shared/worldStateTypes';
+import type { GameSaveV1, RuntimeInventorySnapshot } from '../persistence/save/GameSaveTypes';
+import { buildGameSaveFromRuntime, buildNpcSaves } from '../persistence/save/GameSaveMapper';
 import {
   normalizeGameWorldState,
   restoreNpcMindsFromSave,
@@ -31,6 +36,20 @@ export interface SavingSystemOptions {
   getNestStateSystem: () => NestStateSystem;
   getRenderSyncSystem: () => RenderSyncSystem;
   nextNestId: () => string;
+  getFarmTiles?: () => FarmTile[];
+  getChests?: () => GameChest[];
+  getCreatureStates?: () => CreatureState[];
+  getNpcMemories?: () => Record<string, NpcMemoryEntry[]>;
+}
+
+export interface GameSaveBuildContext {
+  previousSave?: GameSaveV1 | null;
+  roomId?: string | null;
+  userId?: string | null;
+  username?: string | null;
+  settings: Partial<GameSettingsState & { shadowEnabled?: boolean }>;
+  inventory: RuntimeInventorySnapshot;
+  npcInventories?: Record<string, Record<string, number>>;
 }
 
 /**
@@ -62,6 +81,43 @@ export class SavingSystem {
       trees,
       worldState: this.serializeWorld(),
     };
+  }
+
+  getGameSaveData(context: GameSaveBuildContext): GameSaveV1 {
+    const playerState = this.options.getPlayer().getState();
+    const facing = (['down', 'up', 'left', 'right'] as FacingDirection[]).includes(
+      playerState.facing as FacingDirection,
+    )
+      ? playerState.facing as FacingDirection
+      : 'down';
+    const worldState = this.options.getWorldStateManager().exportSaveData();
+    const npcs = buildNpcSaves({
+      entities: worldState.entities,
+      minds: worldState.npcMinds,
+      memories: this.options.getNpcMemories?.() ?? {},
+      inventories: context.npcInventories ?? {},
+    });
+
+    return buildGameSaveFromRuntime({
+      previousSave: context.previousSave,
+      roomId: context.roomId,
+      userId: context.userId,
+      username: context.username,
+      player: {
+        x: playerState.x,
+        y: playerState.y,
+        facing,
+      },
+      gameTick: this.options.getDayCycle().gameTick,
+      settings: context.settings,
+      inventory: context.inventory,
+      worldState,
+      farmTiles: this.options.getFarmTiles?.() ?? [],
+      chests: this.options.getChests?.() ?? [],
+      worldItems: Object.values(worldState.drops).filter((drop): drop is DropState => Boolean(drop && !drop.claimed)),
+      creatures: this.options.getCreatureStates?.() ?? [],
+      npcs,
+    });
   }
 
   serializeNpcMinds(): Record<string, NpcMindState> {

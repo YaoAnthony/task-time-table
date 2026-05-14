@@ -60,6 +60,7 @@ export interface GameSettingsState {
   timeMinute: number;
   weather: GameWeatherSetting;
   physicsDebug: boolean;
+  pathLineEnabled: boolean;
   sleepThreshold: number;
   agentBrainEnabled: boolean;
 }
@@ -93,6 +94,7 @@ const initialState: GameReduxState = {
     timeMinute:     360,
     weather:        'clear',
     physicsDebug:   false,
+    pathLineEnabled: false,
     sleepThreshold: 0,
     agentBrainEnabled: true,
   },
@@ -236,6 +238,9 @@ const gameSlice = createSlice({
       if (typeof next.physicsDebug === 'boolean') {
         state.settings.physicsDebug = next.physicsDebug;
       }
+      if (typeof next.pathLineEnabled === 'boolean') {
+        state.settings.pathLineEnabled = next.pathLineEnabled;
+      }
       if (typeof next.sleepThreshold === 'number') {
         state.settings.sleepThreshold = Math.max(0, Math.min(1, next.sleepThreshold));
       }
@@ -250,6 +255,10 @@ const gameSlice = createSlice({
 
     setGamePhysicsDebug(state, action: PayloadAction<boolean>) {
       state.settings.physicsDebug = action.payload;
+    },
+
+    setGamePathLineEnabled(state, action: PayloadAction<boolean>) {
+      state.settings.pathLineEnabled = action.payload;
     },
 
     setGameSleepThreshold(state, action: PayloadAction<number>) {
@@ -353,6 +362,7 @@ export const {
   setGameTimeMinute,
   setGameWeather,
   setGamePhysicsDebug,
+  setGamePathLineEnabled,
   setGameSleepThreshold,
   setGameAgentBrainEnabled,
   moveSlot,

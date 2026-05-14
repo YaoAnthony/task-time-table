@@ -14,22 +14,16 @@ import Phaser                 from 'phaser';
 import { useDispatch }        from 'react-redux';
 import type { RefObject }     from 'react';
 import {
-  useSaveIdleGameMutation,
-  useTickFarmMutation,
-  useSaveCreaturesMutation,
-  useLazyGetNpcMemoriesQuery,
-  useLazyGetGameChestsQuery,
-  useLazyGetGameInventoryQuery,
-  useLazyGetFarmTilesQuery,
-  useLazyGetCreaturesQuery,
+  useLazyGetGameSaveQuery,
+  useSaveGameSaveMutation,
 } from '../../../../../api/profileStateRtkApi';
 import { initSlotsFromInventory } from '../../../../../Redux/Features/gameSlice';
-import type { GameSettingsState } from '../../../../../Redux/Features/gameSlice';
+import type { GameInventoryItem, GameSettingsState, SlotItem } from '../../../../../Redux/Features/gameSlice';
 import { gameBus }            from '../shared/EventBus';
 import { GameScene }          from '../GameScene';
-import { NPC_NAME }           from '../constants';
 import type { GameChest }     from '../../../../../Types/Profile';
 import type { IdleGameState } from '../../../../../Types/Profile';
+import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
 
 interface UsePhaserBootProps {
   /** Phaser canvas 容器 */
@@ -45,14 +39,19 @@ interface UsePhaserBootProps {
   selectedSlotRef:  RefObject<number>;
   /** 上次保存的 IdleGame 状态 */
   savedIdleGameRef: RefObject<IdleGameState | null>;
+  savedGameSaveRef: RefObject<GameSaveV1 | null>;
   /** Current settings saved inside idleGame.worldState. */
   gameSettingsRef:  RefObject<GameSettingsState>;
+  gameInventoryRef: RefObject<GameInventoryItem[]>;
+  backpackSlotsRef: RefObject<(SlotItem | null)[]>;
   /** auth token ref */
   tokenRef:         RefObject<string | null>;
   /** NPC 背包 ref */
   npcInventoriesRef:RefObject<Record<string, Record<string, number>>>;
   /** 联机 roomId ref */
   multiplayRoomIdRef: RefObject<string | null>;
+  userId: string | null;
+  username: string;
   /** 更新时间字符串（tick:update 事件） */
   setTimeStr:       (ts: string) => void;
   /** 宝箱列表从 game:ready 加载后回调 */
@@ -69,31 +68,34 @@ export function usePhaserBoot({
   hotbarSlotsRef,
   selectedSlotRef,
   savedIdleGameRef,
+  savedGameSaveRef,
   gameSettingsRef,
+  gameInventoryRef,
+  backpackSlotsRef,
   tokenRef,
   npcInventoriesRef,
   multiplayRoomIdRef,
+  userId,
+  username,
   setTimeStr,
   setAvailableChests,
   onDropItem,
 }: UsePhaserBootProps) {
   const dispatch = useDispatch();
 
-  const [saveIdleGame]     = useSaveIdleGameMutation();
-  const [tickFarm]         = useTickFarmMutation();
-  const [saveCreatures]    = useSaveCreaturesMutation();
-  const [fetchNpcMemories] = useLazyGetNpcMemoriesQuery();
-  const [fetchGameChests]  = useLazyGetGameChestsQuery();
-  const [getGameInventory] = useLazyGetGameInventoryQuery();
-  const [getFarmTiles]     = useLazyGetFarmTilesQuery();
-  const [getCreatures]     = useLazyGetCreaturesQuery();
+  const [fetchGameSave] = useLazyGetGameSaveQuery();
+  const [saveGameSave]  = useSaveGameSaveMutation();
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || gameRef.current) return;
 
     const scene = new GameScene();
-    if (savedIdleGameRef.current) scene.initialState = savedIdleGameRef.current;
+    if (savedGameSaveRef.current) {
+      scene.setInitialGameSave(savedGameSaveRef.current, userId ?? 'player');
+    } else if (savedIdleGameRef.current) {
+      scene.initialState = savedIdleGameRef.current;
+    }
 
     // ── gameBus 订阅 ──────────────────────────────────────────────────────
     const unsubs = [
@@ -108,37 +110,20 @@ export function usePhaserBoot({
           (name) => npcInventoriesRef.current[name] ?? {},
         );
 
-        fetchNpcMemories(NPC_NAME)
-          .then((res) => {
-            if (res.data?.memories) {
-              scene.loadNpcMemories(NPC_NAME, res.data.memories);
-            }
-          }).catch(() => {});
+        fetchGameSave(multiplayRoomIdRef.current ?? undefined)
+          .then((result) => {
+            const save = result.data?.gameSave;
+            if (!save) return;
+            scene.loadGameSaveData(save, userId ?? 'player');
 
-        fetchGameChests()
-          .then((res) => {
-            const chests: GameChest[] = res.data?.chests ?? [];
+            const playerSave = save.players[userId ?? 'player'] ?? Object.values(save.players)[0];
+            const inventory = playerSave?.inventory?.gameInventory ?? [];
+            dispatch(initSlotsFromInventory(inventory));
+            const owned = inventory.map((i: { itemId: string }) => i.itemId);
+            scene.removeWorldItemsByIds(owned);
+
+            const chests: GameChest[] = save.worldStatus.entities.chests.filter((chest) => !chest.opened);
             setAvailableChests(chests);
-            if (chests.length > 0) scene.loadChests(chests);
-          }).catch(() => {});
-
-        getGameInventory()
-          .then((result) => {
-            if (result.data?.gameInventory) {
-              dispatch(initSlotsFromInventory(result.data.gameInventory));
-              const owned = result.data.gameInventory.map((i: { itemId: string }) => i.itemId);
-              scene.removeWorldItemsByIds(owned);
-            }
-          }).catch(() => {});
-
-        getFarmTiles(multiplayRoomIdRef.current ?? undefined)
-          .then((result) => {
-            if (result.data?.farmTiles) scene.farmSystem?.loadFromBackend?.(result.data.farmTiles);
-          }).catch(() => {});
-
-        getCreatures(multiplayRoomIdRef.current ?? undefined)
-          .then((result) => {
-            if (result.data?.creatures?.length) scene.restoreCreatures(result.data.creatures);
           }).catch(() => {});
       }),
     ];
@@ -204,27 +189,21 @@ export function usePhaserBoot({
     const saveTimer = setInterval(() => {
       const s = sceneRef.current;
       if (!s) return;
-      const rawGameState = s.getGameState();
-      const gameState: IdleGameState = {
-        ...rawGameState,
-        worldState: {
-          schemaVersion: 1,
-          beds: [],
-          nests: [],
-          ...(rawGameState.worldState ?? {}),
-          settings: gameSettingsRef.current,
+      const roomId = multiplayRoomIdRef.current ?? undefined;
+      const gameSave = s.getGameSaveData({
+        previousSave: savedGameSaveRef.current,
+        roomId,
+        userId,
+        username,
+        settings: gameSettingsRef.current,
+        inventory: {
+          gameInventory: gameInventoryRef.current,
+          hotbarSlots: hotbarSlotsRef.current as (SlotItem | null)[],
+          backpackSlots: backpackSlotsRef.current,
         },
-      };
-      saveIdleGame(gameState).catch(() => {});
-
-      const currentTick = gameState.gameTick ?? s.getGameTick?.() ?? 0;
-      const roomId      = multiplayRoomIdRef.current ?? undefined;
-      tickFarm({ gameTick: currentTick, roomId }).catch(() => {});
-
-      const creatureStates = s.getCreatureStates?.();
-      if (creatureStates?.length) {
-        saveCreatures({ creatures: creatureStates, roomId }).catch(() => {});
-      }
+        npcInventories: npcInventoriesRef.current,
+      });
+      saveGameSave({ gameSave, roomId }).catch(() => {});
     }, 30_000);
 
     // ── ResizeObserver ───────────────────────────────────────────────────────

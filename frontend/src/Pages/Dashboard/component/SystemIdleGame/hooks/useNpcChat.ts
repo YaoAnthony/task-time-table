@@ -75,6 +75,10 @@ export function useNpcChat(
         if (!shouldReply) return;
         const scene = sceneRef.current;
         if (!scene) return;
+        if (scene.isAgentBrainEnabled?.() === false) {
+          scene.makeNpcSay(npcName, 'Agent brain is off. Use /agent brain on to let me think again.');
+          return;
+        }
 
         scene.setNpcThinking(npcName, true);
         try {
@@ -95,6 +99,7 @@ export function useNpcChat(
             npcInventory: npcInventoriesRef.current[npcName] ?? {},
             familiarity,
             chatCount,
+            agentBrainEnabled: scene.isAgentBrainEnabled?.() !== false,
           }).unwrap();
 
           scene.npcReply(npcName, result.reply ?? '……');

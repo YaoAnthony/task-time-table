@@ -224,7 +224,13 @@ export class House {
 
   // ── Called every frame ────────────────────────────────────────────────────
   /** npcX/npcY optional — door also opens when an NPC approaches. */
-  update(playerX: number, playerY: number, npcX?: number, npcY?: number): void {
+  update(
+    playerX: number,
+    playerY: number,
+    npcX?: number,
+    npcY?: number,
+    extraActors: Array<{ x: number; y: number }> = [],
+  ): void {
     const doorWX = this.houseX + this.DOOR_COL * T + T / 2;
     const doorWY = this.houseY + this.DOOR_ROW * T + T / 2;
     const pdx = playerX - doorWX, pdy = playerY - doorWY;
@@ -232,7 +238,10 @@ export class House {
     const npcNear    = npcX !== undefined && npcY !== undefined
       ? (npcX - doorWX) ** 2 + (npcY - doorWY) ** 2 < DOOR_DIST * DOOR_DIST
       : false;
-    const near = playerNear || npcNear;
+    const otherNpcNear = extraActors.some((actor) =>
+      (actor.x - doorWX) ** 2 + (actor.y - doorWY) ** 2 < DOOR_DIST * DOOR_DIST
+    );
+    const near = playerNear || npcNear || otherNpcNear;
 
     if ( near && !this.doorOpen && !this.doorAnimating) this.animateDoor(['K','Y','R','D'], true);
     if (!near &&  this.doorOpen && !this.doorAnimating) this.animateDoor(['D','R','Y','K'], false);

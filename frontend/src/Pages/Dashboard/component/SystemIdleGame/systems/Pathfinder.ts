@@ -128,9 +128,9 @@ export class Pathfinder {
       for (const [dc, dr, baseCost] of DIRS) {
         const nc = cur.c + dc, nr = cur.r + dr;
         if (!this.walkable(nc, nr) || closed.has(key(nc, nr))) continue;
-        // Block diagonal if both cardinal neighbours are solid
+        // Block diagonal corner cutting so the point path still fits a body.
         if (dc !== 0 && dr !== 0) {
-          if (!this.walkable(cur.c + dc, cur.r) && !this.walkable(cur.c, cur.r + dr)) continue;
+          if (!this.walkable(cur.c + dc, cur.r) || !this.walkable(cur.c, cur.r + dr)) continue;
         }
         // g cost = base movement cost × destination cell's terrain weight
         const g = cur.g + baseCost * this.weight(nc, nr);

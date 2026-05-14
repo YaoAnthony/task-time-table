@@ -126,7 +126,11 @@ export const profileApi = createApi({
                     // 更新 Redux store 里的 profile和 user
                     dispatch(setUser(data.user));
                     dispatch(setProfile(data.profile));
-                    dispatch(setGameSettings(data.profile.idleGame?.worldState?.settings ?? {}));
+                    dispatch(setGameSettings(
+                        data.profile.gameSave?.worldStatus?.settings
+                        ?? data.profile.idleGame?.worldState?.settings
+                        ?? {},
+                    ));
                     dispatch(setStatus("authenticated"));
                 } catch (err) {
                     // 错误处理
@@ -160,7 +164,11 @@ export const profileApi = createApi({
                     // 请求成功 → 更新 Redux store 里的 profile
                     const { data } = await queryFulfilled;
                     dispatch(setProfile(data));
-                    dispatch(setGameSettings(data.idleGame?.worldState?.settings ?? {}));
+                    dispatch(setGameSettings(
+                        data.gameSave?.worldStatus?.settings
+                        ?? data.idleGame?.worldState?.settings
+                        ?? {},
+                    ));
                 } catch (err) {
                     // 错误处理（逻辑和上面类似）
                     const e = err as { error: FetchBaseQueryError };
