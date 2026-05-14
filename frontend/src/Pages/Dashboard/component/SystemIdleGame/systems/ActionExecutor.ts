@@ -33,7 +33,7 @@ export interface WorldContext {
   /** Create a WorldItem at (x, y) for the NPC dropping an item. */
   dropWorldItem(x: number, y: number, itemId: string, npcName: string): void;
   /** Remove a WorldItem from the world (NPC picked it up); fires onNpcPickupWorldItem. */
-  claimWorldItem(itemId: string, npcName: string): void;
+  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number }): void;
   /** Find a farm tile/cell target for a semantic farm action. */
   findFarmTarget(action: FarmActionKind, x: number, y: number, maxRadiusCells?: number, actorId?: string): FarmActionTarget | null;
   /** Apply a farm action through the same world-action path used by the player. */
@@ -98,14 +98,16 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
       if (!action.itemId) console.warn('[ActionExecutor] pickup_item missing itemId');
       return;
     }
-    const item = world.findWorldItem(action.itemId);
-    if (!item) {
+    const resolvedTarget = action.target?.kind === 'coords' ? action.target : null;
+    const item = resolvedTarget ? null : world.findWorldItem(action.itemId);
+    if (!resolvedTarget && !item) {
       console.warn('[ActionExecutor] pickup_item: item not found:', action.itemId);
       return;
     }
-    const { worldX: x, worldY: y } = item;
+    const x = resolvedTarget?.x ?? item!.worldX;
+    const y = resolvedTarget?.y ?? item!.worldY;
     npc.navigateTo(x, y, () => {
-      world.claimWorldItem(action.itemId!, npc.name);
+      world.claimWorldItem(action.itemId!, npc.name, { x, y });
     });
   },
 
@@ -335,6 +337,7 @@ export class ActionExecutor {
     }
     // pickup_item: resolve itemId → world item coords
     if (action.type === 'pickup_item' && action.itemId) {
+      if (action.target?.kind === 'coords') return action;
       const item = this.world?.findWorldItem(action.itemId);
       if (!item) return action;
       return { ...action, target: { kind: 'coords', x: item.worldX, y: item.worldY } };

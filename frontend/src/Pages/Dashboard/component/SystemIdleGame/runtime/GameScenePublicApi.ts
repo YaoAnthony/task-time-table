@@ -507,9 +507,29 @@ export function findWorldItem(scene: any, itemId: string) : DropItem | null {
   
 }
 
-export function claimWorldItem(scene: any, itemId: string, npcName: string) : void {
+export function claimWorldItem(scene: any, itemId: string, npcName: string, target?: { x: number; y: number }) : void {
     console.log(`[GameScene] claimWorldItem: itemId=${itemId} drops=[${scene.drops.map((d: any)=>d.itemId).join(',')}]`);
-    const drop = scene.drops.find((d: any) => d.itemId === itemId && !d.gone);
+    const candidates = scene.drops.filter((d: any) => d.itemId === itemId && !d.gone);
+    const nearestTo = (point: { x: number; y: number } | null) => {
+      if (!point || candidates.length === 0) return null;
+      let best: any = null;
+      let bestDistance = Infinity;
+      for (const candidate of candidates) {
+        const dx = candidate.worldX - point.x;
+        const dy = candidate.worldY - point.y;
+        const distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+          best = candidate;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    };
+    const npc = scene.findNpcByName?.(npcName) ?? null;
+    const drop = nearestTo(target ?? null)
+      ?? nearestTo(npc ? { x: npc.sprite.x, y: npc.sprite.y } : null)
+      ?? candidates[0]
+      ?? null;
     const dropId = drop ? ((drop as any).__worldStateId as string | undefined) : undefined;
     if (!drop || !dropId) {
       console.warn(`[GameScene] claimWorldItem: item "${itemId}" not found in drops!`);

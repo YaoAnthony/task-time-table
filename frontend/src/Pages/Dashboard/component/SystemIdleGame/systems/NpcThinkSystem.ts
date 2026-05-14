@@ -194,6 +194,7 @@ export class NpcThinkSystem {
           {
             type: 'pickup_item',
             itemId: visibleDrop.itemId,
+            target: { kind: 'coords', x: visibleDrop.x, y: visibleDrop.y },
           },
         ],
       };

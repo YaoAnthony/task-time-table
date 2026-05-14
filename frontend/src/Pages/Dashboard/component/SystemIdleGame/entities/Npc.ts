@@ -430,11 +430,12 @@ export class Npc {
         // target is pre-resolved to coords by ActionExecutor before queuing
         if (action.target?.kind === 'coords' && action.itemId) {
           const itemId = action.itemId;
-          this.navigateTo(action.target.x, action.target.y, () => {
+          const target = { x: action.target.x, y: action.target.y };
+          this.navigateTo(target.x, target.y, () => {
             console.log(`[Npc] pickup_item onArrive: claiming itemId=${itemId}`);
             // Use worldCtx if available (immediate path), else fall back to callback
             if (this.worldCtx) {
-              this.worldCtx.claimWorldItem(itemId, this.name);
+              this.worldCtx.claimWorldItem(itemId, this.name, target);
             } else {
               gameBus.emit('npc:pickup_world_item', { npcName: this.name, itemId, qty: 1 });
             }

@@ -636,8 +636,8 @@ export class GameSceneRuntime extends Phaser.Scene {
     return findWorldItem(this, itemId);
   }
 
-  claimWorldItem(itemId: string, npcName: string): void {
-    return claimWorldItem(this, itemId, npcName);
+  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number }): void {
+    return claimWorldItem(this, itemId, npcName, target);
   }
 
   dropWorldItem(x: number, y: number, itemId: string, npcName: string): void {

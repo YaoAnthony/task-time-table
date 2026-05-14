@@ -295,11 +295,23 @@ export function applyPickupDropAction(scene: any, action: Extract<WorldAction, {
     if (!drop) {
       return { ok: false, action, reason: 'Drop not found' };
     }
+    const x = drop.worldX;
+    const y = drop.worldY;
     if (action.actorId === 'player') {
       drop.pickup();
     } else {
       drop.claimForNpc();
+      gameBus.emit('world:item_picked_up', {
+        itemId: action.itemId,
+        x,
+        y,
+        actorId: action.actorId,
+        source: 'local',
+      });
     }
+    scene.unregisterDropState(drop);
+    const index = scene.drops.indexOf(drop);
+    if (index >= 0) scene.drops.splice(index, 1);
     return { ok: true, action, changedIds: [action.dropId] };
   
 }
