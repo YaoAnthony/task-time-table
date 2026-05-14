@@ -141,13 +141,15 @@ export class WorldFacade {
   dropPlayerItem(itemId: string): void {
     const player = this.options.player();
     if (!player) return;
-    this.options.dispatchWorldAction({
+    const result = this.options.dispatchWorldAction({
       type: 'DROP_ITEM',
       actorId: 'player',
       itemId,
       x: player.sprite.x + 22,
       y: player.sprite.y,
     });
+    if (!result.ok) return;
+    gameBus.emit('player:consume_item', { itemId, qty: 1 });
   }
 
   claimWorldItem(itemId: string, actorId: string): boolean {

@@ -18,6 +18,17 @@ import { WorldGrid, ObjectType } from '../shared/WorldGrid';
 import { WorldStateManager } from '../shared/WorldStateManager';
 import type { WorldActionDispatcher } from './WorldActionSystem';
 
+export type FarmActionKind = 'till' | 'water' | 'plant' | 'harvest';
+
+export interface FarmActionTarget {
+  tx: number;
+  ty: number;
+  x: number;
+  y: number;
+  state?: FarmTileStateType;
+  cropId?: string;
+}
+
 export interface FarmTileBackendData {
   tx:        number;
   ty:        number;
@@ -84,6 +95,8 @@ export class FarmSystem {
 
   private makeCropData(d: FarmTileBackendData): CropData | null {
     if (!d.cropId || d.plantedAt == null || d.readyAt == null) return null;
+    if (!['seeded', 'growing', 'ready'].includes(d.state)) return null;
+    if (d.cropId === 'empty') return null;
     return {
       cropId:    d.cropId,
       plantRow:  d.plantRow ?? 0,
@@ -141,6 +154,13 @@ export class FarmSystem {
 
   canTill(tx: number, ty: number): boolean {
     return !this.tiles.has(this.key(tx, ty));
+  }
+
+  private isTillableCell(tx: number, ty: number): boolean {
+    if (!this.canTill(tx, ty)) return false;
+    if (!this.grid) return true;
+    if (this.grid.getWeight(tx, ty) <= 0) return false;
+    return this.grid.getObject(tx, ty) === ObjectType.EMPTY;
   }
 
   /** Restore persisted tiles from backend on game ready. */
@@ -251,6 +271,137 @@ export class FarmSystem {
    * F key — INTERACT: harvest mature crop only.
    * Picking up WorldItems and talking to NPCs is handled by GameScene separately.
    */
+  /**
+   * Generic tool use entrypoint for any actor.
+   * Player controls and NPC skills both route through this method so farm rules
+   * live in one place; only movement/input differs between actors.
+   */
+  handleToolUseAt(
+    actorId: string,
+    actorX: number,
+    actorY: number,
+    currentTool: string,
+    heldItemId?: string,
+  ): boolean {
+    const tx = Math.floor(actorX / T);
+    const ty = Math.floor(actorY / T);
+
+    if (currentTool === 'scythe' && this.canTill(tx, ty)) {
+      if (this.actionDispatcher) {
+        return this.actionDispatcher.dispatchAction({
+          type: 'TILL_TILE',
+          actorId,
+          tx,
+          ty,
+          itemId: 'scythe',
+        }).ok;
+      }
+      return this.applyTillTile(actorId, tx, ty, 'scythe');
+    }
+
+    const keys = this.getCandidateKeys(tx, ty, actorX, actorY);
+    for (const k of keys) {
+      const tile = this.tiles.get(k);
+      if (!tile) continue;
+      if (!this.overlapping.has(k) && !tile.isNearPlayer(actorX, actorY, 56)) continue;
+
+      const state = tile.state;
+      const [cx, cy] = [tile.tx, tile.ty];
+
+      if (currentTool === 'water' && ['tilled', 'seeded', 'growing', 'watered'].includes(state)) {
+        if (this.actionDispatcher) {
+          return this.actionDispatcher.dispatchAction({
+            type: 'WATER_TILE',
+            actorId,
+            tx: cx,
+            ty: cy,
+            itemId: 'watering_can',
+          }).ok;
+        }
+        return this.applyWaterTile(actorId, cx, cy, 'watering_can');
+      }
+
+      if (heldItemId?.endsWith('_seed') && ['tilled', 'watered'].includes(state)) {
+        if (this.actionDispatcher) {
+          return this.actionDispatcher.dispatchAction({
+            type: 'PLANT_CROP',
+            actorId,
+            tx: cx,
+            ty: cy,
+            itemId: heldItemId,
+          }).ok;
+        }
+        return this.applyPlantCrop(actorId, cx, cy, heldItemId);
+      }
+    }
+    return false;
+  }
+
+  findNearestFarmTarget(
+    action: FarmActionKind,
+    x: number,
+    y: number,
+    maxRadiusCells = 10,
+    excludeKeys: ReadonlySet<string> = new Set(),
+  ): FarmActionTarget | null {
+    if (action === 'till') {
+      const origin = this.grid?.worldToCell(x, y) ?? {
+        col: Math.floor(x / T),
+        row: Math.floor(y / T),
+      };
+      const cell = this.grid?.findNearest(
+        origin.col,
+        origin.row,
+        (col, row) => this.isTillableCell(col, row) && !excludeKeys.has(this.key(col, row)),
+        maxRadiusCells,
+      );
+      if (!cell) return null;
+      const world = this.grid?.cellToWorld(cell.col, cell.row) ?? {
+        cx: cell.col * T + T / 2,
+        cy: cell.row * T + T / 2,
+      };
+      return { tx: cell.col, ty: cell.row, x: world.cx, y: world.cy };
+    }
+
+    return this.findNearestExistingTile(action, x, y, excludeKeys);
+  }
+
+  private findNearestExistingTile(
+    action: Exclude<FarmActionKind, 'till'>,
+    x: number,
+    y: number,
+    excludeKeys: ReadonlySet<string>,
+  ): FarmActionTarget | null {
+    let best: FarmActionTarget | null = null;
+    let bestD2 = Infinity;
+    for (const tile of this.tiles.values()) {
+      if (excludeKeys.has(this.key(tile.tx, tile.ty))) continue;
+      if (action === 'plant' && !['tilled', 'watered'].includes(tile.state)) continue;
+      if (action === 'water' && !['seeded', 'growing'].includes(tile.state)) continue;
+      if (action === 'harvest' && tile.state !== 'ready') continue;
+
+      const world = this.grid?.cellToWorld(tile.tx, tile.ty) ?? {
+        cx: tile.tx * T + T / 2,
+        cy: tile.ty * T + T / 2,
+      };
+      const dx = world.cx - x;
+      const dy = world.cy - y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = {
+          tx: tile.tx,
+          ty: tile.ty,
+          x: world.cx,
+          y: world.cy,
+          state: tile.state,
+          cropId: tile.cropData?.cropId ?? this.key(tile.tx, tile.ty),
+        };
+      }
+    }
+    return best;
+  }
+
   handleInteract(playerX: number, playerY: number): boolean {
     const tx = Math.floor(playerX / T);
     const ty = Math.floor(playerY / T);
@@ -262,7 +413,7 @@ export class FarmSystem {
       if (!this.overlapping.has(k) && !tile.isNearPlayer(playerX, playerY, 56)) continue;
 
       if (tile.state === 'ready') {
-        gameBus.emit('farm:action', { action: 'harvest', tx: tile.tx, ty: tile.ty });
+        gameBus.emit('farm:action', { action: 'harvest', actorId: 'player', tx: tile.tx, ty: tile.ty });
         tile.updateState('harvested', null);
         return true;
       }
@@ -284,38 +435,38 @@ export class FarmSystem {
     return this.applyHarvestCrop('player', tx, ty, cropId);
   }
 
-  applyHarvestCrop(_actorId: string, tx: number, ty: number, cropId: string): boolean {
+  applyHarvestCrop(actorId: string, tx: number, ty: number, cropId: string): boolean {
     const tile = this.tiles.get(this.key(tx, ty));
     if (!tile || tile.state !== 'ready') return false;
 
-    gameBus.emit('farm:action', { action: 'harvest', tx: tile.tx, ty: tile.ty });
+    gameBus.emit('farm:action', { action: 'harvest', actorId, tx: tile.tx, ty: tile.ty });
     tile.updateState('harvested', null);
     this.syncTileState(tx, ty, 'harvested', null);
-    this.worldState?.patchCrop(cropId, {
-      state: 'harvested',
-      readyAt: null,
-    });
+      this.worldState?.patchCrop(cropId, {
+        state: 'harvested',
+        readyAt: null,
+      });
     return true;
   }
 
-  applyTillTile(_actorId: string, tx: number, ty: number, itemId?: string): boolean {
+  applyTillTile(actorId: string, tx: number, ty: number, itemId?: string): boolean {
     if (!this.canTill(tx, ty)) return false;
-    gameBus.emit('farm:action', { action: 'till', tx, ty, itemId });
+    gameBus.emit('farm:action', { action: 'till', actorId, tx, ty, itemId });
     this.createTile(tx, ty, 'tilled', null);
     return true;
   }
 
-  applyWaterTile(_actorId: string, tx: number, ty: number, itemId?: string): boolean {
+  applyWaterTile(actorId: string, tx: number, ty: number, itemId?: string): boolean {
     const tile = this.tiles.get(this.key(tx, ty));
     if (!tile || !['tilled', 'seeded', 'growing', 'watered'].includes(tile.state)) return false;
-    gameBus.emit('farm:action', { action: 'water', tx, ty, itemId });
+    gameBus.emit('farm:action', { action: 'water', actorId, tx, ty, itemId });
     return true;
   }
 
-  applyPlantCrop(_actorId: string, tx: number, ty: number, itemId: string): boolean {
+  applyPlantCrop(actorId: string, tx: number, ty: number, itemId: string): boolean {
     const tile = this.tiles.get(this.key(tx, ty));
     if (!tile || !['tilled', 'watered'].includes(tile.state)) return false;
-    gameBus.emit('farm:action', { action: 'plant', tx, ty, itemId });
+    gameBus.emit('farm:action', { action: 'plant', actorId, tx, ty, itemId });
     return true;
   }
 
@@ -354,17 +505,22 @@ export class FarmSystem {
       },
     });
 
+    if (!cropData?.cropId || cropData.plantedAt == null || cropData.readyAt == null) {
+      this.worldState.unregisterCrop(key);
+      return;
+    }
+
     this.worldState.registerCrop({
       id: key,
       tileKey: key,
       tx,
       ty,
-      cropId: cropData?.cropId ?? 'empty',
+      cropId: cropData.cropId,
       state,
-      plantedAt: cropData?.plantedAt ?? null,
-      readyAt: cropData?.readyAt ?? null,
-      numStages: cropData?.numStages,
-      plantRow: cropData?.plantRow,
+      plantedAt: cropData.plantedAt,
+      readyAt: cropData.readyAt,
+      numStages: cropData.numStages,
+      plantRow: cropData.plantRow,
     });
   }
 }

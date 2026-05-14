@@ -14,7 +14,8 @@ import type { NpcAction, ActionTarget } from '../types';
 import type { Npc } from '../entities/Npc';
 import type { Player } from '../entities/Player';
 import type { WorldItem } from '../entities/WorldItem';
-import { WORLD_LOCATION_MAP } from '../shared/WorldLocations';
+import { resolveActorLocationTarget } from '../shared/locationSlots';
+import type { FarmActionKind, FarmActionTarget } from './FarmSystem';
 
 // ─── WorldContext — implemented by GameScene ──────────────────────────────────
 /**
@@ -32,6 +33,22 @@ export interface WorldContext {
   dropWorldItem(x: number, y: number, itemId: string, npcName: string): void;
   /** Remove a WorldItem from the world (NPC picked it up); fires onNpcPickupWorldItem. */
   claimWorldItem(itemId: string, npcName: string): void;
+  /** Find a farm tile/cell target for a semantic farm action. */
+  findFarmTarget(action: FarmActionKind, x: number, y: number, maxRadiusCells?: number, actorId?: string): FarmActionTarget | null;
+  /** Apply a farm action through the same world-action path used by the player. */
+  performFarmAction(actorId: string, action: FarmActionKind, target: Pick<FarmActionTarget, 'tx' | 'ty' | 'cropId'>, itemId?: string): boolean;
+  /** Execute a durable NPC knowledge skill, including any navigation it requires. */
+  executeKnowledgeSkill(
+    npcName: string,
+    skillId: string,
+    origin: { x: number; y: number },
+    navigate: (x: number, y: number, onArrive?: () => void) => void,
+    gameTick: number,
+  ): boolean;
+  /** Resolve a named NPC for social actions. */
+  findNpcByName(name: string): Npc | null;
+  /** Pick a walkable adjacent spot for one NPC to stand while talking to another. */
+  findConversationSpotForNpc(sourceName: string, targetName: string): { x: number; y: number } | null;
 }
 
 // Named locations are now defined in shared/WorldLocations.ts
@@ -111,6 +128,45 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
     });
   },
 
+  use_skill: (action, npc, _player, gameTick, world) => {
+    if (!world || !action.skillId) return;
+    const ok = world.executeKnowledgeSkill(
+      npc.name,
+      action.skillId,
+      { x: npc.sprite.x, y: npc.sprite.y },
+      (x, y, onArrive) => npc.navigateTo(x, y, onArrive),
+      gameTick,
+    );
+    if (!ok) npc.say('I do not know that skill yet.', gameTick);
+  },
+
+  talk_with: (action, npc, _player, gameTick, world) => {
+    if (!world || !action.targetNpcName) return;
+    const target = world.findNpcByName(action.targetNpcName);
+    if (!target || target === npc) return;
+    const standAt = world.findConversationSpotForNpc(npc.name, target.name) ?? {
+      x: target.sprite.x + 42,
+      y: target.sprite.y,
+    };
+    npc.talkWithNpc(target, standAt, gameTick, action.duration ?? 14, action.text);
+  },
+
+  till_tile: (action, npc, _player, gameTick, world) => {
+    executeFarmAction('till', action, npc, gameTick, world, 'scythe');
+  },
+
+  water_tile: (action, npc, _player, gameTick, world) => {
+    executeFarmAction('water', action, npc, gameTick, world, 'watering_can');
+  },
+
+  plant_crop: (action, npc, _player, gameTick, world) => {
+    executeFarmAction('plant', action, npc, gameTick, world, action.itemId ?? 'wheat_seed');
+  },
+
+  harvest_crop: (action, npc, _player, gameTick, world) => {
+    executeFarmAction('harvest', action, npc, gameTick, world);
+  },
+
   ask_confirm: (action, npc, _player, gameTick) => {
     const question = action.question ?? action.text ?? '确认吗？';
     npc.say(question, gameTick);
@@ -127,6 +183,35 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
 };
 
 // ─── Target resolution (pure function, no side effects) ───────────────────────
+function executeFarmAction(
+  kind: FarmActionKind,
+  action: NpcAction,
+  npc: Npc,
+  gameTick: number,
+  world?: WorldContext,
+  itemId?: string,
+): void {
+  if (!world) return;
+  const target = typeof action.tx === 'number' && typeof action.ty === 'number'
+    ? {
+        tx: action.tx,
+        ty: action.ty,
+        x: action.tx * 32 + 16,
+        y: action.ty * 32 + 16,
+      }
+    : world.findFarmTarget(kind, npc.sprite.x, npc.sprite.y, 12, npc.name);
+
+  if (!target) {
+    npc.say('No valid farm target nearby.', gameTick);
+    return;
+  }
+
+  npc.navigateTo(target.x, target.y, () => {
+    const ok = world.performFarmAction(npc.name, kind, target, itemId);
+    if (!ok) npc.say('That farm action failed.', gameTick);
+  });
+}
+
 function resolveTarget(
   target: ActionTarget,
   npc:    Npc,
@@ -137,12 +222,12 @@ function resolveTarget(
       return { x: target.x, y: target.y };
 
     case 'named': {
-      const loc = WORLD_LOCATION_MAP[target.place];
+      const loc = resolveActorLocationTarget(target.place, npc.name);
       if (!loc) {
         console.warn(`[ActionExecutor] Unknown named location: "${target.place}"`);
         return null;
       }
-      return { x: loc.worldX, y: loc.worldY };
+      return loc;
     }
 
     case 'entity':
@@ -190,11 +275,13 @@ export class ActionExecutor {
     if (!actions || actions.length === 0) return;
     console.log(`[ActionExecutor] execute: npc=${npc.name} actions=`, JSON.stringify(actions));
 
-    const NAVIGATION_TYPES = ['move', 'chop_tree', 'pickup_item', 'dispatch'];
+    const NAVIGATION_TYPES = ['move', 'chop_tree', 'pickup_item', 'dispatch', 'talk_with'];
+    const IMMEDIATE_WORLD_TYPES = ['use_skill', 'till_tile', 'water_tile', 'plant_crop', 'harvest_crop'];
     const hasNavigation = actions.some(a => NAVIGATION_TYPES.includes(a.type));
+    const hasImmediateWorldAction = actions.some(a => IMMEDIATE_WORLD_TYPES.includes(a.type));
 
     // Queue when multiple actions include navigation — ensures proper sequencing
-    const needsSequencing = hasNavigation && actions.length > 1;
+    const needsSequencing = hasNavigation && actions.length > 1 && !hasImmediateWorldAction;
 
     if (needsSequencing) {
       // Resolve all targets now; queue into NPC's plannedActions for sequential execution

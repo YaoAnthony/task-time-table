@@ -177,7 +177,8 @@ export type NpcMemoryKind =
   | 'entity'
   | 'crop'
   | 'landmark'
-  | 'water';
+  | 'water'
+  | 'action';
 
 export interface NpcMemoryRecord {
   key: string;
@@ -198,6 +199,8 @@ export type NpcIntentKind =
   | 'seek_drop'
   | 'follow_player'
   | 'move_to_landmark'
+  | 'perform_skill'
+  | 'recover'
   | 'wait';
 
 export interface NpcIntentState {

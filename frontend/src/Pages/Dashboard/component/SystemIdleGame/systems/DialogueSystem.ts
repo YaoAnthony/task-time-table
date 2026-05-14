@@ -1,0 +1,244 @@
+import Phaser from 'phaser';
+import type { Npc } from '../entities/Npc';
+import { gameBus } from '../shared/EventBus';
+
+interface NpcRegistration {
+  id: string;
+  npc: Npc;
+}
+
+interface DialogueSystemOptions {
+  scene: Phaser.Scene;
+  getNpcRegistrations: () => NpcRegistration[];
+  getPlayerPosition: () => { x: number; y: number } | null;
+  getGameTick: () => number;
+  pauseNpc?: (npcId: string, gameTick: number, seconds?: number, reason?: string) => void;
+  hearingRadius?: number;
+  maxReplies?: number;
+}
+
+interface HeardNpc {
+  id: string;
+  npc: Npc;
+  distance: number;
+}
+
+const DEFAULT_HEARING_RADIUS = 260;
+const DEFAULT_MAX_REPLIES = 2;
+const REPLY_COOLDOWN_MS = 9000;
+
+const NPC_REPLY_LINES = [
+  '我也听见了。',
+  '这倒是有意思。',
+  '你们在聊这个啊。',
+  '我有点在意这件事。',
+  '嗯，我明白。',
+];
+
+function hash(input: string): number {
+  let value = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    value = ((value << 5) - value) + input.charCodeAt(i);
+    value |= 0;
+  }
+  return Math.abs(value);
+}
+
+function pickStable<T>(items: T[], seed: string): T {
+  return items[hash(seed) % items.length];
+}
+
+function isQuestion(text: string): boolean {
+  return /[?？吗呢]|\bwhat\b|\bwhy\b|\bhow\b|\bwhere\b|\bwhen\b/i.test(text);
+}
+
+/**
+ * Shared world dialogue bus.
+ *
+ * Any NPC speech is shown above that NPC through Npc.say(), then this system
+ * broadcasts the utterance to nearby NPCs. Player speech also enters here so
+ * the input box no longer needs to target a single nearest NPC.
+ */
+export class DialogueSystem {
+  private readonly scene: Phaser.Scene;
+  private readonly getNpcRegistrations: () => NpcRegistration[];
+  private readonly getPlayerPosition: () => { x: number; y: number } | null;
+  private readonly getGameTick: () => number;
+  private readonly pauseNpc?: DialogueSystemOptions['pauseNpc'];
+  private readonly hearingRadius: number;
+  private readonly maxReplies: number;
+  private readonly replyCooldowns = new Map<string, number>();
+  private unsubscribeNpcSpeech?: () => void;
+
+  constructor(options: DialogueSystemOptions) {
+    this.scene = options.scene;
+    this.getNpcRegistrations = options.getNpcRegistrations;
+    this.getPlayerPosition = options.getPlayerPosition;
+    this.getGameTick = options.getGameTick;
+    this.pauseNpc = options.pauseNpc;
+    this.hearingRadius = options.hearingRadius ?? DEFAULT_HEARING_RADIUS;
+    this.maxReplies = options.maxReplies ?? DEFAULT_MAX_REPLIES;
+  }
+
+  start(): void {
+    if (this.unsubscribeNpcSpeech) return;
+    this.unsubscribeNpcSpeech = gameBus.on('dialogue:npc_spoke', ({ npcName, text, x, y }) => {
+      this.broadcastFromNpc(npcName, text, x, y);
+    });
+    this.scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.stop());
+  }
+
+  stop(): void {
+    this.unsubscribeNpcSpeech?.();
+    this.unsubscribeNpcSpeech = undefined;
+  }
+
+  broadcastFromPlayer(text: string): number {
+    const speaker = this.getPlayerPosition();
+    if (!speaker) return 0;
+
+    const listeners = this.findListeners(speaker.x, speaker.y);
+    if (listeners.length === 0) {
+      gameBus.emit('ui:show_message', { text: '附近没有人听到你说话。' });
+      return 0;
+    }
+
+    const gameTick = this.getGameTick();
+    for (const listener of listeners) {
+      listener.npc.addMemory(`玩家说：“${text}”`, 'player', gameTick);
+      this.pauseNpc?.(listener.id, gameTick, 5, 'heard_player_dialogue');
+    }
+
+    this.emitPlayerHeardEvents(text, listeners);
+    return listeners.length;
+  }
+
+  private emitPlayerHeardEvents(text: string, listeners: HeardNpc[]): void {
+    const now = this.scene.time?.now ?? Date.now();
+    const shouldFavorReply = isQuestion(text);
+    const replyCandidates = listeners
+      .filter((listener) => this.canReplyToPlayer(listener, now, shouldFavorReply))
+      .filter((listener, index) => {
+        if (index === 0) return true;
+        const chance = shouldFavorReply ? 0.72 : 0.34;
+        const roll = (hash(`player:${listener.id}:${text}:${Math.floor(now / 3000)}`) % 100) / 100;
+        return roll <= chance;
+      })
+      .slice(0, this.maxReplies);
+    const replyIds = new Set(replyCandidates.map((listener) => listener.id));
+
+    listeners.forEach((listener) => {
+      if (replyIds.has(listener.id)) {
+        this.replyCooldowns.set(listener.id, now);
+      }
+      gameBus.emit('dialogue:player_heard', {
+        npcName: listener.id,
+        text,
+        distance: listener.distance,
+        listenerCount: listeners.length,
+        shouldReply: replyIds.has(listener.id),
+      });
+    });
+  }
+
+  private broadcastFromNpc(speakerId: string, text: string, x: number, y: number): void {
+    const listeners = this.findListeners(x, y, speakerId);
+    if (listeners.length === 0) return;
+
+    const gameTick = this.getGameTick();
+    for (const listener of listeners) {
+      listener.npc.addMemory(`${speakerId}说：“${text}”`, 'event', gameTick);
+      this.pauseNpc?.(listener.id, gameTick, 4, 'heard_npc_dialogue');
+    }
+
+    this.queueReplies({
+      speakerId,
+      speakerLabel: speakerId,
+      text,
+      listeners,
+      source: 'npc',
+    });
+  }
+
+  private findListeners(x: number, y: number, excludeId?: string): HeardNpc[] {
+    return this.getNpcRegistrations()
+      .filter(({ id, npc }) => (
+        id !== excludeId
+        && !npc.isOnDispatch()
+        && !npc.isAwaitingConfirm()
+      ))
+      .map(({ id, npc }) => ({
+        id,
+        npc,
+        distance: Phaser.Math.Distance.Between(x, y, npc.sprite.x, npc.sprite.y),
+      }))
+      .filter((entry) => entry.distance <= this.hearingRadius)
+      .sort((a, b) => a.distance - b.distance);
+  }
+
+  private queueReplies(options: {
+    speakerId: string;
+    speakerLabel: string;
+    text: string;
+    listeners: HeardNpc[];
+    source: 'npc';
+  }): void {
+    const now = this.scene.time?.now ?? Date.now();
+    const shouldFavorReply = isQuestion(options.text);
+    const candidates = options.listeners
+      .filter((listener) => this.canReply(listener, now))
+      .filter((listener) => {
+        const baseChance = 0.24;
+        const chance = Math.min(0.9, baseChance + (shouldFavorReply ? 0.22 : 0));
+        const roll = (hash(`${options.speakerId}:${listener.id}:${options.text}:${Math.floor(now / 3000)}`) % 100) / 100;
+        return roll <= chance;
+      })
+      .slice(0, this.maxReplies);
+
+    candidates.forEach((listener, index) => {
+      const delay = 650 + index * 650 + (hash(`${listener.id}:${options.text}`) % 360);
+      this.replyCooldowns.set(listener.id, now);
+      listener.npc.setThinking(true);
+      this.scene.time.delayedCall(delay, () => {
+        if (!this.canReply(listener, this.scene.time?.now ?? Date.now(), false, true)) {
+          listener.npc.setThinking(false);
+          return;
+        }
+        const line = this.buildReplyLine(listener.id, options);
+        listener.npc.say(line, this.getGameTick());
+      });
+    });
+  }
+
+  private canReply(listener: HeardNpc, now: number, enforceCooldown = true, allowOwnThinking = false): boolean {
+    if (listener.npc.isOnDispatch()) return false;
+    if (listener.npc.isAwaitingConfirm()) return false;
+    if (listener.npc.isThinking() && !allowOwnThinking) return false;
+    if (listener.npc.isSpeaking() && !(allowOwnThinking && listener.npc.isThinking())) return false;
+    if (listener.npc.hasPlannedActions()) return false;
+    if (listener.npc.isNavigating()) return false;
+    if (enforceCooldown && now - (this.replyCooldowns.get(listener.id) ?? 0) < REPLY_COOLDOWN_MS) return false;
+    return true;
+  }
+
+  private canReplyToPlayer(listener: HeardNpc, now: number, urgentQuestion: boolean): boolean {
+    if (listener.npc.isOnDispatch()) return false;
+    if (listener.npc.isAwaitingConfirm()) return false;
+    if (listener.npc.hasPlannedActions()) return false;
+    if (listener.npc.isNavigating()) return false;
+    if (urgentQuestion) return true;
+    return this.canReply(listener, now);
+  }
+
+  private buildReplyLine(listenerId: string, options: {
+    speakerLabel: string;
+    text: string;
+    source: 'npc';
+  }): string {
+    const picked = pickStable(NPC_REPLY_LINES, `${listenerId}:${options.speakerLabel}:${options.text}`);
+    if (hash(`${listenerId}:${options.text}`) % 3 === 0) {
+      return `${options.speakerLabel}，${picked}`;
+    }
+    return picked;
+  }
+}

@@ -33,11 +33,22 @@ const migrations: MigrationManifest = {
                 user: oldState?.user?.user ?? null,
             },
             theme: {
-                mode: oldState?.theme?.mode ?? 'dark',
+                mode: 'light',
             },
             profile: {
                 profile: oldState?.profile?.profile ?? null,
                 status: oldState?.profile?.status ?? 'unauthenticated',
+            },
+            _persist: oldState?._persist,
+        };
+    },
+    "2" : (state) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const oldState = state as any;
+        return {
+            ...oldState,
+            theme: {
+                mode: 'light',
             },
             _persist: oldState?._persist,
         };
@@ -47,7 +58,7 @@ const migrations: MigrationManifest = {
 // 用工厂函数把 PersistConfig 泛型交给调用方指定（避免循环依赖）
 export const makePersistConfig = <S>(): PersistConfig<S> => ({
   key: "root",
-  version: 1,
+  version: 2,
   storage,
   whitelist: ["theme", "profile", "user", "game"],
   transforms: saveSubsetFilters,

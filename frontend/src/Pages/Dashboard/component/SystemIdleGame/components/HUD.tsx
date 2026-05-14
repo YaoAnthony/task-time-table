@@ -6,9 +6,10 @@ interface HUDProps {
   isSaving: boolean;
   username: string;
   onSave:   () => void;
+  showHints?: boolean;
 }
 
-export const HUD: React.FC<HUDProps> = ({ timeStr, isSaving, username, onSave }) => (
+export const HUD: React.FC<HUDProps> = ({ timeStr, isSaving, username, onSave, showHints = true }) => (
   <>
     {/* ── Clock ── */}
     <div style={{
@@ -54,6 +55,7 @@ export const HUD: React.FC<HUDProps> = ({ timeStr, isSaving, username, onSave })
     {/* ── Controls hint ── */}
     <div style={{
       position:      'absolute',
+      display:       showHints ? 'block' : 'none',
       bottom:        68,   // above the hotbar
       left:          12,
       background:    'rgba(0,0,0,0.45)',
@@ -70,7 +72,7 @@ export const HUD: React.FC<HUDProps> = ({ timeStr, isSaving, username, onSave })
     </div>
 
     {/* ── Player name ── */}
-    {username && (
+    {showHints && username && (
       <div style={{
         position:      'absolute',
         bottom:        68,

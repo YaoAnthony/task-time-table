@@ -33,8 +33,7 @@ export const VILLAGE_LAYOUT = {
   },
   extraNpcs: [
     { x: 1090, y: 470, name: '王村长', tint: 0xaaaaff },
-    { x: 860, y: 560, name: '陈掌柜', tint: 0xffcc88 },
-    { x: 1260, y: 930, name: '小花', tint: 0xff88cc },
+    { x: 930, y: 650, name: '张雪峰', tint: 0xffd166 },
   ],
   toolPickups: [
     [272, 208],

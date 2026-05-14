@@ -79,6 +79,18 @@ export class TreeView implements Interactable {
     return this.callbacks.getState(this.id)?.isChopped ?? false;
   }
 
+  getShadowTextureKey(): string | null {
+    if (this.isChopped()) return null;
+    const textureKey: Record<TreeGrowthStage, string | null> = {
+      A: 'tree-tex-A',
+      B: 'tree-tex-B',
+      C: 'tree-tex-C',
+      chopA: null,
+      chopBC: null,
+    };
+    return textureKey[this.displayStage] ?? 'tree-tex-A';
+  }
+
   getState(): TreeSaveState {
     const state = this.callbacks.getState(this.id);
     return {

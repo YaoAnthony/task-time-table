@@ -13,11 +13,10 @@ import React, {
   useRef, useState, useCallback, useEffect,
 } from 'react';
 import Phaser          from 'phaser';
-import { useDispatch } from 'react-redux';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../../../Redux/store';
 
-import { clearHotbarSlot, type GameSettingsState } from '../../../../Redux/Features/gameSlice';
+import type { GameSettingsState } from '../../../../Redux/Features/gameSlice';
 
 import { GameScene }       from './GameScene';
 import {
@@ -51,7 +50,6 @@ const SystemIdleGame: React.FC = () => {
   /** chat 输入框是否打开（键盘逻辑与 NpcChat 共用）。 */
   const chatOpenRef  = useRef(false);
 
-  const dispatch = useDispatch();
 
   // ── 领域 hooks ────────────────────────────────────────────────────────────
   const auth = useGameAuth();
@@ -121,10 +119,9 @@ const SystemIdleGame: React.FC = () => {
   }, [saveIdleGame, withWorldSettings]);
 
   // ── Q 键 drop 物品（由 usePhaserBoot 调用） ───────────────────────────────
-  const onDropItem = useCallback((slot: number, itemId: string) => {
-    dispatch(clearHotbarSlot(slot));
+  const onDropItem = useCallback((_slot: number, itemId: string) => {
     sceneRef.current?.dropPlayerItem(itemId);
-  }, [dispatch]);
+  }, []);
 
   // ── 从 Redux 获取存档 + username ─────────────────────────────────────────
   const profile       = useSelector((s: RootState) => s.profile);
@@ -137,7 +134,6 @@ const SystemIdleGame: React.FC = () => {
     const scene = sceneRef.current;
     if (!scene) return;
 
-    scene.executeCommand(`/time set ${gameSettings.timeMinute}`);
     scene.executeCommand(`/weather ${gameSettings.weather}`);
     scene.executeCommand(`/debug ${gameSettings.physicsDebug ? 'on' : 'off'}`);
     scene.executeCommand(`/sleep threshold ${gameSettings.sleepThreshold}`);
@@ -146,7 +142,6 @@ const SystemIdleGame: React.FC = () => {
     gameSettings.agentBrainEnabled,
     gameSettings.physicsDebug,
     gameSettings.sleepThreshold,
-    gameSettings.timeMinute,
     gameSettings.weather,
   ]);
 
@@ -197,6 +192,7 @@ const SystemIdleGame: React.FC = () => {
         isSaving={isSaving}
         username={username}
         onSave={handleSave}
+        showHints={!npcChat.dialog.visible && !npcChat.chat.open}
       />
 
       {/* 宝箱 HUD 指示器 */}
@@ -251,7 +247,7 @@ const SystemIdleGame: React.FC = () => {
       />
 
       {/* 对话按钮 — 动态显示最近 NPC 名字；附近无人时按钮变灰但仍可点击（点击会提示） */}
-      {!npcChat.chat.open && (
+      {!npcChat.chat.open && !npcChat.dialog.visible && (
         <button
           onClick={() => sceneRef.current?.triggerInteract()}
           style={{

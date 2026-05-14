@@ -41,6 +41,10 @@ export interface GameEventMap {
   // ── NPC ───────────────────────────────────────────────────────────────────
   /** NPC spoke — show speech bubble. */
   'npc:speak':             { text: string; npcName: string };
+  /** World-space NPC speech that can be heard by nearby NPCs. */
+  'dialogue:npc_spoke':    { npcName: string; text: string; x: number; y: number };
+  /** Player speech heard by one NPC. React may ask the backend whether/how to reply. */
+  'dialogue:player_heard': { npcName: string; text: string; distance: number; listenerCount: number; shouldReply: boolean };
   /** Player pressed E near an NPC — open chat input. */
   'npc:interact':          { npcName: string; initialValue?: string };
   /** NPC is asking the player for confirmation before proceeding. */
@@ -55,6 +59,8 @@ export interface GameEventMap {
   'npc:dispatch':          { npcName: string; carriedItems: Record<string, number> };
   /** NPC returned from dispatch — React should call backend for story + rewards. */
   'npc:dispatch_return':   { npcName: string; carriedItems: Record<string, number> };
+  /** NPC navigation failed before reaching a target. */
+  'npc:navigation_failed':  { npcName: string; x: number; y: number; targetX: number; targetY: number; reason: string };
   /**
    * React → Phaser: make a named NPC say something.
    * (Opposite direction — React fires this after async LLM call.)
@@ -63,7 +69,7 @@ export interface GameEventMap {
 
   // ── Farm ──────────────────────────────────────────────────────────────────
   /** Player performed a farming action (till, water, plant, harvest). */
-  'farm:action':           { action: 'till' | 'water' | 'plant' | 'harvest'; tx: number; ty: number; itemId?: string };
+  'farm:action':           { action: 'till' | 'water' | 'plant' | 'harvest'; tx: number; ty: number; itemId?: string; actorId?: string };
   /** A farm tile's state changed (from server confirmation or remote peer). */
   'farm:tile_change':      { tx: number; ty: number; state: FarmTileStateType; cropId?: string };
 

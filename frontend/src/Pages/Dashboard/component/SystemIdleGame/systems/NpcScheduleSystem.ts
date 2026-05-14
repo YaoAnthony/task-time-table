@@ -16,10 +16,13 @@
 import type { NpcAction } from '../types';
 import type { Npc } from '../entities/Npc';
 import type { DayCycle } from './DayCycle';
-import { WORLD_LOCATION_MAP } from '../shared/WorldLocations';
+import { resolveActorLocationTarget } from '../shared/locationSlots';
 import { WorldStateManager } from '../shared/WorldStateManager';
 import { NpcMemorySystem } from './NpcMemorySystem';
 import type { NpcDailyActivity } from '../shared/worldStateTypes';
+import { NPC_NAME } from '../constants';
+import { VILLAGE_LAYOUT } from '../world/layouts/villageLayout';
+import { autonomyModeForActivity } from './NpcBehaviorPolicy';
 
 export interface ScheduleSlot {
   startMin: number;        // 0-1439 inclusive
@@ -55,6 +58,39 @@ export const DEFAULT_LAOLI_SCHEDULE: ScheduleSlot[] = [
   { startMin: 1140, endMin: 1440, activity: 'sleep',       locationId: 'room', line: '今天就到这儿吧，回家歇了。' },
 ];
 
+const MAYOR_NPC = VILLAGE_LAYOUT.extraNpcs.find((npc) => npc.name === '王村长')?.name;
+const ZHANG_XUEFENG_NPC = VILLAGE_LAYOUT.extraNpcs.find((npc) => npc.name === '张雪峰')?.name;
+
+export const DEFAULT_NPC_SCHEDULES: Record<string, ScheduleSlot[]> = {
+  [NPC_NAME]: DEFAULT_LAOLI_SCHEDULE,
+  ...(MAYOR_NPC ? {
+    [MAYOR_NPC]: [
+      { startMin:    0, endMin:  420, activity: 'sleep',       locationId: 'room', line: 'Closing the ledger for the night.' },
+      { startMin:  420, endMin:  540, activity: 'breakfast',   locationId: 'door', line: 'Morning rounds first.' },
+      { startMin:  540, endMin:  720, activity: 'relax',       locationId: 'door', line: 'Checking the village path.' },
+      { startMin:  720, endMin:  840, activity: 'lunch',       locationId: 'room', line: 'Lunch and notes.' },
+      { startMin:  840, endMin: 1020, activity: 'work_forest', locationId: 'pond', line: 'I will inspect the pond side.' },
+      { startMin: 1020, endMin: 1140, activity: 'dinner',      locationId: 'room', line: 'Back for dinner.' },
+      { startMin: 1140, endMin: 1440, activity: 'sleep',       locationId: 'room', line: 'Village work is done.' },
+    ],
+  } : {}),
+  ...(ZHANG_XUEFENG_NPC ? {
+    [ZHANG_XUEFENG_NPC]: [
+      { startMin:    0, endMin:  420, activity: 'sleep',       locationId: 'room', line: '先睡觉，身体才是长期收益。' },
+      { startMin:  420, endMin:  540, activity: 'breakfast',   locationId: 'door', line: '早上先别空转，今天目标说清楚。' },
+      { startMin:  540, endMin:  720, activity: 'work_farm',   locationId: 'farm', line: '上午适合下地，流程走对才有收成。' },
+      { startMin:  720, endMin:  780, activity: 'lunch',       locationId: 'room', line: '吃饭也算补资源，别硬扛。' },
+      { startMin:  780, endMin: 1020, activity: 'relax',       locationId: 'door', line: '我在村口看看大家今天有没有跑偏。' },
+      { startMin: 1020, endMin: 1140, activity: 'work_forest', locationId: 'pond', line: '下午巡一圈，看看有没有能用的资源。' },
+      { startMin: 1140, endMin: 1440, activity: 'sleep',       locationId: 'room', line: '今天到这儿，晚上别做重大决定。' },
+    ],
+  } : {}),
+};
+
+export function getDefaultNpcSchedule(npcId: string): ScheduleSlot[] {
+  return DEFAULT_NPC_SCHEDULES[npcId] ?? [];
+}
+
 export class NpcScheduleSystem {
   private readonly worldStateManager: WorldStateManager;
   private readonly dayCycle:          DayCycle;
@@ -69,7 +105,7 @@ export class NpcScheduleSystem {
     this.getNpcRegistrations = opts.getNpcRegistrations;
     // Default: 老李 gets the canonical schedule; other NPCs are free-roam unless
     // an explicit schedule is registered for them.
-    this.schedules = opts.schedules ?? { '老李': DEFAULT_LAOLI_SCHEDULE };
+    this.schedules = opts.schedules ?? DEFAULT_NPC_SCHEDULES;
   }
 
   /** Per-NPC schedule, or null if this NPC isn't on a fixed routine. */
@@ -95,6 +131,7 @@ export class NpcScheduleSystem {
     const minute = this.dayCycle.getCurrentMinute();
     const registrations = this.getNpcRegistrations();
     for (const { id, npc } of registrations) {
+      if (npc.isConversationLocked()) continue;
       const slots = this.scheduleFor(id);
       if (!slots) continue;          // free-roam NPC, no schedule
       const slot  = this.findSlot(slots, minute);
@@ -102,6 +139,7 @@ export class NpcScheduleSystem {
 
       const mind = this.npcMemorySystem.ensureNpcMindState(id, gameTick);
       const currentActivity = mind.schedule?.currentActivity ?? null;
+      npc.setAutonomyMode(autonomyModeForActivity(slot.activity));
       if (currentActivity === slot.activity) continue;
 
       // ── New slot — queue say + move and patch mind ──────────────────────
@@ -112,16 +150,12 @@ export class NpcScheduleSystem {
   private applySlotTransition(npcId: string, npc: Npc, slot: ScheduleSlot, gameTick: number): void {
     const actions: NpcAction[] = [];
 
-    if (slot.line) {
-      actions.push({ type: 'say', text: slot.line, duration: 4 });
-    }
-
     if (slot.locationId) {
-      const loc = WORLD_LOCATION_MAP[slot.locationId];
+      const loc = resolveActorLocationTarget(slot.locationId, npcId);
       if (loc) {
         actions.push({
           type:     'move',
-          target:   { kind: 'coords', x: loc.worldX, y: loc.worldY },
+          target:   { kind: 'coords', x: loc.x, y: loc.y },
           duration: 6,
         });
       }
@@ -133,7 +167,7 @@ export class NpcScheduleSystem {
     }
 
     if (actions.length > 0) {
-      npc.queueActions(actions, gameTick);
+      npc.replaceActions(actions, gameTick);
     }
 
     // Patch schedule state
@@ -142,6 +176,11 @@ export class NpcScheduleSystem {
         currentActivity:       slot.activity,
         startedAtMinuteOfDay:  slot.startMin,
         startedAtTick:         gameTick,
+      },
+      meta: {
+        ...(this.worldStateManager.getNpcMindState(npcId)?.meta ?? {}),
+        behaviorMode: autonomyModeForActivity(slot.activity),
+        scheduleLine: slot.line ?? null,
       },
     });
 

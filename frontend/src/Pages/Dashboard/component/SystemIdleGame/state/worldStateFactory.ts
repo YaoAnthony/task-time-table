@@ -2,6 +2,17 @@ import type { WorldMetaState, WorldState } from '../shared/worldStateTypes';
 
 export const WORLD_STATE_SCHEMA_VERSION = 1;
 
+function cloneStateValue<T>(value: T): T {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function cloneStateRecord<T>(record: Record<string, T> | undefined): Record<string, T> {
+  return record ? cloneStateValue(record) : {};
+}
+
 export const createInitialWorldState = (
   cols: number,
   rows: number,
@@ -37,17 +48,17 @@ export const migrateWorldState = (
       cols: input.grid?.cols ?? cols,
       rows: input.grid?.rows ?? rows,
     },
-    entities: input.entities ?? {},
-    objects: input.objects ?? {},
-    drops: input.drops ?? {},
-    crops: input.crops ?? {},
-    chickens: input.chickens ?? {},
-    trees: input.trees ?? {},
-    nests: input.nests ?? {},
-    npcMinds: input.npcMinds ?? {},
+    entities: cloneStateRecord(input.entities),
+    objects: cloneStateRecord(input.objects),
+    drops: cloneStateRecord(input.drops),
+    crops: cloneStateRecord(input.crops),
+    chickens: cloneStateRecord(input.chickens),
+    trees: cloneStateRecord(input.trees),
+    nests: cloneStateRecord(input.nests),
+    npcMinds: cloneStateRecord(input.npcMinds),
     meta: {
       ...base.meta,
-      ...(input.meta ?? {}),
+      ...cloneStateValue(input.meta ?? {}),
       version: WORLD_STATE_SCHEMA_VERSION,
     },
   };

@@ -9,23 +9,30 @@
 /* Pixel font "Press Start 2P" loaded via index.html <link> */
 
 :root {
-  --border: rgba(255, 255, 255, 0.1);
-  --layer: #1f1f1f;
+  --border: rgba(30, 41, 59, 0.12);
+  --layer: #ffffff;
   --card-height: 45vh;
   --card-width: calc(var(--card-height) / 1.5);
 
   /* ── Pixel Game Palette ── */
-  --px-bg:          #0d1117;   /* main dark canvas */
-  --px-surface:     #161b22;   /* panel / sidebar surface */
-  --px-surface2:    #21262d;   /* slightly lighter surface */
-  --px-border:      #30363d;   /* default border */
-  --px-border-gold: #b8960c;   /* gold accent border */
-  --px-gold:        #ffd700;   /* active / highlight gold */
-  --px-gold-dim:    #c8a84b;   /* dimmed gold */
-  --px-blue:        #388bfd;   /* info / link blue */
-  --px-text:        #e6edf3;   /* primary text */
-  --px-muted:       #7d8590;   /* secondary text */
-  --px-danger:      #da3633;   /* red */
+  --px-bg:          #f5f7fb;
+  --px-surface:     #ffffff;
+  --px-surface2:    #eef3f8;
+  --px-border:      #c8d3df;
+  --px-border-gold: #d89a13;
+  --px-gold:        #a76300;
+  --px-gold-dim:    #c78316;
+  --px-blue:        #2563eb;
+  --px-text:        #172033;
+  --px-muted:       #64748b;
+  --px-danger:      #dc2626;
+}
+
+html,
+body,
+#root {
+  background: var(--px-bg);
+  color: var(--px-text);
 }
 
 /* ── Pixel Panel — sharp-corner box with inner bevel ── */
@@ -33,8 +40,8 @@
   background: var(--px-surface);
   border: 2px solid var(--px-border);
   box-shadow:
-    inset 1px 1px 0 rgba(255,255,255,0.06),
-    inset -1px -1px 0 rgba(0,0,0,0.4);
+    inset 1px 1px 0 rgba(255,255,255,0.9),
+    inset -1px -1px 0 rgba(15,23,42,0.08);
   border-radius: 0;
 }
 
@@ -43,16 +50,16 @@
   background: var(--px-surface);
   border: 2px solid var(--px-border-gold);
   box-shadow:
-    inset 1px 1px 0 rgba(255,215,0,0.08),
-    inset -1px -1px 0 rgba(0,0,0,0.4),
-    0 0 12px rgba(184,150,12,0.15);
+    inset 1px 1px 0 rgba(255,255,255,0.9),
+    inset -1px -1px 0 rgba(15,23,42,0.08),
+    0 0 12px rgba(216,154,19,0.18);
 }
 
 /* Subtle pixel grid background overlay */
 .px-grid-bg {
   background-image:
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    linear-gradient(rgba(15,23,42,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15,23,42,0.035) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
@@ -126,8 +133,8 @@ html {
 
 /* 可选：dark style antd modal（放到 css/less/scss） */
 .dark-modal .ant-modal-content {
-  background: #1e1e1e;
-  color: white;
+  background: var(--px-surface);
+  color: var(--px-text);
 }
 .dark-modal .ant-btn-primary {
   background-color: #4a90e2;
@@ -135,21 +142,21 @@ html {
 }
 
 .glassmorphism {
-  background: rgba(0, 0, 0, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 32px 0 rgba(30, 41, 59, 0.14);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.35);
 }
 
 .whiteGlassmorphism {
-  background: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 8px 32px 0 rgba(30, 41, 59, 0.12);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.3);
 }
 
 @property --rotate {
@@ -375,6 +382,7 @@ html {
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  color: var(--px-text) !important;
   /* Let the section fill the available flex space instead of 85vh */
   height: 100% !important;
   max-height: 100% !important;
@@ -423,6 +431,31 @@ html {
   color: var(--px-muted) !important;
 }
 
+#px-content .bg-black\/60,
+#px-content .bg-black\/50,
+#px-content .bg-black\/40,
+#px-content .bg-black\/30,
+#px-content .bg-black\/20,
+#px-content .bg-gray-900,
+#px-content .bg-neutral-800,
+#px-content .bg-slate-900\/90,
+#px-content .bg-zinc-950\/80 {
+  background-color: var(--px-surface2) !important;
+  color: var(--px-text) !important;
+}
+
+#px-content .from-slate-800\/80,
+#px-content .from-neutral-800 {
+  --tw-gradient-from: #ffffff var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(255,255,255,0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+
+#px-content .to-slate-900\/90,
+#px-content .to-black {
+  --tw-gradient-to: var(--px-surface2) var(--tw-gradient-to-position) !important;
+}
+
 /* ── System Management Tabs — Pixel Game Style ── */
 .system-tabs .ant-tabs-nav {
   margin-bottom: 0;
@@ -465,7 +498,7 @@ html {
   background: var(--px-surface) !important;
   border: 2px solid var(--px-border) !important;
   border-radius: 0 !important;
-  box-shadow: 4px 4px 0 rgba(0,0,0,0.8) !important;
+  box-shadow: 4px 4px 0 rgba(15,23,42,0.18) !important;
 }
 .ant-modal-header {
   background: var(--px-surface2) !important;

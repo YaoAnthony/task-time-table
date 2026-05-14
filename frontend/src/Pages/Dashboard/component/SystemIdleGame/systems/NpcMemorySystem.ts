@@ -150,6 +150,61 @@ export class NpcMemorySystem {
     return next;
   }
 
+  recordActionResult(
+    npcId: string,
+    gameTick: number,
+    input: {
+      status: 'success' | 'failed';
+      actionType: string;
+      reason?: string;
+      targetX?: number;
+      targetY?: number;
+      x?: number;
+      y?: number;
+    },
+  ): NpcMindState {
+    const current = this.ensureNpcMindState(npcId, gameTick);
+    const key = `action:${input.actionType}:${input.status}:${gameTick}`;
+    const recentMemories = {
+      ...current.recentMemories,
+      [key]: {
+        key,
+        kind: 'action' as const,
+        type: input.actionType,
+        label: `${input.actionType}_${input.status}`,
+        x: input.targetX ?? input.x ?? 0,
+        y: input.targetY ?? input.y ?? 0,
+        lastSeenTick: gameTick,
+        meta: {
+          status: input.status,
+          reason: input.reason,
+          actorX: input.x,
+          actorY: input.y,
+          targetX: input.targetX,
+          targetY: input.targetY,
+        },
+      },
+    };
+    this.pruneRecords(recentMemories, gameTick);
+
+    const next: NpcMindState = {
+      ...current,
+      recentMemories,
+      currentIntent: input.status === 'failed'
+        ? {
+            kind: 'recover',
+            reason: input.reason ?? `${input.actionType}_failed`,
+            targetX: input.targetX,
+            targetY: input.targetY,
+            updatedAtTick: gameTick,
+          }
+        : current.currentIntent,
+      lastThoughtTick: gameTick,
+    };
+    this.worldStateManager.registerNpcMindState(next);
+    return next;
+  }
+
   private upsertRecords(store: Record<string, NpcMemoryRecord>, records: NpcMemoryRecord[]): void {
     records.forEach((record) => {
       store[record.key] = record;

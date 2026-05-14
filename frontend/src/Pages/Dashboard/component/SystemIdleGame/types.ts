@@ -1,6 +1,7 @@
 /** Shared TypeScript interfaces for the idle game. */
 
 import type { ChestRewardItem } from '../../../../Types/Profile';
+import type { NpcMindState } from './shared/worldStateTypes';
 
 export type ToolType = 'empty' | 'water' | 'axe' | 'scythe';
 
@@ -18,6 +19,7 @@ export interface GameWorldState {
   schemaVersion: 1;
   beds:  BedSaveState[];
   nests: NestSaveState[];
+  npcMinds?: Record<string, NpcMindState>;
   settings?: GameWorldSettingsState;
 }
 
@@ -87,6 +89,9 @@ export type NpcActionType =
   | 'pickup_item'                         // navigate to WorldItem, pick it up
   | 'drop_item'                           // drop item from NPC inventory to world
   | 'chop_tree'                           // navigate to tree and chop it
+  | 'use_skill'                           // execute durable NPC knowledge skill
+  | 'talk_with'                           // stand beside another NPC and face them while talking
+  | 'till_tile' | 'water_tile' | 'plant_crop' | 'harvest_crop'
   | 'ask_confirm'                         // ask player yes/no before proceeding
   | 'follow_player'                       // NPC follows the player continuously
   | 'stop_follow'                         // NPC stops following player
@@ -101,6 +106,10 @@ export interface NpcAction {
   emote?:    string;       // future: 'wave' | 'bow' etc.
   itemId?:   string;       // for 'pickup_item' / 'drop_item'
   question?: string;       // for 'ask_confirm'
+  skillId?:  string;       // for 'use_skill'
+  targetNpcName?: string;  // for 'talk_with'
+  tx?:       number;       // for farm actions
+  ty?:       number;       // for farm actions
 }
 
 /** Backend chat response — LLM decides both reply text and actions. */

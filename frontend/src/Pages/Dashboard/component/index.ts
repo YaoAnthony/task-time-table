@@ -11,6 +11,7 @@ import SystemTasks from "./SystemTasks";
 import SystemLottery from "./SystemLottery";
 import SystemIdleGame from "./SystemIdleGame";
 import GameSettings from "./GameSettings";
+import NPCData from "./NPCData";
 import DailyQuests from "./DailyQuests";
 
 export {
@@ -27,5 +28,6 @@ export {
     SystemLottery,
     SystemIdleGame,
     GameSettings,
+    NPCData,
     DailyQuests,
 }

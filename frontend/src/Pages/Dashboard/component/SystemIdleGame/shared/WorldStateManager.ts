@@ -342,14 +342,48 @@ export class WorldStateManager {
   }
 
   registerNpcMindState(npcMind: NpcMindState): NpcMindState {
-    this.state.npcMinds[npcMind.npcId] = npcMind;
-    return npcMind;
+    const next: NpcMindState = {
+      ...npcMind,
+      currentIntent: { ...npcMind.currentIntent },
+      recentMemories: { ...(npcMind.recentMemories ?? {}) },
+      knownLandmarks: { ...(npcMind.knownLandmarks ?? {}) },
+      needs: npcMind.needs ? { ...npcMind.needs } : undefined,
+      relationships: npcMind.relationships ? { ...npcMind.relationships } : undefined,
+      schedule: npcMind.schedule ? { ...npcMind.schedule } : undefined,
+      meta: npcMind.meta ? { ...npcMind.meta } : undefined,
+    };
+    this.state.npcMinds[next.npcId] = next;
+    return next;
   }
 
   patchNpcMindState(npcId: string, patch: Partial<Omit<NpcMindState, 'npcId'>>): void {
     const current = this.state.npcMinds[npcId];
     if (!current) return;
-    Object.assign(current, patch);
+    this.state.npcMinds[npcId] = {
+      ...current,
+      ...patch,
+      currentIntent: patch.currentIntent
+        ? { ...patch.currentIntent }
+        : current.currentIntent,
+      recentMemories: patch.recentMemories
+        ? { ...patch.recentMemories }
+        : current.recentMemories,
+      knownLandmarks: patch.knownLandmarks
+        ? { ...patch.knownLandmarks }
+        : current.knownLandmarks,
+      needs: patch.needs
+        ? { ...patch.needs }
+        : current.needs,
+      relationships: patch.relationships
+        ? { ...patch.relationships }
+        : current.relationships,
+      schedule: patch.schedule
+        ? { ...patch.schedule }
+        : current.schedule,
+      meta: patch.meta
+        ? { ...patch.meta }
+        : current.meta,
+    };
   }
 
   getNpcMindState(npcId: string): NpcMindState | null {

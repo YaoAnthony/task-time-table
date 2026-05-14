@@ -1,22 +1,22 @@
 /**
- * GameScene — Phaser 3 scene for the idle/exploration game.
+ * GameScene Phaser 3 scene for the idle/exploration game.
  *
  * Deliberately thin: delegates map building, animations, and entity logic
  * to the dedicated modules in /systems and /entities.
  *
  * Architecture follows ozguradmin/sprout-lands-portfolio:
- *   · All Sprout Lands PNGs loaded as plain images
- *   · Sub-regions registered as named frames at runtime
- *   · Objects placed as individual add.sprite() calls with Y-sort depth
- *   · React ↔ Phaser bridge via the public `callbacks` property
+ *   All Sprout Lands PNGs loaded as plain images
+ *   Sub-regions registered as named frames at runtime
+ *   Objects placed as individual add.sprite() calls with Y-sort depth
+ *   React Phaser bridge via the public `callbacks` property
  *
  * Day/Night cycle:
  *   Handled entirely by DayCycle (systems/DayCycle.ts).
  *   GameScene no longer owns gameTick or the night overlay.
  *
  * Save/Load:
- *   · Set `scene.initialState` before booting to restore a saved game.
- *   · Call `getGameState()` to get the current state for saving.
+ *   Set `scene.initialState` before booting to restore a saved game.
+ *   Call `getGameState()` to get the current state for saving.
  */
 
 import Phaser from 'phaser';
@@ -32,7 +32,7 @@ import {
   CHICK_FRAME_W, CHICK_FRAME_H,
   CHEST_FRAME_W, CHEST_FRAME_H,
 } from './constants';
-import { registerAnimations }  from './systems/AnimationRegistry';
+import { AnimationSystem }      from './systems/AnimationSystem';
 import { MapBuilder }          from './systems/MapBuilder';
 import { DayCycle }            from './systems/DayCycle';
 import { WeatherSystem }       from './systems/WeatherSystem';
@@ -52,7 +52,7 @@ import { Bed, type BedColor }   from './entities/Bed';
 import { Pathfinder }          from './systems/Pathfinder';
 import { ActionExecutor }      from './systems/ActionExecutor';
 import { ChickenStateSystem } from './systems/ChickenStateSystem';
-import { FarmSystem }          from './systems/FarmSystem';
+import { FarmSystem, type FarmActionKind, type FarmActionTarget } from './systems/FarmSystem';
 import { InteractionSystem } from './systems/InteractionSystem';
 import { NestStateSystem } from './systems/NestStateSystem';
 import { formatPerceptionForNpcPrompt } from './systems/perceptionFormatter';
@@ -60,12 +60,18 @@ import { TreeStateSystem } from './systems/TreeStateSystem';
 import { PerceptionSystem }     from './systems/WorldPerceptionSystem';
 import { WorldActionSystem, type WorldAction, type WorldActionResult } from './systems/WorldActionSystem';
 import { RenderSyncSystem } from './systems/RenderSyncSystem';
+import { LightingSystem, type LightConfig } from './systems/LightingSystem';
+import { DialogueSystem } from './systems/DialogueSystem';
 import { SleepManager }        from './systems/SleepManager';
-import { NpcMemorySystem } from './systems/NpcMemorySystem';
-import { NpcThinkSystem } from './systems/NpcThinkSystem';
-import { NpcScheduleSystem } from './systems/NpcScheduleSystem';
-import { NpcNeedsSystem } from './systems/NpcNeedsSystem';
-import { NpcGossipSystem } from './systems/NpcGossipSystem';
+import type { NpcMemorySystem } from './systems/NpcMemorySystem';
+import { ActorActionService } from './systems/ActorActionService';
+import { AgentWorldModel } from './systems/AgentWorldModel';
+import type { NpcDirectorSystem } from './ai/director/NpcDirectorSystem';
+import { NPCSystem } from './systems/NPCSystem';
+import { ObjectSystem } from './systems/ObjectSystem';
+import { SavingSystem } from './systems/SavingSystem';
+import { WorldActionGateway } from './actions/world/WorldActionGateway';
+import { WorldMapService } from './map/services/WorldMapService';
 import { StateBackedWorldGrid } from './shared/StateBackedWorldGrid';
 import { SpatialIndex }          from './shared/SpatialIndex';
 import { WorldStateManager }     from './shared/WorldStateManager';
@@ -77,13 +83,14 @@ import { createRock }            from './world/rock';
 import { createBush as createDecorBush } from './world/bush';
 import { VILLAGE_LAYOUT } from './world/layouts/villageLayout';
 import type { WorldContext }     from './systems/ActionExecutor';
-import type { IdleGameState, TreeSaveState }  from '../../../../Types/Profile';
+import { serializeNpcKnowledgeForPrompt } from './shared/NpcKnowledge';
+import type { IdleGameState }  from '../../../../Types/Profile';
 import type { CreatureState } from '../../../../Redux/Features/gameSlice';
 
-// ── House interior navigation target (world px) ──────────────────────────────
+// House interior navigation target (world px)
 // ROOM_INTERIOR_X/Y now defined in ActionExecutor.ts NAMED_LOCATIONS
 
-// ─── Asset imports (Vite resolves to hashed URLs at build time) ─────────────
+// Asset imports (Vite resolves to hashed URLs at build time)
 // @ts-ignore
 import tileGrassUrl  from '../../../../assets/Sprout-Lands/Tilesets/Grass.png';
 // @ts-ignore
@@ -113,13 +120,13 @@ import basicPlantsUrl  from '../../../../assets/Sprout-Lands/Objects/Basic_Plant
 // @ts-ignore
 import furnitureUrl    from '../../../../assets/Sprout-Lands/Objects/Basic_Furniture.png';
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 export class GameScene extends Phaser.Scene {
-  // ── Public: React sets these before game boots ────────────────────────────
+  // Public: React sets these before game boots
   /** Optional: set before booting to restore a saved game session. */
   initialState: Partial<IdleGameState> = {};
 
-  // ── Private game objects ──────────────────────────────────────────────────
+  // Private game objects
   player!:    Player;
   private npc!:       Npc;
   private chickenGroup!:   Phaser.Physics.Arcade.Group;
@@ -128,83 +135,91 @@ export class GameScene extends Phaser.Scene {
   private obstacles!: Phaser.Physics.Arcade.StaticGroup;
   private dayCycle!:  DayCycle;
 
-  // ── General F-key interactable registry ──────────────────────────────────
+  // General F-key interactable registry
   private interactables: Interactable[] = [];
 
-  // ── Drop items (all pickupable items — tools, seeds, crops, loot) ───────────
+  // Drop items (all pickupable items tools, seeds, crops, loot)
   private drops: DropItem[] = [];
 
-  // ── Chest management ──────────────────────────────────────────────────────
+  // Chest management
   private chests = new Map<string, Chest>();
 
-  // ── Tree management ────────────────────────────────────────────────────────
+  // Tree management
   private trees = new Map<string, TreeView>();
 
-  // ── Raspberry bush management ─────────────────────────────────────────────
+  // Raspberry bush management
   private bushes: RaspberryBush[] = [];
 
-  // ── Houses ────────────────────────────────────────────────────────────────
-  private house!:    House;   // 玩家的家 (Player's Home)   — top-left
-  private npcHouse!: House;   // 村长府邸 (Mayor's Manor)  — top-right
+  // Houses
+  private house!:    House; // (Player's Home) top-left
+  private npcHouse!: House; // (Mayor's Manor) top-right
 
-  // ── Extra wandering NPCs ──────────────────────────────────────────────────
+  // Extra wandering NPCs
   private extraNpcs: Npc[] = [];
 
-  // ── Pathfinder ────────────────────────────────────────────────────────────
+  // Pathfinder
   private pathfinder!:    Pathfinder;
   private actionExecutor!: ActionExecutor;
 
-  // ── Systems ───────────────────────────────────────────────────────────────
+  // Systems
   private weather!:  WeatherSystem;
   private commands!: CommandSystem;
+  private animationSystem!: AnimationSystem;
+  private objectSystem!: ObjectSystem;
+  private npcSystem?: NPCSystem;
+  private savingSystem!: SavingSystem;
   farmSystem!: FarmSystem;
   private chickenStateSystem!: ChickenStateSystem;
   private interactionSystem!: InteractionSystem;
   private nestStateSystem!: NestStateSystem;
   private renderSyncSystem!: RenderSyncSystem;
+  private lightingSystem!: LightingSystem;
+  private dialogueSystem!: DialogueSystem;
   private treeStateSystem!: TreeStateSystem;
   private worldActionSystem!: WorldActionSystem;
+  private worldActionGateway!: WorldActionGateway;
   private worldFacade!: WorldFacade;
+  private actorActionService!: ActorActionService;
+  private worldMapService!: WorldMapService;
+  private agentWorldModel!: AgentWorldModel;
   private npcMemorySystem!: NpcMemorySystem;
-  private npcThinkSystem!: NpcThinkSystem;
-  private npcScheduleSystem?: NpcScheduleSystem;
-  private npcNeedsSystem?: NpcNeedsSystem;
-  private npcGossipSystem?: NpcGossipSystem;
+  private npcDirectorSystem!: NpcDirectorSystem;
   worldGrid!: StateBackedWorldGrid;
   worldStateManager!: WorldStateManager;
   private physicsDebugEnabled = false;
-  private agentBrainEnabled = true;
 
-  // ── Perception system ─────────────────────────────────────────────────────
+  // Perception system
   private perceptionSystem!: PerceptionSystem;
   private spatialIndex!:     SpatialIndex;
 
-  // ── Beds + sleep system ───────────────────────────────────────────────────
+  // Beds + sleep system
   private beds:         Bed[]         = [];
   private sleepManager!: SleepManager;
 
-  // ── Chat state flag ───────────────────────────────────────────────────────
-  /** True while the React chat input is open — suppresses player movement. */
+  // Chat state flag
+  /** True while the React chat input is open suppresses player movement. */
   private _chatOpen = false;
 
-  // ── Multiplayer ───────────────────────────────────────────────────────────
+  // Multiplayer
   remotePlayer: RemotePlayer | null = null;
   multiplayActive = false;
   private _lastPosSend = 0;
 
-  // ── F / Q key references (set in create()) ───────────────────────────────
+  // F / Q key references (set in create())
   private _fKey!: Phaser.Input.Keyboard.Key;
   private _qKey!: Phaser.Input.Keyboard.Key;
 
-  // ── Time-emit throttle ────────────────────────────────────────────────────
+  // Time-emit throttle
   private _lastTimeEmit = 0;
   private _nextWorldObjectId = 1;
   private _nextChickenId = 1;
   private _nextNestId = 1;
   private readonly chickenWaterSpots: [number, number][] = [[848, 638]];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  constructor() { super({ key: 'GameScene' }); }
+
+  constructor() { 
+    super({ key: 'GameScene' }); 
+  }
 
   private nextChickenId(): string {
     return `chicken_${this._nextChickenId++}`;
@@ -215,24 +230,74 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getNpcRegistrations(): Array<{ id: string; npc: Npc }> {
+    if (this.npcSystem) return this.npcSystem.getRegistrations();
     const all: Array<{ id: string; npc: Npc }> = [{ id: this.npc.name, npc: this.npc }];
     for (const n of this.extraNpcs) all.push({ id: n.name, npc: n });
     return all;
   }
 
+  private getActiveNpcIdSet(): Set<string> {
+    if (this.npcSystem) return this.npcSystem.getActiveNpcIdSet();
+    return new Set(this.getNpcRegistrations().map(({ id }) => id));
+  }
+
+  private ensureAllNpcMindStates(): void {
+    this.npcSystem?.ensureMindStates();
+  }
+
   /** Linear-search any NPC by name (main + extras). */
   private findNpcByName(name: string): Npc | null {
+    if (this.npcSystem) return this.npcSystem.findByName(name);
     if (this.npc?.name === name) return this.npc;
     return this.extraNpcs.find(n => n.name === name) ?? null;
   }
 
+  findConversationSpotForNpc(sourceName: string, targetName: string): { x: number; y: number } | null {
+    const source = this.findNpcByName(sourceName);
+    const target = this.findNpcByName(targetName);
+    if (!source || !target || source === target) return null;
+
+    const offsets = [
+      { x: -44, y: 0 },
+      { x: 44, y: 0 },
+      { x: 0, y: 44 },
+      { x: 0, y: -44 },
+      { x: -44, y: 32 },
+      { x: 44, y: 32 },
+      { x: -44, y: -32 },
+      { x: 44, y: -32 },
+    ].sort((a, b) => {
+      const ax = target.sprite.x + a.x - source.sprite.x;
+      const ay = target.sprite.y + a.y - source.sprite.y;
+      const bx = target.sprite.x + b.x - source.sprite.x;
+      const by = target.sprite.y + b.y - source.sprite.y;
+      return (ax * ax + ay * ay) - (bx * bx + by * by);
+    });
+
+    for (const offset of offsets) {
+      const x = target.sprite.x + offset.x;
+      const y = target.sprite.y + offset.y;
+      const cell = this.worldGrid.worldToCell(x, y);
+      if (this.worldGrid.getWeight(cell.col, cell.row) <= 0) continue;
+      const occupied = this.allNpcs().some((npc) => {
+        if (npc === source || npc === target) return false;
+        return Phaser.Math.Distance.Between(npc.sprite.x, npc.sprite.y, x, y) < 28;
+      });
+      if (!occupied) return { x, y };
+    }
+
+    return null;
+  }
+
   /** Iterate all NPCs (main + extras). */
   private allNpcs(): Npc[] {
+    if (this.npcSystem) return this.npcSystem.all();
     return [this.npc, ...this.extraNpcs];
   }
 
   /** Closest NPC to (x,y) within radius (px). Returns null if none in range. */
   private findNearestNpc(x: number, y: number, radius: number): Npc | null {
+    if (this.npcSystem) return this.npcSystem.findNearest(x, y, radius);
     let best: Npc | null = null;
     let bestD2 = radius * radius;
     for (const n of this.allNpcs()) {
@@ -296,6 +361,10 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private syncNpcAgentWorldContexts(): void {
+    this.npcSystem?.syncWorldContextsNow();
+  }
+
   private registerWorldObject(
     id: string,
     kind: 'tree' | 'chest' | 'bed' | 'nest',
@@ -333,11 +402,14 @@ export class GameScene extends Phaser.Scene {
       interactable: true,
       state: bed.color,
     });
+    this.registerBedLight(bed, id);
   }
 
   private unregisterRuntimeObject(target: object | null | undefined): void {
     const id = this.getRuntimeObjectId(target);
     if (!id) return;
+    this.lightingSystem?.removeStaticLight(`bed:${id}`);
+    this.lightingSystem?.removeStaticLight(`nest:${id}`);
     this.worldStateManager.unregisterObject(id);
   }
 
@@ -394,9 +466,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   dispatchWorldAction(action: WorldAction, source: WorldSyncSource = 'local'): WorldActionResult {
-    const result = this.worldActionSystem.dispatchAction(action);
-    gameBus.emit('world:action_applied', { action, result, source });
-    return result;
+    return this.worldActionGateway.dispatchAction(action, source);
   }
 
   private applyPlaceObjectAction(action: Extract<WorldAction, { type: 'PLACE_OBJECT' }>): WorldActionResult {
@@ -449,7 +519,7 @@ export class GameScene extends Phaser.Scene {
   }
 
 
-  // ── Phaser lifecycle ──────────────────────────────────────────────────────
+  // Phaser lifecycle
   preload() {
     this.load.image('grass',   tileGrassUrl);
     this.load.spritesheet('water', tileWaterUrl, { frameWidth: 16, frameHeight: 16 });
@@ -506,30 +576,21 @@ export class GameScene extends Phaser.Scene {
       this.chests,
       this.drops,
     );
-    // ── Animations (must be before MapBuilder so water-tile anim exists) ──
-    registerAnimations(this);
+    // Animations (must be before MapBuilder so water-tile anim exists)
+    this.animationSystem = new AnimationSystem(this);
+    this.animationSystem.init();
 
-    // ── Map ───────────────────────────────────────────────────────────────
+    // Map
     new MapBuilder(this, this.obstacles, this.worldGrid).build();
 
-    // Chest opening: frame 0 (closed, gold) → frame 5 (opened, gold)
-    // Chest.png is 5 cols × 2 rows @ 48×48: row 0 = closed variants, row 1 = opened variants
-    this.anims.create({
-      key:       'chest-open',
-      frames:    [
-        { key: 'chest', frame: 0 },   // closed
-        { key: 'chest', frame: 0 },   // brief hold
-        { key: 'chest', frame: 5 },   // opened
-      ],
-      frameRate: 6,
-      repeat:    0,
-    });
-
-    // ── Day / Night cycle ─────────────────────────────────────────────────
+    // Chest opening: frame 0 (closed, gold) frame 5 (opened, gold)
+    // Chest.png is 5 cols 2 rows @ 48 8: row 0 = closed variants, row 1 = opened variants
+    // Day / Night cycle
     // Restore gameTick from save so time-of-day is preserved across sessions.
     this.dayCycle = new DayCycle(this, this.initialState.gameTick ?? 0);
+    this.lightingSystem = new LightingSystem(this);
 
-    // ── Entities ──────────────────────────────────────────────────────────
+    // Entities
     const spawnX = this.initialState.x      ?? SPAWN_X;
     const spawnY = this.initialState.y      ?? SPAWN_Y;
     const facing = this.initialState.facing ?? 'down';
@@ -541,21 +602,8 @@ export class GameScene extends Phaser.Scene {
 
     this.npc = new Npc(this, NPC_X, NPC_Y, NPC_NAME);
 
-    // ── Town NPCs (wandering characters) ─────────────────────────────────────
-    //   王村长  — mayor, roams south of the manor       (blue tint)
-    //   陈掌柜  — merchant, lingers in the town square  (gold tint)
-    //   小花    — young girl, plays near the pond       (pink tint)
-    // All positions are on open grass — clear of both houses, pond, and water border.
-    // Extra wandering NPCs are defined by the shared village layout.
-    // Legacy NPC position notes kept below for reference during map cleanup.
-    /*
-    /*
-      [800, 380, '王村长', 0xaaaaff],   // south of manor door  (house 2 y-max = 336)
-      [400, 460, '陈掌柜', 0xffcc88],   // open town square
-      [500, 660, '小花',   0xff88cc],   // south meadow near pond (pond at 800,620)
-    ];
-    // */
-    // */
+    // Town NPCs (wandering characters)
+    // Extra NPCs are defined by the shared village layout.
     this.extraNpcs = VILLAGE_LAYOUT.extraNpcs.map(({ x, y, name, tint }) => {
       const n = new Npc(this, x, y, name);
       n.sprite.setTint(tint);
@@ -563,62 +611,53 @@ export class GameScene extends Phaser.Scene {
     });
     this.registerCoreWorldEntities();
 
-    // ── F key (general world-object interaction) ──────────────────────────
+    // F key (general world-object interaction)
     this._fKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.F);
-    // ── Q key (drop held item as world drop) ──────────────────────────────
+    // Q key (drop held item as world drop)
     this._qKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
 
-    // ── Camera ────────────────────────────────────────────────────────────
+    // Camera
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
     this.cameras.main.setZoom(ZOOM);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
     // Note: background colour is managed frame-by-frame by DayCycle.
     this.cameras.main.setBackgroundColor('#12340e');
 
-    // ── Weather + Command systems ──────────────────────────────────────────
+    // Weather + Command systems
     this.weather  = new WeatherSystem(this);
     this.commands = new CommandSystem();
     this._registerCommands();
 
-    // ── Houses ──────────────────────────────────────────────────────────────
-    // House 1 — 玩家的家 (10×6 = 320×192 px)
-    //   x: 80–400  y: 80–272   door col3 → door-centre ≈ (192, 256)
+    // Houses
+    // House 1 (10 = 320 92 px)
+    // x: 80 00 y: 80 72 door col3 door-centre (192, 256)
     this.house = new House(this, VILLAGE_LAYOUT.playerHouse.x, VILLAGE_LAYOUT.playerHouse.y, this.obstacles);
 
-    // House 2 — 村长府邸 (14×8 = 448×256 px, stone-blue tint, double chimney)
-    //   x: 560–1008  y: 80–336  door col6 → door-centre ≈ (768, 320)
+    // House 2 (14 = 448 56 px, stone-blue tint, double chimney)
+    // x: 560 008 y: 80 36 door col6 door-centre (768, 320)
     this.npcHouse = new House(this, VILLAGE_LAYOUT.mayorHouse.x, VILLAGE_LAYOUT.mayorHouse.y, this.obstacles, {
       cols:     VILLAGE_LAYOUT.mayorHouse.cols,
       rows:     VILLAGE_LAYOUT.mayorHouse.rows,
       doorCol:  VILLAGE_LAYOUT.mayorHouse.doorCol,
       chimneys: [...VILLAGE_LAYOUT.mayorHouse.chimneys],
-      tint:     0xaabbdd,   // cool stone-blue — clearly different from warm wood
+      tint:     0xaabbdd, // cool stone-blue clearly different from warm wood
     });
+    this.registerDefaultLighting();
 
-    // ── Trees (interactive entities, F=harvest, Space+axe=chop) ──────────────
+    // Trees (interactive entities, F=harvest, Space+axe=chop)
     this.spawnInitialTrees();
 
-    // ── Raspberry bushes (F=harvest berries, regrow over time) ───────────────
+    // Raspberry bushes (F=harvest berries, regrow over time)
     this.spawnInitialBushes();
 
-    // ── Static decorations (flowers, rocks, decorative bushes) ───────────────
+    // Static decorations (flowers, rocks, decorative bushes)
     this.spawnDecorations();
 
-    // ── Pathfinder — reads WorldGrid weights directly (no physics body scan) ──
+    // Pathfinder reads WorldGrid weights directly (no physics body scan)
     this.pathfinder    = new Pathfinder(this.worldGrid);
-    this.npc.setPathfinder(this.pathfinder);
-    this.npc.setPlayerRef(this.player.sprite);          // for follow_player action
     this.actionExecutor = new ActionExecutor(this.player);
-    this.actionExecutor.setWorld(this as unknown as WorldContext);
-    this.npc.setWorldContext(this as unknown as WorldContext);
-    // Give every extra NPC pathfinding + player awareness so they can wander freely
-    for (const n of this.extraNpcs) {
-      n.setPathfinder(this.pathfinder);
-      n.setPlayerRef(this.player.sprite);
-      n.setWorldContext(this as unknown as WorldContext);
-    }
 
-    // ── Perception system (scans trees + ground items for LLM context) ────────
+    // Perception system (scans trees + ground items for LLM context)
     this.perceptionSystem = new PerceptionSystem({
       worldStateManager: this.worldStateManager,
       worldGrid: this.worldGrid,
@@ -634,22 +673,20 @@ export class GameScene extends Phaser.Scene {
         {
           kind: 'house' as const,
           id: 'player-house',
-          label: '玩家的家',
+          label: 'Player House',
           x: this.house.houseX + 160,
           y: this.house.houseY + 96,
         },
         {
           kind: 'house' as const,
           id: 'npc-house',
-          label: '村长府邸',
+          label: 'Mayor House',
           x: this.npcHouse.houseX + 224,
           y: this.npcHouse.houseY + 128,
         },
       ]),
     });
-    this.npcMemorySystem = new NpcMemorySystem(this.worldStateManager);
-
-    // ── FarmSystem (tilled-dirt plots, watering, harvesting) ─────────────────
+    // FarmSystem (tilled-dirt plots, watering, harvesting)
     this.farmSystem = new FarmSystem(this, this.worldGrid, this.worldStateManager);
     this.worldActionSystem = new WorldActionSystem(
       this.worldStateManager,
@@ -663,10 +700,19 @@ export class GameScene extends Phaser.Scene {
         onDropItem: (action) => this.applyDropItemAction(action),
       },
     );
-    this.farmSystem.setActionDispatcher(this.worldActionSystem);
-    this.treeStateSystem.setActionDispatcher(this.worldActionSystem);
-    this.nestStateSystem.setActionDispatcher(this.worldActionSystem);
-    this.chickenStateSystem.setActionDispatcher(this.worldActionSystem);
+    this.worldActionGateway = new WorldActionGateway(this.worldActionSystem);
+    this.farmSystem.setActionDispatcher(this.worldActionGateway);
+    this.actorActionService = new ActorActionService(this.farmSystem, this.worldActionGateway);
+    this.worldMapService = new WorldMapService(this.worldStateManager, this.worldGrid);
+    this.agentWorldModel = new AgentWorldModel(
+      this.worldStateManager,
+      this.worldGrid,
+      this.actorActionService,
+      this.worldMapService,
+    );
+    this.treeStateSystem.setActionDispatcher(this.worldActionGateway);
+    this.nestStateSystem.setActionDispatcher(this.worldActionGateway);
+    this.chickenStateSystem.setActionDispatcher(this.worldActionGateway);
     this.worldFacade = new WorldFacade({
       player: () => this.player as any,
       npcName: () => this.npc?.name ?? 'npc',
@@ -684,119 +730,153 @@ export class GameScene extends Phaser.Scene {
         getWorldSnapshot: () => this.buildWorldSnapshot(),
         applyWorldSnapshot: (snapshot) => this.applyWorldSnapshotData(snapshot),
       });
-    this.npcThinkSystem = new NpcThinkSystem({
+    this.npcSystem = new NPCSystem();
+    const npcSystems = this.npcSystem.init({
+      scene: this,
+      primaryNpc: this.npc,
+      extraNpcs: this.extraNpcs,
+      player: this.player,
+      pathfinder: this.pathfinder,
+      worldContext: this as unknown as WorldContext,
       worldStateManager: this.worldStateManager,
+      dayCycle: this.dayCycle,
       perceptionSystem: this.perceptionSystem,
-      memorySystem: this.npcMemorySystem,
       actionExecutor: this.actionExecutor,
-      getNpcRegistrations: () => this.getNpcRegistrations(),
+      agentWorldModel: this.agentWorldModel,
       getChatOpen: () => this._chatOpen,
-    });
-
-    // ── NPC daily routine + internal drives ──────────────────────────────
-    // Schedule pushes time-of-day actions (work_farm at 08:00, lunch at 12:00, etc.)
-    // Needs ticks energy/hunger/social and emits autonomous lines when low.
-    // Both ultimately call npc.say(...) which fires npc:speak → DialogBox.
-    this.npcScheduleSystem = new NpcScheduleSystem({
-      worldStateManager:   this.worldStateManager,
-      dayCycle:            this.dayCycle,
-      npcMemorySystem:     this.npcMemorySystem,
-      getNpcRegistrations: () => this.getNpcRegistrations(),
-    });
-    this.npcNeedsSystem = new NpcNeedsSystem({
-      worldStateManager:   this.worldStateManager,
-      dayCycle:            this.dayCycle,
-      npcMemorySystem:     this.npcMemorySystem,
-      getNpcRegistrations: () => this.getNpcRegistrations(),
-      getPlayerPosition:   () =>
+      getPlayerPosition: () =>
         this.player ? { x: this.player.sprite.x, y: this.player.sprite.y } : null,
     });
-
-    // Gossip — when one NPC speaks, nearby NPCs can chime in (canned reactions, no GPT).
-    this.npcGossipSystem = new NpcGossipSystem({
-      scene:               this,
+    this.npcMemorySystem = npcSystems.memorySystem;
+    this.npcDirectorSystem = npcSystems.directorSystem;
+    this.dialogueSystem = new DialogueSystem({
+      scene: this,
       getNpcRegistrations: () => this.getNpcRegistrations(),
+      getPlayerPosition: () =>
+        this.player ? { x: this.player.sprite.x, y: this.player.sprite.y } : null,
+      getGameTick: () => this.dayCycle?.gameTick ?? 0,
+      pauseNpc: (npcId, gameTick, seconds, reason) =>
+        this.npcDirectorSystem?.pauseNpc(npcId, gameTick, seconds, reason),
     });
-    this.npcGossipSystem.start();
+    this.dialogueSystem.start();
 
-    // ── Tool pickups inside the house ────────────────────────────────────────
-    // House-1 interior: x:112–368, y:112–256 (cols 1-8, rows 1-4)
+    // NPC daily routine + internal drives
+    // Schedule pushes time-of-day actions (work_farm at 08:00, lunch at 12:00, etc.)
+    // Needs ticks energy/hunger/social and emits autonomous lines when low.
+    // Both ultimately call npc.say(...) which fires npc:speak DialogBox.
+
+
+    // Gossip when one NPC speaks, nearby NPCs can chime in (canned reactions, no GPT).
+
+
+    // Tool pickups inside the house
+    // House-1 interior: x:112 68, y:112 56 (cols 1-8, rows 1-4)
     // Place tools on a shelf row near the back wall (row 2)
-    this.spawnToolPickups();
 
-    // ── Chickens + Nests (created after pathfinder is ready) ─────────────────
-    this.createChickens();
+    // Chickens + Nests (created after pathfinder is ready)
 
-    // ── Farm tile sensors (passthrough overlap for proximity detection) ──
-    this.farmSystem.registerPlayerSensors(this.player.sprite);
+    // Farm tile sensors (passthrough overlap for proximity detection)
 
-    // ── Collisions ────────────────────────────────────────────────────────
-    this.physics.add.collider(this.player.sprite, this.obstacles);
-    this.physics.add.collider(this.npc.sprite,    this.obstacles);
-    this.physics.add.collider(this.player.sprite, this.npc.sprite);
-    for (const n of this.extraNpcs) {
-      this.physics.add.collider(n.sprite, this.obstacles);
-      this.physics.add.collider(this.player.sprite, n.sprite);
-    }
-    this.physics.add.collider(this.chickenGroup,  this.obstacles);
-    this.physics.add.collider(this.chickenGroup,  this.chickenGroup);
-
-    // ── SleepManager (Minecraft-style night skip) ─────────────────────────
+    // Collisions
+    // SleepManager (Minecraft-style night skip)
     this.sleepManager = new SleepManager(0);
 
-    // Fire when DayCycle's 20× fast-forward finishes at 06:00
+    // Fire when DayCycle's 20 fast-forward finishes at 06:00
     this.dayCycle.onFastForwardComplete = () => {
       this.sleepManager.onMorning();
       const toTime = this.dayCycle.getTimeStr();
       gameBus.emit('day:night_skip', { fromTime: '--', toTime });
-      gameBus.emit('ui:show_message', { text: `🌅 早上好！时间已到 ${toTime}` });
+      gameBus.emit('ui:show_message', { text: `Night skipped. Morning starts at ${toTime}` });
     };
 
-    // ── Beds (inside house interior) ───────────────────────────────────────
-    // House-1 interior: x:112–368, y:112–256.  Place one pink bed near back wall.
-    this._spawnBeds();
+    // Beds (inside house interior)
+    // House-1 interior: x:112 68, y:112 56. Place one pink bed near back wall.
+    // sleep command
+    this.objectSystem = new ObjectSystem({
+      getPlayer: () => this.player ?? null,
+      getDrops: () => this.drops,
+      getBeds: () => this.beds,
+      getSleepManager: () => this.sleepManager ?? null,
+      getDayCycle: () => this.dayCycle ?? null,
+      unregisterDropState: (drop) => this.unregisterDropState(drop),
+      updateChickens: (timeMs, deltaMs) => this.updateChickens(timeMs, deltaMs),
+      updateNests: (playerX, playerY, timeMs) => this.updateNests(playerX, playerY, timeMs),
+    });
+    this.objectSystem.init({
+      spawnToolPickups: () => this.spawnToolPickups(),
+      createChickens: () => this.createChickens(),
+      registerFarmSensors: (playerSprite) => this.farmSystem.registerPlayerSensors(playerSprite),
+      spawnBeds: () => this._spawnBeds(),
+    });
 
-    // ── /sleep command ─────────────────────────────────────────────────────
+    this.physics.add.collider(this.player.sprite, this.obstacles);
+    this.physics.add.collider(this.npc.sprite, this.obstacles);
+    this.physics.add.collider(this.player.sprite, this.npc.sprite);
+    for (const npc of this.extraNpcs) {
+      this.physics.add.collider(npc.sprite, this.obstacles);
+      this.physics.add.collider(this.player.sprite, npc.sprite);
+    }
+    this.physics.add.collider(this.chickenGroup, this.obstacles);
+    this.physics.add.collider(this.chickenGroup, this.chickenGroup);
+
+    this.savingSystem = new SavingSystem({
+      scene: this,
+      getPlayer: () => this.player,
+      getDayCycle: () => this.dayCycle,
+      getTrees: () => this.trees,
+      getBeds: () => this.beds,
+      getNests: () => this.nests,
+      getWorldStateManager: () => this.worldStateManager,
+      getActiveNpcIdSet: () => this.getActiveNpcIdSet(),
+      getSleepManager: () => this.sleepManager,
+      getNestStateSystem: () => this.nestStateSystem,
+      getRenderSyncSystem: () => this.renderSyncSystem,
+      nextNestId: () => this.nextNestId(),
+    });
+    this.savingSystem.init();
+
     this.commands.register(
       'sleep',
-      '跳过黑夜到明天早上 | sleep threshold <0-1> 修改睡眠比例',
+      'skip night to morning | sleep threshold <0-1>',
       (args) => {
         // /sleep threshold 0.5
         if (args[0] === 'threshold') {
           const v = parseFloat(args[1] ?? '');
           if (isNaN(v) || v < 0 || v > 1)
-            return '用法: /sleep threshold <0-1>  (0=任意1人, 1=所有人)';
+            return 'Usage: /sleep threshold <0-1>';
           this.sleepManager.threshold = v;
-          return `睡眠比例已设置为 ${(v * 100).toFixed(0)}%`;
+          return `Sleep threshold set to ${(v * 100).toFixed(0)}%`;
         }
-        // /sleep  → force skip (admin / debug)
+        // sleep force skip (admin / debug)
         if (!this.dayCycle.isNight())
-          return '🌞 现在是白天，不需要跳过夜晚';
+          return 'It is daytime now; no need to skip night';
         return this.sleepManager.trySleep(this.dayCycle);
       },
     );
 
-    // ── Restore saved world entities (beds positions, nest states) ──────────
+    // Restore saved world entities (beds positions, nest states)
     // Must run AFTER _spawnBeds() and createChickens() so defaults exist first.
     this._loadWorldState(this.initialState.worldState ?? null);
+    this.ensureAllNpcMindStates();
+    this.syncNpcAgentWorldContexts();
 
-    // ── Notify React that the scene is fully ready ─────────────────────────
+    // Notify React that the scene is fully ready
     // React can now safely call loadNpcMemories() and other NPC APIs.
-    console.log('[GameScene] create() complete — firing onGameReady');
+    console.log('[GameScene] create() complete ?firing onGameReady');
     gameBus.emit('game:ready', {});
   }
 
   update(time: number, delta: number) {
     const dt = delta / 1000;
 
-    // ── Day/Night cycle update (advances time, repaints overlay) ─────────
+    // Day/Night cycle update (advances time, repaints overlay)
     this.dayCycle.update(dt);
     this.syncWorldStateMeta();
 
-    // ── Farm: update crop visuals every frame ─────────────────────────────
+    // Farm: update crop visuals every frame
     this.farmSystem?.update(this.dayCycle.gameTick);
 
-    // ── Emit time string to React HUD (max once per real second) ─────────
+    // Emit time string to React HUD (max once per real second)
     if (time - this._lastTimeEmit > 1000) {
       this._lastTimeEmit = time;
       gameBus.emit('tick:update', {
@@ -807,20 +887,20 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // ── F-key: general world-object interaction ───────────────────────────
+    // F-key: general world-object interaction
     if (Phaser.Input.Keyboard.JustDown(this._fKey) && !this._chatOpen) {
       this.triggerFInteract();
     }
 
-    // ── Q-key: drop held item as world drop ───────────────────────────────
+    // Q-key: drop held item as world drop
     if (Phaser.Input.Keyboard.JustDown(this._qKey) && !this._chatOpen) {
       this._triggerQDrop();
     }
 
-    // ── Remote player (multiplayer) ───────────────────────────────────────
+    // Remote player (multiplayer)
     this.remotePlayer?.update();
 
-    // ── Emit local player position to peers (throttled 20fps) ─────────────
+    // Emit local player position to peers (throttled 20fps)
     if (this.multiplayActive && time - this._lastPosSend > 50) {
       this._lastPosSend = time;
       const body = this.player.sprite.body as Phaser.Physics.Arcade.Body;
@@ -833,67 +913,272 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // ── Player ────────────────────────────────────────────────────────────
+    // Player
     if (this._chatOpen) {
       (this.player.sprite.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
     } else {
       this.player.update();
     }
 
-    // ── House doors (player or any NPC triggers each door) ───────────────
+    // House doors (player or any NPC triggers each door)
     this.syncDynamicEntityStates();
-    if (this.agentBrainEnabled) {
-      this.npcThinkSystem?.update(dt, this.dayCycle.gameTick);
-      this.npcScheduleSystem?.update(dt, this.dayCycle.gameTick);
-      this.npcNeedsSystem?.update(dt, this.dayCycle.gameTick);
-    }
+    this.npcSystem?.updateAI(dt, this.dayCycle.gameTick, time, delta);
     const _hpx = this.player.sprite.x, _hpy = this.player.sprite.y;
     this.house.update(_hpx, _hpy, this.npc.sprite.x, this.npc.sprite.y);
     this.npcHouse?.update(_hpx, _hpy,
       this.extraNpcs[0]?.sprite.x, this.extraNpcs[0]?.sprite.y);
 
-    // ── NPC + chickens ────────────────────────────────────────────────────
-    this.npc.update(dt, this.dayCycle.gameTick);
-    for (const n of this.extraNpcs) n.update(dt, this.dayCycle.gameTick);
+    // NPC + chickens
+    this.npcSystem?.updateActors(dt, this.dayCycle.gameTick);
     this.treeStateSystem?.update(time);
-    this.updateChickens(time, delta);
+    this.objectSystem?.update(time, delta);
+    this.lightingSystem?.update(time, this.dayCycle.getCurrentMinute(), this.getDynamicLightConfigs());
+  }
 
-    // ── Nest hints + dismantled nest cleanup ──────────────────────────────
-    if (this.player) {
-      this.updateNests(this.player.sprite.x, this.player.sprite.y, time);
+  private registerDefaultLighting(): void {
+    const tile = 32;
+    const addHouseOccluder = (
+      id: string,
+      house: { x: number; y: number; rows: number; cols: number },
+    ) => {
+      this.lightingSystem.upsertOccluder({
+        id: `wall:${id}`,
+        x: house.x + house.cols * tile / 2,
+        y: house.y + house.rows * tile / 2,
+        width: house.cols * tile,
+        height: house.rows * tile,
+        strength: 0.38,
+        softness: 0.12,
+        maxAngularWidth: Math.PI * 0.2,
+      });
+    };
+    const addHouseLights = (
+      id: string,
+      house: { x: number; y: number; rows: number; cols: number; doorCol: number; chimneys?: readonly number[] },
+      color: number,
+      intensity: number,
+    ) => {
+      const doorX = house.x + house.doorCol * tile + tile / 2;
+      const doorY = house.y + (house.rows - 1) * tile + tile / 2;
+      this.lightingSystem.upsertStaticLight({
+        id: `${id}:door`,
+        x: doorX,
+        y: doorY + 10,
+        radius: house.cols > 10 ? 245 : 210,
+        color,
+        intensity,
+        flicker: 0.06,
+        verticalScale: 0.62,
+      });
+
+      this.lightingSystem.upsertStaticLight({
+        id: `${id}:window`,
+        x: house.x + Math.round(house.cols * 0.68) * tile,
+        y: house.y + Math.round(house.rows * 0.52) * tile,
+        radius: house.cols > 10 ? 150 : 120,
+        color,
+        intensity: intensity * 0.55,
+        flicker: 0.04,
+        verticalScale: 0.7,
+      });
+
+      for (const chimneyCol of house.chimneys ?? []) {
+        this.lightingSystem.upsertStaticLight({
+          id: `${id}:chimney:${chimneyCol}`,
+          x: house.x + chimneyCol * tile + tile / 2,
+          y: house.y + tile,
+          radius: 110,
+          color: 0xff9f66,
+          intensity: 0.32,
+          flicker: 0.12,
+          verticalScale: 0.75,
+          coreScale: 0.55,
+        });
+      }
+    };
+
+    addHouseOccluder('player-house', VILLAGE_LAYOUT.playerHouse);
+    addHouseOccluder('mayor-house', VILLAGE_LAYOUT.mayorHouse);
+
+    addHouseLights('player-house', VILLAGE_LAYOUT.playerHouse, 0xffc46f, 0.95);
+    addHouseLights('mayor-house', VILLAGE_LAYOUT.mayorHouse, 0xffd895, 0.88);
+
+    const nestCenter = VILLAGE_LAYOUT.nests.reduce(
+      (acc, [x, y]) => ({ x: acc.x + x, y: acc.y + y }),
+      { x: 0, y: 0 },
+    );
+    nestCenter.x /= VILLAGE_LAYOUT.nests.length;
+    nestCenter.y /= VILLAGE_LAYOUT.nests.length;
+    this.lightingSystem.upsertStaticLight({
+      id: 'chicken-yard:lantern',
+      x: nestCenter.x + 18,
+      y: nestCenter.y + 22,
+      radius: 180,
+      color: 0xffb25a,
+      intensity: 0.62,
+      flicker: 0.1,
+      verticalScale: 0.58,
+      coreScale: 0.72,
+    });
+
+    const pond = VILLAGE_LAYOUT.pond;
+    this.lightingSystem.upsertStaticLight({
+      id: 'pond:moon-glint',
+      x: pond.x + pond.cols * tile * 0.5,
+      y: pond.y + pond.rows * tile * 0.5,
+      radius: 220,
+      color: 0x84bfff,
+      intensity: 0.36,
+      flicker: 0.015,
+      verticalScale: 0.45,
+      coreScale: 0.45,
+    });
+
+    this.lightingSystem.upsertStaticLight({
+      id: 'player-house:tool-shelf',
+      x: 304,
+      y: 218,
+      radius: 105,
+      color: 0xffdfa6,
+      intensity: 0.48,
+      flicker: 0.04,
+      verticalScale: 0.75,
+    });
+  }
+
+  private getDynamicLightConfigs(): LightConfig[] {
+    const lights: LightConfig[] = [];
+
+    if (this.player?.sprite) {
+      lights.push({
+        id: 'player:lantern',
+        x: this.player.sprite.x,
+        y: this.player.sprite.y + 18,
+        radius: 165,
+        color: 0xffe2a3,
+        intensity: 0.82,
+        flicker: 0.035,
+        verticalScale: 0.82,
+        coreScale: 0.62,
+      });
     }
 
-    // ── Drop items: update hints + prune gone items ───────────────────────
-    if (this.player) {
-      const px = this.player.sprite.x;
-      const py = this.player.sprite.y;
-      let pruned = false;
-      for (const drop of this.drops) {
-        if (drop.gone) { pruned = true; continue; }
-        drop.updateHint(px, py);
-      }
-      if (pruned) {
-        for (const drop of this.drops) {
-          if (drop.gone) this.unregisterDropState(drop);
-        }
-        const activeDrops = this.drops.filter((d) => !d.gone);
-        this.drops.splice(0, this.drops.length, ...activeDrops);
-      }
+    this.allNpcs().forEach((npc, index) => {
+      if (!npc?.sprite) return;
+      lights.push({
+        id: `npc:${npc.name}`,
+        x: npc.sprite.x,
+        y: npc.sprite.y + 16,
+        radius: 105,
+        color: index % 2 === 0 ? 0xbcecff : 0xd7ffc2,
+        intensity: 0.34,
+        flicker: 0.018,
+        verticalScale: 0.78,
+        coreScale: 0.55,
+      });
+    });
 
-      // ── Beds: update proximity hints + night bob ────────────────────────
-      for (const bed of this.beds) {
-        bed.update(px, py);
-      }
+    if (this.remotePlayer?.sprite) {
+      lights.push({
+        id: 'remote-player:lantern',
+        x: this.remotePlayer.sprite.x,
+        y: this.remotePlayer.sprite.y + 18,
+        radius: 135,
+        color: 0x9fc7ff,
+        intensity: 0.48,
+        flicker: 0.025,
+        verticalScale: 0.8,
+        coreScale: 0.58,
+      });
+    }
 
-      // ── SleepManager: natural morning reset ────────────────────────────
-      // When day arrives while local player is sleeping, wake them up
-      if (this.sleepManager?.localSleeping && !this.dayCycle.isNight()) {
-        this.sleepManager.onMorning();
-      }
+    return lights;
+  }
+
+  private registerBedLight(bed: Bed, id: string): void {
+    const color =
+      bed.color === 'blue' ? 0x9ec8ff :
+      bed.color === 'green' ? 0xafffc5 :
+      0xffa9d2;
+    this.lightingSystem?.upsertStaticLight({
+      id: `bed:${id}`,
+      x: bed.worldX,
+      y: bed.worldY + 4,
+      radius: 95,
+      color,
+      intensity: 0.32,
+      flicker: 0.025,
+      verticalScale: 0.72,
+      coreScale: 0.52,
+    });
+  }
+
+  private registerNestLight(nest: NestView): void {
+    this.lightingSystem?.upsertStaticLight({
+      id: `nest:${nest.id}`,
+      x: nest.x,
+      y: nest.y + 6,
+      radius: 78,
+      color: 0xffcc78,
+      intensity: 0.28,
+      flicker: 0.07,
+      verticalScale: 0.58,
+      coreScale: 0.5,
+    });
+  }
+
+  private refreshNestLights(): void {
+    for (const nest of this.nests) {
+      if (!nest.gone) this.registerNestLight(nest);
     }
   }
 
-  // ── Tool pickups ───────────────────────────────────────────────────────────
+  private registerChestLight(chest: Pick<GameChest, 'id' | 'x' | 'y'>): void {
+    this.lightingSystem?.upsertStaticLight({
+      id: `chest:${chest.id}`,
+      x: chest.x,
+      y: chest.y,
+      radius: 115,
+      color: 0xffe071,
+      intensity: 0.55,
+      flicker: 0.11,
+      verticalScale: 0.66,
+      coreScale: 0.58,
+    });
+  }
+
+  private registerTreeOccluder(tree: TreeView): void {
+    this.lightingSystem?.upsertSilhouetteOccluder({
+      id: `tree:${tree.id}`,
+      x: tree.worldX,
+      y: tree.worldY,
+      textureKey: () => tree.getShadowTextureKey(),
+      originX: 0.5,
+      originY: 1,
+      scaleX: 1,
+      scaleY: 1,
+      strength: 0.42,
+      shadowDistance: 86,
+      depth: () => tree.worldY + 4,
+      isActive: () => !tree.isChopped(),
+    });
+    this.lightingSystem?.upsertResponsiveSprite({
+      id: `tree-light:${tree.id}`,
+      x: tree.worldX,
+      y: tree.worldY,
+      textureKey: () => tree.getShadowTextureKey(),
+      originX: 0.5,
+      originY: 1,
+      scaleX: 1,
+      scaleY: 1,
+      strength: 0.24,
+      shadeStrength: 0.16,
+      depth: () => tree.worldY + 111,
+      isActive: () => !tree.isChopped(),
+    });
+  }
+
+  // Tool pickups
 
   /** Remove drop items whose itemId the player already owns (called on game-ready). */
   removeWorldItemsByIds(ownedItemIds: string[]): void {
@@ -915,7 +1200,7 @@ export class GameScene extends Phaser.Scene {
    * to hide ones the player already picked up.
    */
   private spawnToolPickups(): void {
-    // House-1 at (80,80), 10×6 tiles (T=32).  Interior: x:112–368, y:112–256.
+    // House-1 at (80,80), 10 tiles (T=32). Interior: x:112 68, y:112 56.
     // Tool pickup positions come from the shared village layout.
     const TOOL_POSITIONS: [number, number][] = [...VILLAGE_LAYOUT.toolPickups];
 
@@ -927,10 +1212,10 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── Beds ───────────────────────────────────────────────────────────────────
+  // Beds
   /**
    * Spawn bed(s) from the shared village layout.
-   * House-1 at (80,80), interior: x:112–368, y:112–256.
+    * House-1 at (80,80), interior: x:112 68, y:112 56.
    */
   private _spawnBeds(): void {
     const bedConfigs: Array<{ x: number; y: number; color: 'green' | 'blue' | 'pink' }> = [...VILLAGE_LAYOUT.beds];
@@ -946,27 +1231,27 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── Entity placement (F key while holding a 'placeable' item) ────────────
+  // Entity placement (F key while holding a 'placeable' item)
 
   private placeEntityAt(itemId: string, fx: number, fy: number): boolean {
     const def = ITEM_DEF_MAP.get(itemId);
     if (!def || def.itemType !== 'placeable') return false;
 
-    // ── Overlap check (only for solid entities: bed / nest) ──────────────────
+    // Overlap check (only for solid entities: bed / nest)
     if (def.placeEntity) {
-      const MIN_DIST = 28; // px — entities closer than this are considered overlapping
+      const MIN_DIST = 28; // px entities closer than this are considered overlapping
       const blocked =
         this.beds.some(b => Math.hypot(b.worldX - fx, b.worldY - fy) < MIN_DIST) ||
         this.nests.some(n => !n.gone && Math.hypot(n.x - fx, n.y - fy) < MIN_DIST);
       if (blocked) {
-        gameBus.emit('ui:show_message', { text: '这里已经有东西了，换个地方放置' });
+        gameBus.emit('ui:show_message', { text: 'This spot is already occupied.' });
         return false; // don't consume the item
       }
     }
 
     switch (def.placeEntity) {
       case 'bed': {
-        // 'bed_pink' → color 'pink'; 'bed_pink_flipped' → also 'pink' (same sprite key)
+        // 'bed_pink' color 'pink'; 'bed_pink_flipped' also 'pink' (same sprite key)
         const rawColor = itemId.replace('bed_', '').replace('_flipped', '');
         const color    = rawColor as BedColor;
         this.renderSyncSystem.createBed(
@@ -997,11 +1282,12 @@ export class GameScene extends Phaser.Scene {
         });
         this.nests.push(nest);
         this.registerInteractable(nest);
+        this.registerNestLight(nest);
         break;
       }
       default:
         // 'placeable' furniture without a placeEntity handler yet
-        gameBus.emit('ui:show_message', { text: `${def.label} 暂时无法放置` });
+        gameBus.emit('ui:show_message', { text: `${def.label} cannot be placed yet` });
         return false; // don't consume
     }
 
@@ -1009,93 +1295,23 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  // ── World-state persistence ────────────────────────────────────────────────
-
-  /**
-   * Capture the current positions and states of all dynamic world entities
-   * (beds, nests) into a JSON-serialisable blob for backend storage.
-   */
-  private _serializeWorld(): GameWorldState {
-    return {
-      schemaVersion: 1,
-      beds: this.beds.map(b => ({ color: b.color, x: b.worldX, y: b.worldY })),
-      nests: this.worldStateManager.getNestStates()
-        .filter(n => !n.removed)
-        .map(n => ({
-          x: n.x,
-          y: n.y,
-          state: n.state === 'has_egg' ? 'has_egg' : 'empty',
-        })),
-    };
-  }
+  // World-state persistence
 
   /**
    * Restore world entities from a saved blob (called at end of create()).
    * If `ws` is null (first play or no saved state), defaults remain.
    */
   private _loadWorldState(ws: GameWorldState | null): void {
-    if (!ws) return;
-
-    // ── Beds ──────────────────────────────────────────────────────────────────
-    if (ws.beds && ws.beds.length > 0) {
-      // Replace auto-spawned default beds with the saved positions
-      this.renderSyncSystem.clearBeds(this.beds);
-      for (const { color, x, y } of ws.beds) {
-        this.renderSyncSystem.createBed(
-          x,
-          y,
-          color as BedColor,
-          this.beds,
-          this.sleepManager,
-          this.dayCycle,
-        );
-      }
-    }
-
-    // ── Nests ─────────────────────────────────────────────────────────────────
-    if (ws.nests && ws.nests.length > 0) {
-      const THRESHOLD    = 24; // px — proximity to match saved nest to default nest
-
-      for (const saved of ws.nests) {
-        // Try to match a default (already spawned) nest by proximity
-        const match = this.nests.find(n =>
-          !n.gone &&
-          Math.abs(n.x - saved.x) < THRESHOLD &&
-          Math.abs(n.y - saved.y) < THRESHOLD,
-        );
-
-        if (match) {
-          // Default nest found — restore egg state
-          if (saved.state === 'has_egg') this.nestStateSystem.restoreEgg(match.id, this.time.now);
-        } else {
-          // No matching default nest → this was a player-placed nest; respawn it
-          const nest = this.renderSyncSystem.createNest(this.nextNestId(), saved.x, saved.y, this.nests, {
-            getState: (id) => this.worldStateManager.getNestState(id),
-            onInteract: (id) => this.nestStateSystem.handleInteract(id),
-          });
-          this.nestStateSystem.registerNest(nest, {
-            id: nest.id,
-            x: saved.x,
-            y: saved.y,
-            state: 'empty',
-            occupiedByChickenId: null,
-            hasEgg: false,
-            hatchAt: null,
-            laidAt: null,
-            removed: false,
-          });
-          if (saved.state === 'has_egg') this.nestStateSystem.restoreEgg(nest.id, this.time.now);
-        }
-      }
-    }
+    this.savingSystem.loadWorldState(ws);
+    this.refreshNestLights();
   }
 
-  // ── Chickens + Nests ───────────────────────────────────────────────────────
+  // Chickens + Nests
   private createChickens(): void {
     this.chickenGroup = this.physics.add.group();
 
     // Nest positions come from the shared village layout.
-    //   x: 720–784 (< pond x=800), y: 590 (< pond y=620)
+    // x: 720 84 (< pond x=800), y: 590 (< pond y=620)
     const NEST_POSITIONS: [number, number][] = [...VILLAGE_LAYOUT.nests];
     this.nests = NEST_POSITIONS.map(([nx, ny]) => {
       const nest = this.renderSyncSystem.createNest(this.nextNestId(), nx, ny, this.nests, {
@@ -1113,6 +1329,7 @@ export class GameScene extends Phaser.Scene {
         laidAt: null,
         removed: false,
       });
+      this.registerNestLight(nest);
       return nest;
     });
 
@@ -1133,6 +1350,7 @@ export class GameScene extends Phaser.Scene {
     for (let i = this.nests.length - 1; i >= 0; i--) {
       const nest = this.nests[i];
       if (nest.gone) {
+        this.lightingSystem?.removeStaticLight(`nest:${nest.id}`);
         this.unregisterInteractable(nest);
         this.unregisterRuntimeObject(nest);
         this.nests.splice(i, 1);
@@ -1140,18 +1358,18 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── Tree spawning ──────────────────────────────────────────────────────────
+  // Tree spawning
   /**
    * Place the initial set of trees from the shared village layout.
    * Trees are registered as Interactables so F-key harvesting works.
    */
   private spawnInitialTrees(): void {
-    // ── Town tree layout (world 1280×960, island x:96–1184, y:96–864) ────────
+    // Town tree layout (world 1280 60, island x:96 184, y:96 64)
     //
     //   Water border  : x<128 or x>1152, y<128 or y>832
-    //   House 1       : x:80–400,   y:80–272
-    //   House 2/manor : x:560–1008, y:80–336
-    //   Pond          : x:800–896,  y:620–684
+    // House 1 : x:80 00, y:80 72
+    // House 2/manor : x:560 008, y:80 36
+    // Pond : x:800 96, y:620 84
     //
     const POSITIONS: [number, number][] = [...VILLAGE_LAYOUT.trees.positions];
     const DEFAULT_STAGES: TreeGrowthStage[] = [...VILLAGE_LAYOUT.trees.stages];
@@ -1166,7 +1384,7 @@ export class GameScene extends Phaser.Scene {
       const id    = `tree-${i}`;
       const saved = savedTreeMap.get(id);
       const stage     = saved?.stage    ?? DEFAULT_STAGES[i];
-      const hasFruit  = saved?.hasFruit ?? (stage === 'C');   // default: C → has fruit
+      const hasFruit  = saved?.hasFruit ?? (stage === 'C'); // default: C has fruit
 
       const nextStageAt = stage === 'A'
         ? this.time.now + 60_000
@@ -1196,18 +1414,19 @@ export class GameScene extends Phaser.Scene {
         respawnAt: null,
         meta: {},
       });
+      this.registerTreeOccluder(tree);
       // Register in SpatialIndex for O(1) nearest-tree queries
       if (!tree.isChopped()) this.spatialIndex.insert({ id: tree.id, wx: x, wy: y, ref: tree });
     });
   }
 
-  // ── Bush spawning ──────────────────────────────────────────────────────────
+  // Bush spawning
   private spawnInitialBushes(): void {
-    // ── Raspberry bush positions ──────────────────────────────────────────────
-    //  All placed on open grass — verified clear of houses, pond, and water border.
-    //   House 1: x:80–400, y:80–272  → front yard below y=272 only
-    //   House 2: x:560–1008, y:80–336 → south side below y=336 only
-    //   Pond: x:800–896, y:620–684   → bushes placed outside this rectangle
+    // Raspberry bush positions
+    // All placed on open grass verified clear of houses, pond, and water border.
+    // House 1: x:80 00, y:80 72 front yard below y=272 only
+    // House 2: x:560 008, y:80 36 south side below y=336 only
+    // Pond: x:800 96, y:620 84 bushes placed outside this rectangle
     const POSITIONS: [number, number][] = [...VILLAGE_LAYOUT.berryBushes];
     POSITIONS.forEach(([x, y], i) => {
       const bush = new RaspberryBush(this, x, y, `bush-${i}`, (d) => {
@@ -1219,7 +1438,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ── Static world decorations ──────────────────────────────────────────────
+  // Static world decorations
   /**
    * Place flowers, rocks and decorative (non-berry) bushes that give the
    * island a lived-in village feel.  All purely visual except rocks, which
@@ -1228,24 +1447,24 @@ export class GameScene extends Phaser.Scene {
   private spawnDecorations(): void {
     const ctx: WorldCtx = { scene: this, obstacles: this.obstacles };
 
-    // ── Flowers (no collision, purely visual) ─────────────────────────────────
-    //  Rules: on grass only — not on water border, not inside any building,
+    // Flowers (no collision, purely visual)
+    // Rules: on grass only not on water border, not inside any building,
     //         not on the pond, not inside a forest cluster.
     //
-    //  House 1: x:80–400, y:80–272
-    //  House 2: x:560–1008, y:80–336
-    //  Pond:    x:800–896, y:620–684
+    // House 1: x:80 00, y:80 72
+    // House 2: x:560 008, y:80 36
+    // Pond: x:800 96, y:620 84
     //  Water border: x<128 or x>1152, y<128 or y>832
     const FLOWERS: [number, number, 1|2|3][] = [...VILLAGE_LAYOUT.flowers];
     FLOWERS.forEach(([x, y, v]) => createFlower(ctx, x, y, v));
 
-    // ── Rocks (small collision block) ─────────────────────────────────────────
-    //  Natural landscape accents — forest edges and path borders only.
+    // Rocks (small collision block)
+    // Natural landscape accents forest edges and path borders only.
     //  Verified clear of all buildings and pond.
     const ROCKS: [number, number][] = [...VILLAGE_LAYOUT.rocks];
     ROCKS.forEach(([x, y]) => createRock(ctx, x, y));
 
-    // ── Decorative hedge-bushes (obstacle, no berries) ────────────────────────
+    // Decorative hedge-bushes (obstacle, no berries)
     //  Placed just outside house walls as garden hedges.
     //  x/y chosen so they sit on the grass strip adjacent to each house,
     //  never on the house tiles themselves.
@@ -1253,9 +1472,9 @@ export class GameScene extends Phaser.Scene {
     DECOR_BUSHES.forEach(([x, y]) => createDecorBush(ctx, x, y));
   }
 
-  // ── Interaction triggers (called from React keydown handler) ─────────────
+  // Interaction triggers (called from React keydown handler)
   /**
-   * Enter key / Talk button — open chat with the closest NPC within range.
+    * Enter key / Talk button open chat with the closest NPC within range.
    * If no NPC is near, fires a system message instead of opening an empty chat.
    */
   triggerInteract(initialValue: string = ''): void {
@@ -1263,12 +1482,10 @@ export class GameScene extends Phaser.Scene {
     const px = this.player.sprite.x;
     const py = this.player.sprite.y;
     const target = this.findNearestNpc(px, py, 220);   // ~7 tiles
-    if (!target) {
-      gameBus.emit('ui:show_message', { text: '附近没有人可以说话。' });
-      return;
+    if (target) {
+      this.npcDirectorSystem?.pauseNpc(target.name, this.dayCycle.gameTick, 10, 'player_interaction');
     }
-    this.npcThinkSystem?.pauseNpc(target.name, this.dayCycle.gameTick, 10, 'player_interaction');
-    gameBus.emit('npc:interact', { npcName: target.name, initialValue });
+    gameBus.emit('npc:interact', { npcName: target?.name ?? '附近', initialValue });
   }
 
   /** Closest NPC name to player within radius. Used by React UI for the button label. */
@@ -1278,12 +1495,13 @@ export class GameScene extends Phaser.Scene {
     return n?.name ?? null;
   }
 
-  /** Space key — use current tool: axe→chop, scythe→till, water→irrigate, seed→plant. */
+  /** Space key use current tool: axe , scythe l, water igate, seed nt. */
   triggerAction(): void {
     this.worldFacade.triggerToolAction();
     if (this.player?.currentTool !== 'axe') {
       const heldItemId = (this.player as any).heldItemId as string | undefined;
-      this.farmSystem?.handleToolUse(
+      this.actorActionService?.useToolAt(
+        'player',
         this.player.sprite.x,
         this.player.sprite.y,
         this.player.currentTool,
@@ -1322,10 +1540,10 @@ export class GameScene extends Phaser.Scene {
     closest?.chop();
   }
 
-  // ── Public API (called from React) ────────────────────────────────────────
+  // Public API (called from React)
   setPlayerTool(tool: ToolType): void {
     if (!this.player) return;   // guard: create() not yet complete
-    console.log('[GameScene] setPlayerTool →', tool);
+    console.log('[GameScene] setPlayerTool', tool);
     this.player.setTool(tool);
   }
 
@@ -1334,21 +1552,7 @@ export class GameScene extends Phaser.Scene {
    * Persists: player position/facing/gameTick + all tree states.
    */
   getGameState(): IdleGameState {
-    const ps = this.player.getState();
-    const facing = (['down', 'up', 'left', 'right'] as FacingDirection[]).includes(
-      ps.facing as FacingDirection
-    ) ? ps.facing as FacingDirection : 'down' as FacingDirection;
-
-    const trees: TreeSaveState[] = [...this.trees.values()].map(t => t.getState());
-
-    return {
-      x:          ps.x,
-      y:          ps.y,
-      gameTick:   this.dayCycle.gameTick,
-      facing,
-      trees,
-      worldState: this._serializeWorld(),
-    };
+    return this.savingSystem.getGameState();
   }
 
   getGameTick(): number { return this.dayCycle.gameTick; }
@@ -1363,7 +1567,7 @@ export class GameScene extends Phaser.Scene {
     if (!target) return;
     target.setThinking(thinking);
     if (thinking) {
-      this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'chat_request');
+      this.npcDirectorSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'chat_request');
     }
   }
 
@@ -1373,18 +1577,18 @@ export class GameScene extends Phaser.Scene {
     if (!target) return;
     const tick = this.dayCycle.gameTick;
     target.addMemory(text, 'player', tick);
-    // Bump relationship counters + refill social drive — both are local-only
+    // Bump relationship counters + refill social drive both are local-only
     // (not yet persisted to DB) but feed straight into the next chat prompt.
     this.npcMemorySystem?.recordPlayerChat(npcName, tick);
-    this.npcNeedsSystem?.bumpSocial(npcName, tick, 25);
+    this.npcDirectorSystem?.bumpSocial(npcName, tick, 25);
   }
 
-  /** Familiarity score (0-100) — sent to backend in chat body so the LLM tone evolves. */
+  /** Familiarity score (0-100) sent to backend in chat body so the LLM tone evolves. */
   getNpcFamiliarity(npcName: string): number {
     return this.npcMemorySystem?.getRelationship(npcName)?.familiarity ?? 0;
   }
 
-  /** Total chat count between player and NPC — also sent to backend. */
+  /** Total chat count between player and NPC also sent to backend. */
   getNpcChatCount(npcName: string): number {
     return this.npcMemorySystem?.getRelationship(npcName)?.chatCount ?? 0;
   }
@@ -1393,8 +1597,13 @@ export class GameScene extends Phaser.Scene {
   npcReply(npcName: string, text: string): void {
     const target = this.findNpcByName(npcName);
     if (!target) return;
-    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'chat_reply');
+    this.npcDirectorSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'chat_reply');
     target.say(text, this.dayCycle.gameTick);
+  }
+
+  /** Broadcast player speech to every NPC close enough to hear it. */
+  playerSpeak(text: string): number {
+    return this.dialogueSystem?.broadcastFromPlayer(text) ?? 0;
   }
 
   /** Return the current (local-cache) memory array for a named NPC. */
@@ -1404,7 +1613,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   getNpcMindState(npcId = this.npc.name): NpcMindState | null {
-    return this.npcThinkSystem?.getMindState(npcId) ?? null;
+    return this.npcDirectorSystem?.getMindState(npcId) ?? null;
   }
 
   /** Wire the auth-token provider into the NPC (called by usePhaserBoot on game:ready). */
@@ -1419,23 +1628,23 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Seed the NPC's local memory cache with entries fetched from the backend.
-   * Always appends the built-in location memory so 老李 knows where the room is.
+    * Always appends the built-in location memory so knows where the room is.
    */
   loadNpcMemories(npcName: string, entries: NpcMemoryEntry[]): void {
     const target = this.findNpcByName(npcName);
     if (!target) return;
-    // Only inject the built-in house-location memory for the main NPC (老李).
+    // Only inject the built-in house-location memory for the main NPC ( .
     if (target === this.npc) {
       const locationMemory: NpcMemoryEntry = {
         id:           'builtin-house-location',
         gameTick:     0,
-        text:         '我知道地图右边有一间木屋，那是我和玩家共同的房间。' +
-                      '木屋大门入口坐标约(502, 336)，房间内部中心坐标约(550, 240)。' +
-                      '当玩家说"去房间里"时，我应该回复我要去，然后去房间。' +
-                      '当玩家说"出来找我"时，我应该出来到玩家身边。',
+        text:         'I know there is a wooden house on the right. The door is around (502, 336), and the room center is around (550, 240). When the player asks me to go inside, I should go to the room. When the player asks me to come out, I should return to the player.',
+
+
+
         source:       'event',
         importance:   9,
-        keywords:     ['房间', '木屋', '大门', '室内', '里面', '进去', '出来', '找我'],
+        keywords:     ['room', 'wooden house', 'door', 'inside', 'enter', 'come out', 'find me'],
         lastAccessed: 0,
       };
       target.loadMemories([locationMemory, ...entries]);
@@ -1444,7 +1653,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ── NPC action execution (called from React after player message / SSE) ────
+  // NPC action execution (called from React after player message / SSE)
 
   /**
    * Execute a sequence of NpcActions on a named NPC.
@@ -1453,7 +1662,7 @@ export class GameScene extends Phaser.Scene {
   executeNpcActions(npcName: string, actions: import('./types').NpcAction[]): void {
     const target = this.findNpcByName(npcName);
     if (!target) return;
-    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'external_action_queue');
+    this.npcDirectorSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 12, 'external_action_queue');
     this.actionExecutor.execute(target, actions, this.dayCycle.gameTick);
   }
 
@@ -1468,7 +1677,7 @@ export class GameScene extends Phaser.Scene {
   /** Resume player control after chat input is closed. */
   resumeInput(): void { this._chatOpen = false; }
 
-  // ── Interactable registry ─────────────────────────────────────────────────
+  // Interactable registry
   registerInteractable(obj: Interactable): void {
     if (!this.interactables.includes(obj)) this.interactables.push(obj);
   }
@@ -1479,7 +1688,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * F key — universal INTERACT:
+    * F key universal INTERACT
    * 1. Harvest ready farm crop (standing on/near one)
    * 2. Pick up nearest DropItem within range
    * 3. Open chests / collect nest eggs (Interactable registry)
@@ -1488,7 +1697,7 @@ export class GameScene extends Phaser.Scene {
     this.worldFacade.triggerPrimaryInteraction();
   }
 
-  // ── Q-drop ────────────────────────────────────────────────────────────────
+  // Q-drop
   /**
    * Drop the currently held item one step in front of the player as a DropItem.
    * Consumes 1 from inventory via onConsumeItem callback.
@@ -1497,15 +1706,17 @@ export class GameScene extends Phaser.Scene {
     this.worldFacade.dropHeldItem();
   }
 
-  // ── Chest management ──────────────────────────────────────────────────────
+  // Chest management
   /** Load saved chests on game boot. */
   loadChests(chests: GameChest[]): void {
     this.renderSyncSystem.loadChests(chests);
+    chests.forEach((chest) => this.registerChestLight(chest));
   }
 
   /** Add a single chest to the scene (e.g. from SSE spawn event). */
   addChest(data: GameChest): void {
     this.renderSyncSystem.addChest(data);
+    this.registerChestLight(data);
   }
 
   /**
@@ -1550,10 +1761,11 @@ export class GameScene extends Phaser.Scene {
   /** Remove a chest from the scene after it has been opened. */
   removeChest(id: string): void {
     this.renderSyncSystem.removeChest(id);
+    this.lightingSystem?.removeStaticLight(`chest:${id}`);
   }
 
 
-  // ── Public methods for NPC agent system ───────────────────────────────────
+  // Public methods for NPC agent system
 
   /**
    * Spawn a WorldItem at the given world position.
@@ -1585,7 +1797,7 @@ export class GameScene extends Phaser.Scene {
   makeNpcSay(npcName: string, text: string): void {
     const target = this.findNpcByName(npcName);
     if (!target) return;
-    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'async_speech');
+    this.npcDirectorSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 8, 'async_speech');
     target.say(text, this.dayCycle.gameTick);
   }
 
@@ -1603,18 +1815,47 @@ export class GameScene extends Phaser.Scene {
     return report;
   }
 
+  getPerceptionContext(npcName?: string): Record<string, unknown> | null {
+    const target = npcName ? this.findNpcByName(npcName) : this.npc;
+    if (!target || !this.perceptionSystem) return null;
+    const perception = this.perceptionSystem.perceiveEntity(target.name);
+    const mind = this.worldStateManager.getNpcMindState(target.name);
+    const agentWorld = this.agentWorldModel?.buildContext(target.name, mind) ?? null;
+    return {
+      npcId: target.name,
+      gameTick: this.dayCycle?.gameTick ?? 0,
+      time: this.dayCycle?.getDateTimeStr?.() ?? this.dayCycle?.getTimeStr?.() ?? '',
+      self: perception.self,
+      summary: perception.summary,
+      nearest: perception.nearest,
+      visibleObjects: perception.visibleObjects.slice(0, 20),
+      visibleDrops: perception.visibleDrops.slice(0, 20),
+      visibleEntities: perception.visibleEntities.slice(0, 12),
+      visibleCrops: perception.visibleCrops.slice(0, 20),
+      landmarks: perception.landmarks.slice(0, 12),
+      currentIntent: mind?.currentIntent ?? null,
+      recentMemories: Object.values(mind?.recentMemories ?? {}).slice(-20),
+      knownLandmarks: Object.values(mind?.knownLandmarks ?? {}).slice(-20),
+      knowledge: serializeNpcKnowledgeForPrompt(),
+      needs: mind?.needs ?? null,
+      schedule: mind?.schedule ?? null,
+      relationships: mind?.relationships ?? {},
+      agentWorld,
+    };
+  }
+
   /**
    * Resume or cancel the NPC's queued actions after an ask_confirm dialog.
    */
   confirmNpcAction(npcName: string, confirmed: boolean): void {
     const target = this.findNpcByName(npcName);
     if (!target) return;
-    this.npcThinkSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 4, 'confirm_resolution');
+    this.npcDirectorSystem?.pauseNpc(npcName, this.dayCycle.gameTick, 4, 'confirm_resolution');
     target.respondToConfirm(confirmed);
   }
 
   /**
-   * Make the NPC chop a tree by ID — called from the onNpcChopTree callback
+    * Make the NPC chop a tree by ID called from the onNpcChopTree callback
    * (fallback path when worldCtx is unavailable).
    */
   chopTreeById(id: string): void {
@@ -1748,7 +1989,7 @@ export class GameScene extends Phaser.Scene {
       hostX: this.player?.sprite.x,
       hostY: this.player?.sprite.y,
       hostDisplayName,
-      // Sync game clock — guest will snap to host's gameTick on join
+      // Sync game clock guest will snap to host's gameTick on join
       gameTick: this.dayCycle?.gameTick,
     };
   }
@@ -1812,7 +2053,61 @@ export class GameScene extends Phaser.Scene {
     this.worldFacade.applyWorldSnapshot(snapshot);
   }
 
-  // ── WorldContext implementation ────────────────────────────────────────────
+  // WorldContext implementation
+
+  findFarmTarget(
+    action: FarmActionKind,
+    x: number,
+    y: number,
+    maxRadiusCells = 10,
+    actorId?: string,
+  ): FarmActionTarget | null {
+    return this.actorActionService?.findFarmTarget(action, x, y, maxRadiusCells, actorId) ?? null;
+  }
+
+  performFarmAction(
+    actorId: string,
+    action: FarmActionKind,
+    target: Pick<FarmActionTarget, 'tx' | 'ty' | 'cropId'>,
+    itemId?: string,
+  ): boolean {
+    const result = this.actorActionService.performFarmAction(actorId, action, target, itemId);
+    if (actorId !== 'player') {
+      this.npcMemorySystem?.recordActionResult(actorId, this.dayCycle?.gameTick ?? 0, {
+        status: result.ok ? 'success' : 'failed',
+        actionType: `farm_${action}`,
+        reason: result.reason,
+        targetX: target.tx * 32 + 16,
+        targetY: target.ty * 32 + 16,
+      });
+    }
+    return result.ok;
+  }
+
+  executeKnowledgeSkill(
+    npcName: string,
+    skillId: string,
+    origin: { x: number; y: number },
+    navigate: (x: number, y: number, onArrive?: () => void) => void,
+    gameTick: number,
+  ): boolean {
+    const ok = this.actorActionService.executeKnowledgeSkill({
+      actorId: npcName,
+      skillId,
+      originX: origin.x,
+      originY: origin.y,
+      gameTick,
+      navigate,
+    });
+    this.npcMemorySystem?.recordActionResult(npcName, gameTick, {
+      status: ok ? 'success' : 'failed',
+      actionType: `skill_${skillId}`,
+      reason: ok ? undefined : 'skill_target_not_found',
+      x: origin.x,
+      y: origin.y,
+    });
+    return ok;
+  }
 
   findNearestTree(x: number, y: number): { id: string; x: number; y: number } | null {
     // Use SpatialIndex for O(1)-amortised query instead of O(n) full scan
@@ -1878,7 +2173,7 @@ export class GameScene extends Phaser.Scene {
     gameBus.emit('npc:drop_item', { npcName, itemId, qty: 1 });
   }
 
-  // ── Command system ─────────────────────────────────────────────────────────
+  // Command system
 
   /**
    * Parse and execute a slash command (e.g. "/weather rain").
@@ -1889,11 +2184,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setAgentBrainEnabled(enabled: boolean): void {
-    this.agentBrainEnabled = enabled;
-    this.npc?.setBrainEnabled(enabled);
-    for (const npc of this.extraNpcs ?? []) {
-      npc.setBrainEnabled(enabled);
-    }
+    this.npcDirectorSystem?.setEnabled(enabled);
   }
 
   private setPhysicsDebug(enabled: boolean): void {
@@ -1906,10 +2197,10 @@ export class GameScene extends Phaser.Scene {
       world.defaults.debugShowBody         = true;
       world.defaults.debugShowStaticBody   = true;
       world.defaults.debugShowVelocity     = false;
-      world.defaults.bodyDebugColor        = 0x2ee6a6;   // cyan  — dynamic
-      world.defaults.staticBodyDebugColor  = 0xff4d6d;   // pink  — static/wall
+      world.defaults.bodyDebugColor        = 0x2ee6a6; // cyan dynamic
+      world.defaults.staticBodyDebugColor  = 0xff4d6d; // pink static/wall
 
-      // ⚠️ Phaser sets body.debugShowBody at CREATION time from world.defaults.
+      // Phaser sets body.debugShowBody at CREATION time from world.defaults.
       // Bodies created while debug=false have debugShowBody=false permanently
       // unless we patch them all here.
       world.bodies.iterate((body: Phaser.Physics.Arcade.Body) => {
@@ -1942,19 +2233,19 @@ export class GameScene extends Phaser.Scene {
     // /weather <rain|clear>
     this.commands.register(
       'weather',
-      'set weather — rain | clear',
+      'set weather: rain | clear',
       (args) => {
         const w = args[0]?.toLowerCase();
-        if (w === 'rain')  { this.weather.setWeather('rain');  return '🌧  天气: 下雨'; }
-        if (w === 'clear') { this.weather.setWeather('clear'); return '☀️  天气: 晴天'; }
-        return `用法: /weather rain | /weather clear`;
+        if (w === 'rain')  { this.weather.setWeather('rain');  return 'Weather set to rain'; }
+        if (w === 'clear') { this.weather.setWeather('clear'); return 'Weather set to clear'; }
+        return `Usage: /weather rain | /weather clear`;
       },
     );
 
     // /time set <0-1439>
     this.commands.register(
       'time',
-      'set in-game time — /time set <0-1439>',
+      'set in-game time: /time set <0-1439>',
       (args) => {
         if (args[0] === 'set') {
           const mins = parseInt(args[1] ?? '');
@@ -1962,67 +2253,87 @@ export class GameScene extends Phaser.Scene {
             this.dayCycle.setTimeOfDay(mins);
             const h = Math.floor(mins / 60).toString().padStart(2, '0');
             const m = (mins % 60).toString().padStart(2, '0');
-            return `🕐  时间跳转到 ${h}:${m}`;
+            return `Time set to ${h}:${m}`;
           }
         }
-        return `用法: /time set <0-1439>  例: /time set 480`;
+        return `Usage: /time set <0-1439>, e.g. /time set 480`;
       },
     );
 
     this.commands.register(
       'debug',
-      'toggle physics debug — /debug on | /debug off',
+      'toggle physics debug: /debug on | /debug off',
       (args) => {
         const mode = args[0]?.toLowerCase();
         if (mode === 'on') {
           this.setPhysicsDebug(true);
-          return '碰撞调试已开启';
+          return 'Physics debug on';
         }
         if (mode === 'off') {
           this.setPhysicsDebug(false);
-          return '碰撞调试已关闭';
+          return 'Physics debug off';
         }
-        return `当前状态: ${this.physicsDebugEnabled ? 'on' : 'off'}。用法: /debug on | /debug off`;
+        return `Physics debug: ${this.physicsDebugEnabled ? 'on' : 'off'}; usage: /debug on | /debug off`;
+      },
+    );
+
+    this.commands.register(
+      'shadow',
+      'toggle lighting and shadows: /shadow on | off | status',
+      (args) => {
+        const mode = args[0]?.toLowerCase();
+        if (mode === 'on') {
+          this.lightingSystem?.setEnabled(true);
+          return 'Shadow lighting on';
+        }
+        if (mode === 'off') {
+          this.lightingSystem?.setEnabled(false);
+          return 'Shadow lighting off';
+        }
+        if (mode === 'status' || !mode) {
+          return `Shadow lighting: ${this.lightingSystem?.isEnabled() ? 'on' : 'off'}`;
+        }
+        return 'Usage: /shadow on | /shadow off | /shadow status';
       },
     );
 
     this.commands.register(
       'agent',
-      'control NPC autonomy — /agent brain stop | start | status',
+      'control NPC autonomy: /agent brain stop | start | status',
       (args) => {
         const scope = args[0]?.toLowerCase();
         const mode = args[1]?.toLowerCase();
         if (scope !== 'brain') {
-          return '用法: /agent brain stop | /agent brain start | /agent brain status';
+          return 'Usage: /agent brain stop | /agent brain start | /agent brain status';
         }
         if (mode === 'stop' || mode === 'off') {
           this.setAgentBrainEnabled(false);
-          return 'Agent brain 已停止。NPC 不会再自主思考、日程行动或需求驱动。';
+          return 'Agent brain is off. NPC autonomous thinking is paused.';
         }
         if (mode === 'start' || mode === 'on') {
           this.setAgentBrainEnabled(true);
-          return 'Agent brain 已开启。NPC 将恢复自主思考。';
+          return 'Agent brain is on. NPC autonomous thinking resumed.';
         }
         if (mode === 'status' || !mode) {
-          return `Agent brain: ${this.agentBrainEnabled ? 'on' : 'off'}`;
+          return `Agent brain: ${this.npcDirectorSystem?.isEnabled() ? 'on' : 'off'}`;
         }
-        return '用法: /agent brain stop | /agent brain start | /agent brain status';
+        return 'Usage: /agent brain stop | /agent brain start | /agent brain status';
       },
     );
 
     // /help
-    this.commands.register('help', '查看所有可用命令', () => this.commands.listHelp());
+    this.commands.register('help', 'show available commands', () => this.commands.listHelp());
 
     // /getInventory <name>
     this.commands.register(
       'getInventory',
-      '查看NPC背包 — /getInventory <名字>',
+      'show NPC inventory: /getInventory <name>',
       (args) => {
         const name = args.join(' ').trim() || NPC_NAME;
         const inv = this.npc.getInventory(name);
         const entries = Object.entries(inv);
-        if (entries.length === 0) return `${name} 的背包是空的。`;
-        return `${name} 的背包：\n${entries.map(([k, v]) => `  ${k} × ${v}`).join('\n')}`;
+        if (entries.length === 0) return `${name} inventory is empty`;
+        return `${name} inventory:\n${entries.map(([k, v]) => `  ${k} x${v}`).join('\n')}`;
       },
     );
   }

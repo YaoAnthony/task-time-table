@@ -17,6 +17,7 @@ const Overview = lazy(() => import('./Pages/Dashboard/component/Overview'));
 const Backpack = lazy(() => import('./Pages/Dashboard/component/Backpack'));
 const Setting = lazy(() => import('./Pages/Dashboard/component/Setting'));
 const GameSettings = lazy(() => import('./Pages/Dashboard/component/GameSettings'));
+const NPCData = lazy(() => import('./Pages/Dashboard/component/NPCData'));
 const Tasks = lazy(() => import('./Pages/Dashboard/component/Tasks'));
 const Store = lazy(() => import('./Pages/Dashboard/component/Store'));
 const SystemRouter = lazy(() => import('./Pages/Dashboard/component/SystemRouter'));
@@ -80,6 +81,7 @@ const App = () => {
                         <Route path="store" element={<Store />} />
                         <Route path="setting" element={<Setting />} />
                         <Route path="game-settings" element={<GameSettings />} />
+                        <Route path="npc-data" element={<NPCData />} />
                         <Route path="idle-game" element={<SystemIdleGame />} />
                         
                         {/* 系统路由 - 嵌套路由 */}

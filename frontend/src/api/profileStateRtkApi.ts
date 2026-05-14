@@ -59,6 +59,19 @@ type ProfileStateResponse = {
     inventory: InventoryItem[];
 };
 
+export type NpcPersonaSkill = {
+    npcName: string;
+    slug: string;
+    filename: string;
+    entryType?: 'file' | 'package';
+    mode?: string;
+    metadata: Record<string, string | number | boolean | string[]>;
+    manifest?: Record<string, unknown>;
+    content: string;
+    body: string;
+    files?: Array<{ path: string; content: string; kind?: string }>;
+};
+
 export const profileStateRtkApi = createApi({
     reducerPath: 'profileStateRtkApi',
     baseQuery: baseQueryWithReauth,
@@ -205,6 +218,7 @@ export const profileStateRtkApi = createApi({
                 playerY?:       number;
                 /** NPC's current view of the world — passed as LLM context. */
                 perception?:    string;
+                perceptionContext?: Record<string, unknown> | null;
                 /** NPC's current inventory — so LLM knows what NPC has. */
                 npcInventory?:  Record<string, number>;
                 /** Familiarity score (0-100) — feeds LLM prompt so tone evolves with relationship. */
@@ -243,6 +257,14 @@ export const profileStateRtkApi = createApi({
             query: (npcName) => `/profile/npc/memories/${encodeURIComponent(npcName)}`,
         }),
 
+        /** Fetch the backend persona skill that drives a named NPC. */
+        getNpcSkill: builder.query<
+            { skill: NpcPersonaSkill },
+            string
+        >({
+            query: (npcName) => `/profile/npc/skills/${encodeURIComponent(npcName)}`,
+        }),
+
         /** Fetch all unopened treasure chests for the current user. */
         getGameChests: builder.query<{ chests: GameChest[] }, void>({
             query: () => '/profile/game/chests',
@@ -268,6 +290,24 @@ export const profileStateRtkApi = createApi({
         >({
             query: (body) => ({
                 url:    '/profile/game/inventory/pickup',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setGameInventory(data.gameInventory));
+                } catch (_) {}
+            },
+        }),
+
+        /** Persist local game item consumption such as Q-drop or placing furniture. */
+        consumeGameItem: builder.mutation<
+            { success: boolean; gameInventory: GameInventoryItem[] },
+            { itemId: string; quantity?: number }
+        >({
+            query: (body) => ({
+                url:    '/profile/game/inventory/consume',
                 method: 'POST',
                 body,
             }),
@@ -410,10 +450,12 @@ export const {
     useNpcChatMutation,
     useNpcDispatchReturnMutation,
     useLazyGetNpcMemoriesQuery,
+    useLazyGetNpcSkillQuery,
     useLazyGetGameChestsQuery,
     useOpenChestMutation,
     // Game inventory
     usePickupGameItemMutation,
+    useConsumeGameItemMutation,
     useLazyGetGameInventoryQuery,
     // Farm
     useTillFarmTileMutation,

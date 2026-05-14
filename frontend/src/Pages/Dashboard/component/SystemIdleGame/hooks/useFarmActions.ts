@@ -19,6 +19,7 @@ import {
   usePlantCropMutation,
   useHarvestCropMutation,
   usePickupGameItemMutation,
+  useConsumeGameItemMutation,
 } from '../../../../../api/profileStateRtkApi';
 import {
   addItemToBackpack,
@@ -47,12 +48,14 @@ export function useFarmActions(
   const [plantCrop]      = usePlantCropMutation();
   const [harvestCrop]    = useHarvestCropMutation();
   const [pickupGameItem] = usePickupGameItemMutation();
+  const [consumeGameItem] = useConsumeGameItemMutation();
 
   useEffect(() => {
     const unsubs = [
 
       // ── 农田操作 ────────────────────────────────────────────────────────
-      gameBus.on('farm:action', async ({ action, tx, ty, itemId }) => {
+      gameBus.on('farm:action', async ({ action, tx, ty, itemId, actorId }) => {
+        const isPlayerActor = !actorId || actorId === 'player';
         const gameTick = sceneRef.current?.getDayCycleTick?.() ?? 0;
         const roomId   = multiplayRoomIdRef.current ?? undefined;
         try {
@@ -63,12 +66,11 @@ export function useFarmActions(
                 applyServerFarmTileUpdate(sceneRef.current, dispatch, res.farmTile as FarmTile & { tx: number; ty: number; state: string });
               }
               if (res.droppedSeed) {
-                const pos     = sceneRef.current?.getPlayerWorldPos();
                 const offsetX = (Math.random() - 0.5) * 30;
                 const offsetY = (Math.random() - 0.5) * 20 + 20;
                 sceneRef.current?.spawnWorldItem(
-                  (pos?.x ?? 0) + offsetX,
-                  (pos?.y ?? 0) + offsetY,
+                  tx * 32 + 16 + offsetX,
+                  ty * 32 + 16 + offsetY,
                   res.droppedSeed.itemId,
                 );
               }
@@ -85,7 +87,9 @@ export function useFarmActions(
 
             case 'plant':
               if (itemId) {
-                dispatch(addItemToBackpack({ itemId, quantity: -1 }));
+                if (isPlayerActor) {
+                  dispatch(addItemToBackpack({ itemId, quantity: -1 }));
+                }
                 const plantRes = await plantCrop({ tx, ty, itemId, gameTick, roomId }).unwrap();
                 if (plantRes.farmTiles) {
                   const tile = (plantRes.farmTiles as any[]).find((t: any) => t.tx === tx && t.ty === ty);
@@ -120,7 +124,7 @@ export function useFarmActions(
           }
         } catch (err) {
           console.error('[Farm] action error:', err);
-          if (action === 'plant' && itemId) {
+          if (isPlayerActor && action === 'plant' && itemId) {
             dispatch(addItemToBackpack({ itemId, quantity: 1 }));
           }
         }
@@ -140,8 +144,14 @@ export function useFarmActions(
       }),
 
       // ── 玩家消耗物品（放置 / Q 扔）→ Redux 扣减 ──────────────────────────
-      gameBus.on('player:consume_item', ({ itemId, qty }) => {
+      gameBus.on('player:consume_item', async ({ itemId, qty }) => {
         dispatch(addItemToBackpack({ itemId, quantity: -qty }));
+        try {
+          await consumeGameItem({ itemId, quantity: qty }).unwrap();
+        } catch (err) {
+          console.error('[Inventory] consume error:', err);
+          dispatch(addItemToBackpack({ itemId, quantity: qty }));
+        }
       }),
 
       // ── NPC 拾取物品 → NPC 背包 Redux 更新 ──────────────────────────────

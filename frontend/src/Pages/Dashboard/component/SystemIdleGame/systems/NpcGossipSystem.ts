@@ -17,6 +17,8 @@
 import type Phaser from 'phaser';
 import type { Npc } from '../entities/Npc';
 import { gameBus } from '../shared/EventBus';
+import type { NpcDailyActivity } from '../shared/worldStateTypes';
+import { canGossip } from './NpcBehaviorPolicy';
 
 interface NpcRegistration {
   id: string;
@@ -30,6 +32,8 @@ export interface NpcGossipSystemOptions {
   hearingRadius?: number;
   /** Probability 0..1 a nearby NPC actually chimes in. Default 0.55. */
   reactChance?: number;
+  getNpcActivity?: (npcId: string) => NpcDailyActivity | null;
+  isEnabled?: () => boolean;
 }
 
 const REACTIONS_GENERIC = [
@@ -58,15 +62,20 @@ export class NpcGossipSystem {
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly hearingRadius: number;
   private readonly reactChance: number;
+  private readonly getNpcActivity: (npcId: string) => NpcDailyActivity | null;
+  private readonly isEnabled: () => boolean;
   private readonly cooldowns = new Map<string, number>();   // npcId -> wallclock ms
+  private readonly lineCooldowns = new Map<string, number>();
   private unsub: (() => void) | null = null;
   private inGossip = false;   // re-entrancy guard
 
   constructor(opts: NpcGossipSystemOptions) {
     this.scene               = opts.scene;
     this.getNpcRegistrations = opts.getNpcRegistrations;
-    this.hearingRadius       = opts.hearingRadius ?? 280;
-    this.reactChance         = opts.reactChance ?? 0.55;
+    this.hearingRadius       = opts.hearingRadius ?? 160;
+    this.reactChance         = opts.reactChance ?? 0.18;
+    this.getNpcActivity      = opts.getNpcActivity ?? (() => null);
+    this.isEnabled           = opts.isEnabled ?? (() => true);
   }
 
   start(): void {
@@ -81,13 +90,16 @@ export class NpcGossipSystem {
     this.unsub = null;
   }
 
-  private onSpeak(speakerName: string, _text: string): void {
-    void _text;
+  private onSpeak(speakerName: string, text: string): void {
     if (this.inGossip) return;     // don't gossip about gossip
+    if (!this.isEnabled()) return;
+    const normalized = text.trim();
+    if (!normalized || normalized === '-' || normalized === '...' || normalized.length < 4) return;
 
     const registrations = this.getNpcRegistrations();
     const speaker = registrations.find(r => r.id === speakerName)?.npc;
     if (!speaker) return;
+    if (!canGossip(this.getNpcActivity(speakerName))) return;
 
     const sx = speaker.sprite.x;
     const sy = speaker.sprite.y;
@@ -99,6 +111,8 @@ export class NpcGossipSystem {
       if (!npc.sprite) continue;
       if (npc.isOnDispatch?.()) continue;
       if (npc.isThinking?.()) continue;
+      if (npc.isSpeaking?.()) continue;
+      if (!canGossip(this.getNpcActivity(id))) continue;
       const dx = npc.sprite.x - sx;
       const dy = npc.sprite.y - sy;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -115,14 +129,18 @@ export class NpcGossipSystem {
       ? listeners[0]
       : listeners[1 + Math.floor(Math.random() * (listeners.length - 1))];
 
-    // Cooldown: same NPC can't chime more than once every 8 wallclock seconds
+    // Cooldown: same NPC can't chime too often.
     const now = this.scene.time?.now ?? Date.now();
     const last = this.cooldowns.get(responder.npc.name) ?? 0;
-    if (now - last < 8000) return;
+    if (now - last < 20_000) return;
     this.cooldowns.set(responder.npc.name, now);
 
     const isClose = responder.dist < this.hearingRadius * 0.5;
-    const line = pick(isClose ? REACTIONS_GENERIC : REACTIONS_DISTANT);
+    const pool = (isClose ? REACTIONS_GENERIC : REACTIONS_DISTANT)
+      .filter(line => now - (this.lineCooldowns.get(line) ?? 0) > 30_000);
+    if (pool.length === 0) return;
+    const line = pick(pool);
+    this.lineCooldowns.set(line, now);
 
     // Delay the chime so it lands AFTER the speaker's bubble shows
     const delay = 700 + Math.floor(Math.random() * 600);

@@ -7,24 +7,26 @@ import {
     SettingOutlined,
     SlidersOutlined,
     PlaySquareOutlined,
+    DatabaseOutlined,
 } from '@ant-design/icons';
 
 export const inventoryTabs: { id: string; label: string }[] = [
-    { id: 'game', label: '农场物品' },
-    { id: 'all', label: '全部' },
-    { id: 'item', label: '道具' },
+    { id: 'game', label: '游戏背包' },
+    { id: 'all', label: '现实背包' },
+    { id: 'item', label: '现实道具' },
     { id: 'consumable', label: '消耗品' },
     { id: 'mission', label: '任务书' },
     { id: 'lottery_chance', label: '祈愿' },
 ];
 
 export const sidebarItems = [
-    { label: "主界面", path: "/dashboard/home", icon: <BarChartOutlined /> },
-    { label: "背包", path: "/dashboard/backpack", icon: <ShoppingOutlined /> },
-    { label: "系列任务", path: "/dashboard/tasks", icon: <UnorderedListOutlined /> },
-    { label: "每日任务", path: "/dashboard/daily-quests", icon: <PlaySquareOutlined /> },
-    { label: "商城", path: "/dashboard/store", icon: <ShopOutlined /> },
-    { label: "挂机培养", path: "/dashboard/idle-game", icon: <PlaySquareOutlined /> },
-    { label: "游戏设置", path: "/dashboard/game-settings", icon: <SlidersOutlined /> },
-    { label: "探索法则", path: "/dashboard/setting", icon: <SettingOutlined /> },
+    { label: '主界面', path: '/dashboard/home', icon: <BarChartOutlined /> },
+    { label: '背包', path: '/dashboard/backpack', icon: <ShoppingOutlined /> },
+    { label: '系列任务', path: '/dashboard/tasks', icon: <UnorderedListOutlined /> },
+    { label: '每日任务', path: '/dashboard/daily-quests', icon: <PlaySquareOutlined /> },
+    { label: '商城', path: '/dashboard/store', icon: <ShopOutlined /> },
+    { label: '挂机培养', path: '/dashboard/idle-game', icon: <PlaySquareOutlined /> },
+    { label: '游戏设置', path: '/dashboard/game-settings', icon: <SlidersOutlined /> },
+    { label: 'NPC data', path: '/dashboard/npc-data', icon: <DatabaseOutlined /> },
+    { label: '探索法则', path: '/dashboard/setting', icon: <SettingOutlined /> },
 ];

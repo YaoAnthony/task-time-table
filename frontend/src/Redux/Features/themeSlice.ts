@@ -2,10 +2,8 @@
 import { createSlice, PayloadAction } from "@reduxjs/toolkit"
 
 const getInitialTheme = (): "dark" | "light" => {
-  const saved = localStorage.getItem("theme")
-  if (saved === "dark" || saved === "light") return saved
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches
-  return prefersDark ? "dark" : "light"
+  localStorage.setItem("theme", "light")
+  return "light"
 }
 
 interface ThemeState {

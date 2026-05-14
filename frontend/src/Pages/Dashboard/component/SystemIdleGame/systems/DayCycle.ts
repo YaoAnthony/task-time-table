@@ -213,7 +213,7 @@ export class DayCycle {
 
   /** Returns the current in-game minute of the day (0-1439). Public so schedule systems can dispatch routines. */
   getCurrentMinute(): number {
-    return this._currentMinute();
+    return Math.floor(this._currentMinute());
   }
 
   /** Integer day count since the game epoch (2026-01-01 = day 0). */
@@ -231,7 +231,7 @@ export class DayCycle {
     hour: number; minute: number; dayOfWeek: number; dayCount: number;
   } {
     const dayCount   = this.getDayCount();
-    const totalMins  = this._currentMinute();
+    const totalMins  = Math.floor(this._currentMinute());
     const hour       = Math.floor(totalMins / 60);
     const minute     = totalMins % 60;
     const epoch      = new Date(GAME_EPOCH_YEAR, GAME_EPOCH_MONTH - 1, GAME_EPOCH_DAY);

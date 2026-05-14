@@ -104,7 +104,7 @@ const initialState: GameReduxState = {
 function rebuildInventory(hotbar: (SlotItem | null)[], backpack: (SlotItem | null)[]): GameInventoryItem[] {
   const map = new Map<string, number>();
   for (const s of [...hotbar, ...backpack]) {
-    if (!s) continue;
+    if (!s || s.quantity <= 0) continue;
     map.set(s.itemId, (map.get(s.itemId) ?? 0) + s.quantity);
   }
   return Array.from(map.entries()).map(([itemId, quantity]) => ({ itemId, quantity }));
@@ -178,6 +178,7 @@ const gameSlice = createSlice({
      */
     addItemToBackpack(state, action: PayloadAction<SlotItem>) {
       const { itemId, quantity } = action.payload;
+      if (quantity === 0) return;
 
       // 1. Stack in existing hotbar slot
       const hotbarStack = state.hotbarSlots.findIndex(s => s?.itemId === itemId);
@@ -200,6 +201,9 @@ const gameSlice = createSlice({
         state.gameInventory = rebuildInventory(state.hotbarSlots, state.backpackSlots);
         return;
       }
+
+      // Removing an item that is not present should not create a negative stack.
+      if (quantity < 0) return;
 
       // 3. First empty hotbar slot
       const hotbarEmpty = state.hotbarSlots.findIndex(s => s === null);

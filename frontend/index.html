@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
@@ -12,22 +12,15 @@
 
     <title>anypage</title>
   </head>
-  <body style="margin:0;background:#0d1117;color:#e6edf3;">
+  <body style="margin:0;background:#f5f7fb;color:#172033;">
     <div id="root" style="height:100vh;overflow:hidden;"></div>
     <script>
       (function () {
         try {
-          var saved = localStorage.getItem('theme');
-          var mode = saved === 'dark' || saved === 'light'
-            ? saved
-            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-          if (mode === 'dark') {
-            document.documentElement.classList.add('dark');
-          } else {
-            document.documentElement.classList.remove('dark');
-          }
+          localStorage.setItem('theme', 'light');
+          document.documentElement.classList.remove('dark');
           // 可选：同步浏览器 UI 颜色
-          document.documentElement.style.colorScheme = mode;
+          document.documentElement.style.colorScheme = 'light';
         } catch (_) {}
       })();
     </script>

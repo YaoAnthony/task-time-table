@@ -21,6 +21,7 @@ import type { DayCycle } from './DayCycle';
 import { WorldStateManager } from '../shared/WorldStateManager';
 import { NpcMemorySystem } from './NpcMemorySystem';
 import type { NpcDailyActivity, NpcNeeds } from '../shared/worldStateTypes';
+import { canNeedsSpeak } from './NpcBehaviorPolicy';
 
 interface NpcRegistration {
   id: string;
@@ -65,9 +66,75 @@ const SOCIAL_LINES = [
   '看见你路过我就安心了，今天过得还顺利吗？',
 ];
 
-function pick<T>(arr: T[], gameTick: number): T {
-  const idx = Math.abs(Math.floor(gameTick * 13.37)) % arr.length;
+type NeedKind = 'energy' | 'hunger' | 'social';
+
+const NPC_NEED_LINES: Record<string, Partial<Record<NeedKind, string[]>>> = {
+  '老李': {
+    hunger: [
+      '到饭点了，肚子一响，农活都得先放一放。',
+      '闻着饭香我就想回屋，吃饱了再接着干。',
+      '先垫一口吧，空着肚子下地可不成。',
+    ],
+    energy: [
+      '今天这腿有点沉，我在旁边歇一小会儿。',
+      '先让我缓口气，等会儿再去地里看看。',
+    ],
+  },
+  '王村长': {
+    hunger: [
+      '午饭时间到了，村里的安排也该暂停一下。',
+      '先吃饭，再巡村，秩序也得靠体力撑着。',
+      '我去简单吃点，下午还要看路口和池塘。',
+    ],
+    social: [
+      '正好遇见你，有件村里的安排想和你确认。',
+      '你今天的路线还顺吗？我可以帮你看看安排。',
+    ],
+  },
+  '张雪峰': {
+    hunger: [
+      '到饭点就吃饭，补资源不是偷懒。',
+      '别硬扛，先吃一口，下午效率才上得去。',
+      '普通人别拿空腹拼意志力，先把状态补回来。',
+    ],
+    energy: [
+      '先停一下，体力见底还硬冲，这选择不划算。',
+      '休息不是摆烂，是为了下一轮行动别变形。',
+    ],
+    social: [
+      '你先别闷头走，目标没说清楚，路就容易跑偏。',
+      '来，讲讲你现在卡在哪儿，我帮你拆一下。',
+    ],
+  },
+};
+
+function stableHash(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pick<T>(arr: T[], gameTick: number, seed = ''): T {
+  const idx = Math.abs(Math.floor(gameTick * 13.37) + stableHash(seed)) % arr.length;
   return arr[idx];
+}
+
+function linesFor(npcId: string, kind: NeedKind, fallback: string[]): string[] {
+  return NPC_NEED_LINES[npcId]?.[kind] ?? fallback;
+}
+
+function defaultNeedsFor(npcId: string, minute: number): NpcNeeds {
+  const seed = stableHash(npcId);
+  return {
+    ...DEFAULT_NEEDS,
+    energy:              clamp(DEFAULT_NEEDS.energy - (seed % 9)),
+    hunger:              clamp(DEFAULT_NEEDS.hunger - ((seed >> 3) % 13)),
+    social:              clamp(DEFAULT_NEEDS.social - ((seed >> 6) % 11)),
+    lastTickMinuteOfDay: minute,
+    lastUtteranceTick:   DEFAULT_NEEDS.lastUtteranceTick - (seed % 17),
+  };
 }
 
 function clamp(v: number, lo = 0, hi = 100): number {
@@ -94,8 +161,9 @@ export class NpcNeedsSystem {
     const minute = this.dayCycle.getCurrentMinute();
 
     for (const { id, npc } of this.getNpcRegistrations()) {
+      if (npc.isConversationLocked()) continue;
       const mind = this.npcMemorySystem.ensureNpcMindState(id, gameTick);
-      const needs = mind.needs ?? { ...DEFAULT_NEEDS, lastTickMinuteOfDay: minute };
+      const needs = mind.needs ?? defaultNeedsFor(id, minute);
       const activity = mind.schedule?.currentActivity ?? null;
 
       // ── Compute elapsed in-game minutes since last tick (handles wrap) ──
@@ -135,8 +203,12 @@ export class NpcNeedsSystem {
 
       // ── Threshold-driven autonomous utterance ────────────────────────────
       const realSecsSince = gameTick - needs.lastUtteranceTick;
-      if (realSecsSince > UTTERANCE_COOLDOWN_REAL_SECS && !npc.isThinking() && !npc.hasPlannedActions()) {
-        const triggered = this.maybeSpeak(npc, gameTick, energy, hunger, social);
+      if (canNeedsSpeak(activity)
+        && realSecsSince > UTTERANCE_COOLDOWN_REAL_SECS
+        && !npc.isThinking()
+        && !npc.hasPlannedActions()
+        && !npc.isNavigating()) {
+        const triggered = this.maybeSpeak(id, npc, gameTick, energy, hunger, social);
         if (triggered) {
           nextNeeds.lastUtteranceTick = gameTick;
         }
@@ -163,6 +235,7 @@ export class NpcNeedsSystem {
   }
 
   private maybeSpeak(
+    npcId: string,
     npc: Npc,
     gameTick: number,
     energy: number,
@@ -171,14 +244,14 @@ export class NpcNeedsSystem {
   ): boolean {
     // Pick the most pressing need (lowest score below threshold).
     const candidates: Array<{ score: number; lines: string[]; kind: 'energy' | 'hunger' | 'social' }> = [];
-    if (energy < THRESHOLD) candidates.push({ score: energy, lines: ENERGY_LINES, kind: 'energy' });
-    if (hunger < THRESHOLD) candidates.push({ score: hunger, lines: HUNGER_LINES, kind: 'hunger' });
-    if (social < THRESHOLD) candidates.push({ score: social, lines: SOCIAL_LINES, kind: 'social' });
+    if (energy < THRESHOLD) candidates.push({ score: energy, lines: linesFor(npcId, 'energy', ENERGY_LINES), kind: 'energy' });
+    if (hunger < THRESHOLD) candidates.push({ score: hunger, lines: linesFor(npcId, 'hunger', HUNGER_LINES), kind: 'hunger' });
+    if (social < THRESHOLD) candidates.push({ score: social, lines: linesFor(npcId, 'social', SOCIAL_LINES), kind: 'social' });
     if (candidates.length === 0) return false;
 
     candidates.sort((a, b) => a.score - b.score);
     const winner = candidates[0];
-    const line = pick(winner.lines, gameTick);
+    const line = pick(winner.lines, gameTick, `${npcId}:${winner.kind}`);
 
     npc.say(line, gameTick);
 
@@ -207,7 +280,7 @@ export class NpcNeedsSystem {
     const mind = this.npcMemorySystem.ensureNpcMindState(npcId, gameTick);
     const needs: NpcNeeds = mind.needs
       ? { ...mind.needs, social: clamp(mind.needs.social + amount) }
-      : { ...DEFAULT_NEEDS, social: clamp(55 + amount), lastTickMinuteOfDay: this.dayCycle.getCurrentMinute() };
+      : { ...defaultNeedsFor(npcId, this.dayCycle.getCurrentMinute()), social: clamp(55 + amount) };
     this.worldStateManager.patchNpcMindState(npcId, { needs });
   }
 }

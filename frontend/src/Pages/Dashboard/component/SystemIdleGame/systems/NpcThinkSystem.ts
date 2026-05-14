@@ -1,4 +1,4 @@
-import { GAME_MINS_PER_SEC, NPC_AUTONOMOUS_PAUSE_SECONDS, NPC_AUTONOMOUS_THINK_INTERVAL } from '../constants';
+import { GAME_MINS_PER_SEC, MINS_PER_DAY, NPC_AUTONOMOUS_PAUSE_SECONDS, NPC_AUTONOMOUS_THINK_INTERVAL } from '../constants';
 import type { NpcAction } from '../types';
 import type { Npc } from '../entities/Npc';
 import { WorldStateManager } from '../shared/WorldStateManager';
@@ -7,6 +7,8 @@ import { ActionExecutor } from './ActionExecutor';
 import { NpcMemorySystem } from './NpcMemorySystem';
 import type { PerceptionResult } from './WorldPerceptionSystem';
 import { PerceptionSystem } from './WorldPerceptionSystem';
+import { canRunFreeThink, canRunScheduleDrivenThink } from './NpcBehaviorPolicy';
+import type { AgentWorldContext, AgentWorldModel } from './AgentWorldModel';
 
 interface NpcRegistration {
   id: string;
@@ -23,6 +25,7 @@ export interface NpcThinkSystemOptions {
   perceptionSystem: PerceptionSystem;
   memorySystem: NpcMemorySystem;
   actionExecutor: ActionExecutor;
+  agentWorldModel?: AgentWorldModel;
   getNpcRegistrations: () => NpcRegistration[];
   getChatOpen?: () => boolean;
   thinkIntervalSeconds?: number;
@@ -40,6 +43,7 @@ export class NpcThinkSystem {
   private readonly perceptionSystem: PerceptionSystem;
   private readonly memorySystem: NpcMemorySystem;
   private readonly actionExecutor: ActionExecutor;
+  private readonly agentWorldModel?: AgentWorldModel;
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly getChatOpen: () => boolean;
   private readonly thinkIntervalSeconds: number;
@@ -50,6 +54,7 @@ export class NpcThinkSystem {
     this.perceptionSystem = options.perceptionSystem;
     this.memorySystem = options.memorySystem;
     this.actionExecutor = options.actionExecutor;
+    this.agentWorldModel = options.agentWorldModel;
     this.getNpcRegistrations = options.getNpcRegistrations;
     this.getChatOpen = options.getChatOpen ?? (() => false);
     this.thinkIntervalSeconds = options.thinkIntervalSeconds ?? NPC_AUTONOMOUS_THINK_INTERVAL;
@@ -86,7 +91,8 @@ export class NpcThinkSystem {
 
     const perception = this.perceptionSystem.perceiveEntity(npcId);
     const memory = this.memorySystem.updateFromPerception(npcId, perception, gameTick);
-    const outcome = this.buildOutcome(npcId, npc, perception, memory, gameTick);
+    const agentWorld = this.agentWorldModel?.buildContext(npcId, memory) ?? null;
+    const outcome = this.buildOutcome(npcId, npc, perception, memory, gameTick, agentWorld);
 
     this.memorySystem.setIntent(npcId, gameTick, outcome.intent);
     this.worldStateManager.patchNpcMindState(npcId, {
@@ -95,6 +101,7 @@ export class NpcThinkSystem {
       meta: {
         ...(memory.meta ?? {}),
         lastPerceptionSummary: perception.summary,
+        agentWorld,
       },
     });
 
@@ -108,9 +115,12 @@ export class NpcThinkSystem {
     if (mind.pausedUntilTick > gameTick) return false;
     if (npc.isOnDispatch()) return false;
     if (npc.isAwaitingConfirm()) return false;
+    if (npc.isConversationLocked()) return false;
     if (npc.isThinking()) return false;
     if (npc.hasPlannedActions()) return false;
     if (npc.isNavigating()) return false;
+    const activity = mind.schedule?.currentActivity ?? null;
+    if (!canRunFreeThink(activity) && !canRunScheduleDrivenThink(activity)) return false;
     return true;
   }
 
@@ -120,6 +130,7 @@ export class NpcThinkSystem {
     perception: PerceptionResult,
     memory: NpcMindState,
     gameTick: number,
+    agentWorld: AgentWorldContext | null,
   ): NpcThinkOutcome {
     if (npc.isFollowingPlayer()) {
       return {
@@ -128,6 +139,40 @@ export class NpcThinkSystem {
           reason: 'follow_mode_enabled',
           targetId: 'player',
           targetType: 'player',
+        },
+        actions: [],
+      };
+    }
+
+    const currentMinute = Math.floor(gameTick * GAME_MINS_PER_SEC) % MINS_PER_DAY;
+    const isDaylight = currentMinute >= 480 && currentMinute < 1080;
+    const hasFarmAction = agentWorld?.availableActions.some((action) => (
+      action.feasible
+      && ['harvest_crop', 'plant_crop', 'water_tile', 'till_tile'].includes(action.action)
+    )) ?? true;
+    if (isDaylight && memory.schedule?.currentActivity === 'work_farm' && hasFarmAction) {
+      return {
+        intent: {
+          kind: 'perform_skill',
+          reason: 'scheduled_farm_work',
+          targetKey: 'skill:farm_sow_wheat_day',
+          targetId: 'farm_sow_wheat_day',
+          targetType: 'knowledge_skill',
+        },
+        actions: [
+          {
+            type: 'use_skill',
+            skillId: 'farm_sow_wheat_day',
+          },
+        ],
+      };
+    }
+
+    if (!canRunFreeThink(memory.schedule?.currentActivity ?? null)) {
+      return {
+        intent: {
+          kind: 'wait',
+          reason: `scheduled_${memory.schedule?.currentActivity ?? 'busy'}`,
         },
         actions: [],
       };
@@ -155,7 +200,7 @@ export class NpcThinkSystem {
     }
 
     const rememberedDrop = this.findFreshMemory(memory, 'drop', gameTick);
-    if (rememberedDrop) {
+    if (rememberedDrop && !this.hasRecentFailureForTarget(memory, rememberedDrop.x, rememberedDrop.y, gameTick)) {
       return {
         intent: {
           kind: 'seek_drop',
@@ -176,7 +221,7 @@ export class NpcThinkSystem {
     }
 
     const rememberedLandmark = this.pickExploreLandmark(memory, gameTick);
-    if (rememberedLandmark) {
+    if (rememberedLandmark && !this.hasRecentFailureForTarget(memory, rememberedLandmark.x, rememberedLandmark.y, gameTick)) {
       return {
         intent: {
           kind: 'move_to_landmark',
@@ -223,6 +268,17 @@ export class NpcThinkSystem {
       .filter((record) => gameTick - record.lastSeenTick <= 600);
     if (candidates.length === 0) return null;
     return candidates[gameTick % candidates.length];
+  }
+
+  private hasRecentFailureForTarget(mind: NpcMindState, x: number, y: number, gameTick: number): boolean {
+    return Object.values(mind.recentMemories).some((record) => {
+      if (record.kind !== 'action' || record.meta?.status !== 'failed') return false;
+      if (gameTick - record.lastSeenTick > 120) return false;
+      const targetX = Number(record.meta?.targetX);
+      const targetY = Number(record.meta?.targetY);
+      if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return false;
+      return Math.hypot(targetX - x, targetY - y) < 48;
+    });
   }
 
   private buildExploreTarget(npcId: string, gameTick: number, x: number, y: number): { x: number; y: number } {

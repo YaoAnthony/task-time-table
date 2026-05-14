@@ -14,6 +14,10 @@ import {
   type GameWeatherSetting,
 } from '../../../../Redux/Features/gameSlice';
 import type { GameWorldState } from '../SystemIdleGame/types';
+import type { IdleGameState } from '../../../../Types/Profile';
+import { GAME_MINS_PER_SEC, MINS_PER_DAY } from '../SystemIdleGame/constants';
+
+const SECS_PER_GAME_DAY = MINS_PER_DAY / GAME_MINS_PER_SEC;
 
 const quickTimes = [
   { label: '清晨', minute: 360 },
@@ -27,6 +31,12 @@ function formatMinute(minute: number) {
   const hour = Math.floor(minute / 60).toString().padStart(2, '0');
   const min = (minute % 60).toString().padStart(2, '0');
   return `${hour}:${min}`;
+}
+
+function tickWithMinuteOfDay(currentTick: number, minute: number): number {
+  const day = Math.floor(Math.max(0, currentTick) / SECS_PER_GAME_DAY);
+  const normalizedMinute = Math.max(0, Math.min(MINS_PER_DAY - 1, Math.round(minute)));
+  return day * SECS_PER_GAME_DAY + normalizedMinute / GAME_MINS_PER_SEC;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -44,10 +54,11 @@ const GameSettings: React.FC = () => {
     ...rawSettings,
     agentBrainEnabled: rawSettings.agentBrainEnabled !== false,
   };
-  const savedWorldState = useSelector((state: RootState) => state.profile.profile?.idleGame?.worldState ?? null);
+  const savedIdleGame = useSelector((state: RootState) => state.profile.profile?.idleGame ?? null);
+  const savedWorldState = savedIdleGame?.worldState ?? null;
   const [saveIdleGame] = useSaveIdleGameMutation();
 
-  const persistSettings = useCallback((next: GameSettingsState) => {
+  const persistSettings = useCallback((next: GameSettingsState, patch: Partial<GameSettingsState> = {}) => {
     const worldState: GameWorldState = {
       schemaVersion: 1,
       beds: [],
@@ -55,9 +66,14 @@ const GameSettings: React.FC = () => {
       ...(savedWorldState ?? {}),
       settings: next,
     };
+    const payload: Partial<IdleGameState> = { worldState };
 
-    saveIdleGame({ worldState }).catch(() => {});
-  }, [saveIdleGame, savedWorldState]);
+    if (typeof patch.timeMinute === 'number') {
+      payload.gameTick = tickWithMinuteOfDay(savedIdleGame?.gameTick ?? 0, patch.timeMinute);
+    }
+
+    saveIdleGame(payload).catch(() => {});
+  }, [saveIdleGame, savedIdleGame?.gameTick, savedWorldState]);
 
   const updateSettings = useCallback((patch: Partial<GameSettingsState>) => {
     const next: GameSettingsState = {
@@ -65,7 +81,7 @@ const GameSettings: React.FC = () => {
       ...patch,
     };
     dispatch(setGameSettings(next));
-    persistSettings(next);
+    persistSettings(next, patch);
   }, [dispatch, persistSettings, settings]);
 
   const commandPreview = [
@@ -78,7 +94,7 @@ const GameSettings: React.FC = () => {
 
   const setWeather = (weather: GameWeatherSetting) => {
     dispatch(setGameWeather(weather));
-    persistSettings({ ...settings, weather });
+    persistSettings({ ...settings, weather }, { weather });
   };
 
   return (
