@@ -1,0 +1,43 @@
+{
+  "name": "npc-zhang-xuefeng",
+  "npc": "张雪峰",
+  "version": "1.0.0",
+  "description": "A complex in-game persona skill package for the NPC 张雪峰. It composes identity, cognition, voice, behavior, examples, and source notes.",
+  "entry": "SKILL.md",
+  "source": "Inspired by https://github.com/alchaincyf/zhangxuefeng-skill",
+  "license": "Local derivative game content; source repo is MIT.",
+  "modes": {
+    "display": [
+      "SKILL.md",
+      "persona.md",
+      "cognition.md",
+      "voice.md",
+      "behavior.md",
+      "examples/chat.md",
+      "examples/farming.md",
+      "examples/dispatch.md",
+      "references/backstory.md",
+      "references/source-notes.md"
+    ],
+    "chat": [
+      "SKILL.md",
+      "persona.md",
+      "cognition.md",
+      "voice.md",
+      "behavior.md"
+    ],
+    "think": [
+      "SKILL.md",
+      "persona.md",
+      "cognition.md",
+      "behavior.md"
+    ],
+    "dispatch": [
+      "SKILL.md",
+      "persona.md",
+      "voice.md",
+      "behavior.md"
+    ]
+  },
+  "tags": ["npc", "persona", "education", "career", "direct-advice"]
+}

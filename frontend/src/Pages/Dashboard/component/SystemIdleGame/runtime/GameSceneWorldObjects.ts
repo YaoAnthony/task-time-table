@@ -4,6 +4,7 @@ import { NestView } from '../entities/NestView';
 import { RaspberryBush } from '../entities/RaspberryBush';
 import type { TreeGrowthStage } from '../shared/worldStateTypes';
 import { gameBus } from '../shared/EventBus';
+import { createBusStation } from '../world/busStation';
 import type { GameWorldState } from '../types';
 import { createBush as createDecorBush } from '../world/bush';
 import { createFlower } from '../world/flower';
@@ -255,6 +256,22 @@ export function spawnInitialBushes(scene: any) : void {
 
 export function spawnDecorations(scene: any) : void {
     const ctx: WorldCtx = { scene: scene, obstacles: scene.obstacles };
+    const station = createBusStation(ctx, VILLAGE_LAYOUT.busStation);
+    scene.busStation = station;
+    scene.worldStateManager?.registerObject?.({
+      id: VILLAGE_LAYOUT.busStation.id,
+      kind: 'decoration',
+      x: VILLAGE_LAYOUT.busStation.x,
+      y: VILLAGE_LAYOUT.busStation.y,
+      blocking: true,
+      interactable: false,
+      state: 'bus_station',
+      meta: {
+        subtype: 'bus_station',
+        label: '车站',
+        collisionBlocks: VILLAGE_LAYOUT.busStation.collisionBlocks.map((block) => ({ ...block })),
+      },
+    });
 
     // Flowers (no collision, purely visual)
     // Rules: on grass only not on water border, not inside any building,

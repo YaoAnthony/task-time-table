@@ -38,6 +38,8 @@ import toolsUrl from '../../../../../assets/Sprout-Lands/Objects/Basic tools and
 import basicPlantsUrl from '../../../../../assets/Sprout-Lands/Objects/Basic_Plants.png';
 // @ts-ignore
 import furnitureUrl from '../../../../../assets/Sprout-Lands/Objects/Basic_Furniture.png';
+// @ts-ignore
+import busStationUrl from '../../../../../assets/bus/bus-station.png';
 
 export function preloadGameSceneAssets(scene: Phaser.Scene): void {
   scene.load.image('grass', tileGrassUrl);
@@ -54,4 +56,5 @@ export function preloadGameSceneAssets(scene: Phaser.Scene): void {
   scene.load.image('tools', toolsUrl);
   scene.load.image('basic-plants', basicPlantsUrl);
   scene.load.image('furniture', furnitureUrl);
+  scene.load.image('bus-station', busStationUrl);
 }

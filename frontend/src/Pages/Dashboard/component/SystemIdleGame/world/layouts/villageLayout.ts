@@ -23,6 +23,15 @@ export const VILLAGE_LAYOUT = {
     cols: 5,
     rows: 4,
   },
+  busStation: {
+    id: 'bus-station',
+    x: 928,
+    y: 576,
+    scale: 0.22,
+    collisionBlocks: [
+      { offsetX: 0, offsetY: -78, width: 188, height: 92 },
+    ],
+  },
   playerSpawn: {
     x: 240,
     y: 360,
