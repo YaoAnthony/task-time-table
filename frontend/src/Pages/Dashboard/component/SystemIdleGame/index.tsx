@@ -39,7 +39,17 @@ import { useIdleGameSyncBoundary } from './hooks/useIdleGameSyncBoundary';
 import { useMultiplay }     from './hooks/useMultiplay';
 import { useFarmActions }   from './hooks/useFarmActions';
 import { usePhaserBoot }    from './hooks/usePhaserBoot';
-import { useSaveGameSaveMutation } from './api';
+import {
+  useCompleteHouseConstructionMutation,
+  useDeleteGameSaveMutation,
+  useOpenGameHouseMutation,
+  usePlaceGameHouseMutation,
+  usePlaceStorageChestMutation,
+  useSaveGameSaveMutation,
+} from './api';
+import { GameShopModal } from './components/GameShopModal';
+import { HouseContractModal } from './components/HouseContractModal';
+import { StorageChestModal } from './components/StorageChestModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const SystemIdleGame: React.FC = () => {
@@ -58,14 +68,14 @@ const SystemIdleGame: React.FC = () => {
 
   const npcChat = useNpcChat(sceneRef, chatOpenRef);
 
-  const chests = useChestManager(sceneRef);
-
   const multiplay = useMultiplay({
     sceneRef,
     tokenRef:         auth.tokenRef,
     myDisplayNameRef: auth.myDisplayNameRef,
     userId:           auth.userId,
   });
+
+  const chests = useChestManager(sceneRef, multiplay.multiplayRoomIdRef);
 
   // 农田/物品 gameBus 订阅（无状态，副作用）
   useFarmActions(sceneRef, multiplay.multiplayRoomIdRef);
@@ -80,6 +90,9 @@ const SystemIdleGame: React.FC = () => {
   // ── 附加 UI 状态 ─────────────────────────────────────────────────────────
   const [timeStr,  setTimeStr ] = useState('2026-01-01 06:00');
   const [isSaving, setIsSaving] = useState(false);
+  const [gameShopOpen, setGameShopOpen] = useState(false);
+  const [houseContractOpen, setHouseContractOpen] = useState(false);
+  const [storageChestOpenId, setStorageChestOpenId] = useState<string | null>(null);
   /** Closest NPC name to player (refreshed @4Hz) — drives the talk-button label. */
   const [nearbyNpc, setNearbyNpc] = useState<string | null>(null);
   useEffect(() => {
@@ -106,6 +119,11 @@ const SystemIdleGame: React.FC = () => {
   gameSettingsRef.current = gameSettings;
 
   const [saveGameSave] = useSaveGameSaveMutation();
+  const [deleteGameSave] = useDeleteGameSaveMutation();
+  const [placeGameHouse] = usePlaceGameHouseMutation();
+  const [placeStorageChest] = usePlaceStorageChestMutation();
+  const [completeHouseConstruction] = useCompleteHouseConstructionMutation();
+  const [openGameHouse] = useOpenGameHouseMutation();
   const handleSave = useCallback(async () => {
     if (!sceneRef.current) return;
     setIsSaving(true);
@@ -129,6 +147,97 @@ const SystemIdleGame: React.FC = () => {
     catch { /* best-effort */ }
     finally { setIsSaving(false); }
   }, [auth.myDisplayName, auth.userId, hotbar.hotbarSlotsRef, multiplay.multiplayRoomIdRef, npcChat.npcInventoriesRef, saveGameSave]);
+
+  useEffect(() => {
+    const unsubscribe = gameBus.on('game:save_delete_requested', async ({ roomId }) => {
+      setIsSaving(true);
+      try {
+        await deleteGameSave({ roomId }).unwrap();
+        npcChat.setDialog({
+          visible: true,
+          text: '世界存档已删除，正在重新载入新世界。',
+          npcName: 'System',
+        });
+        window.setTimeout(() => window.location.reload(), 300);
+      } catch (error) {
+        const message = (error as { data?: { message?: string } })?.data?.message
+          ?? '删除存档失败。';
+        npcChat.setDialog({ visible: true, text: message, npcName: 'System' });
+        setIsSaving(false);
+      }
+    });
+    return unsubscribe;
+  }, [deleteGameSave, npcChat.setDialog]);
+
+  useEffect(() => {
+    const offPlace = gameBus.on('game:house_place_requested', async (payload: any) => {
+      try {
+        const result = await placeGameHouse({
+          ...payload,
+          roomId: payload.roomId ?? multiplay.multiplayRoomIdRef.current ?? undefined,
+        }).unwrap();
+        sceneRef.current?.loadHouseGameSaveData(result.gameSave);
+      } catch (error) {
+        const text = (error as { data?: { message?: string } })?.data?.message || '房屋放置失败。';
+        npcChat.setDialog({ visible: true, text, npcName: 'System' });
+      }
+    });
+    const offStoragePlace = gameBus.on('game:storage_chest_place_requested', async (payload: any) => {
+      try {
+        const result = await placeStorageChest({
+          ...payload,
+          roomId: payload.roomId ?? multiplay.multiplayRoomIdRef.current ?? undefined,
+        }).unwrap();
+        sceneRef.current?.loadStorageChestGameSaveData(result.gameSave);
+      } catch (error) {
+        const text = (error as { data?: { message?: string } })?.data?.message || 'Storage chest placement failed.';
+        npcChat.setDialog({ visible: true, text, npcName: 'System' });
+      }
+    });
+    const offStorageOpen = gameBus.on('game:storage_chest_open_requested', ({ chestId }) => {
+      setStorageChestOpenId(chestId);
+    });
+    const offComplete = gameBus.on('game:house_complete_requested', async (payload: any) => {
+      try {
+        const result = await completeHouseConstruction({
+          ...payload,
+          roomId: payload.roomId ?? multiplay.multiplayRoomIdRef.current ?? undefined,
+        }).unwrap();
+        sceneRef.current?.loadHouseGameSaveData(result.gameSave);
+      } catch (error) {
+        console.warn('[House] complete construction failed', error);
+      }
+    });
+    const toggleHouseDoor = async (payload: any) => {
+      try {
+        const result = await openGameHouse({
+          ...payload,
+          roomId: payload.roomId ?? multiplay.multiplayRoomIdRef.current ?? undefined,
+        }).unwrap();
+        sceneRef.current?.loadHouseGameSaveData(result.gameSave);
+      } catch (error) {
+        const text = (error as { data?: { message?: string } })?.data?.message || '切换房门失败，需要对应房屋钥匙。';
+        npcChat.setDialog({ visible: true, text, npcName: 'System' });
+      }
+    };
+    const offDoorToggle = gameBus.on('game:house_door_toggle_requested', toggleHouseDoor);
+    const offOpen = gameBus.on('game:house_open_requested', toggleHouseDoor);
+    return () => {
+      offPlace();
+      offStoragePlace();
+      offStorageOpen();
+      offComplete();
+      offDoorToggle();
+      offOpen();
+    };
+  }, [
+    completeHouseConstruction,
+    multiplay.multiplayRoomIdRef,
+    npcChat.setDialog,
+    openGameHouse,
+    placeGameHouse,
+    placeStorageChest,
+  ]);
 
   // ── Q 键 drop 物品（由 usePhaserBoot 调用） ───────────────────────────────
   const onDropItem = useCallback((_slot: number, itemId: string) => {
@@ -217,7 +326,77 @@ const SystemIdleGame: React.FC = () => {
         showHints={!npcChat.dialog.visible && !npcChat.chat.open}
       />
 
+      {false && !npcChat.chat.open && !npcChat.dialog.visible && (
+        <button
+          type="button"
+          onClick={() => setGameShopOpen(true)}
+          style={{
+            position: 'absolute',
+            top: 88,
+            right: 16,
+            zIndex: 210,
+            border: '2px solid var(--px-border-gold)',
+            borderRadius: 6,
+            background: 'var(--px-surface2)',
+            color: 'var(--px-gold)',
+            padding: '7px 12px',
+            fontSize: 13,
+            fontFamily: '"Courier New", monospace',
+            fontWeight: 900,
+            cursor: 'pointer',
+          }}
+        >
+          NPC 商店
+        </button>
+      )}
+
       {/* 宝箱 HUD 指示器 */}
+      {!npcChat.chat.open && !npcChat.dialog.visible && (
+        <div style={{
+          position: 'absolute',
+          top: 128,
+          right: 16,
+          zIndex: 210,
+          display: 'grid',
+          gap: 8,
+        }}>
+          <button
+            type="button"
+            onClick={() => setGameShopOpen(true)}
+            style={{
+              border: '2px solid var(--px-border-gold)',
+              borderRadius: 6,
+              background: 'var(--px-surface2)',
+              color: 'var(--px-gold)',
+              padding: '7px 12px',
+              fontSize: 13,
+              fontFamily: '"Courier New", monospace',
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            房屋商店
+          </button>
+          <button
+            type="button"
+            onClick={() => setHouseContractOpen(true)}
+            style={{
+              border: '2px solid var(--px-border)',
+              borderRadius: 6,
+              background: 'var(--px-surface2)',
+              color: 'var(--px-text)',
+              padding: '7px 12px',
+              fontSize: 13,
+              fontFamily: '"Courier New", monospace',
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            房屋合同
+          </button>
+        </div>
+      )}
+
       {chests.availableChests.length > 0 && (
         <button
           onClick={chests.handleChestHudClick}
@@ -330,7 +509,29 @@ const SystemIdleGame: React.FC = () => {
         onDisconnect={multiplay.handleMultiplayDisconnect}
       />
 
+      <GameShopModal
+        open={gameShopOpen}
+        roomId={multiplay.multiplayRoomId}
+        sceneRef={sceneRef}
+        onClose={() => setGameShopOpen(false)}
+      />
+
       {/* NPC 确认弹窗 */}
+      <StorageChestModal
+        open={Boolean(storageChestOpenId)}
+        chestId={storageChestOpenId}
+        roomId={multiplay.multiplayRoomId}
+        sceneRef={sceneRef}
+        onClose={() => setStorageChestOpenId(null)}
+      />
+
+      <HouseContractModal
+        open={houseContractOpen}
+        roomId={multiplay.multiplayRoomId}
+        sceneRef={sceneRef}
+        onClose={() => setHouseContractOpen(false)}
+      />
+
       {npcChat.npcConfirm && (
         <div style={{
           position:     'absolute',

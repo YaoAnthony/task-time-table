@@ -38,6 +38,33 @@ const ITEM_NAME_MAP: Record<string, string> = {
   log:        '木头',     stone:       '石头',
 };
 
+function npcFarmResultLine(action: 'till' | 'water' | 'plant' | 'harvest', tx: number, ty: number, itemId?: string): string {
+  switch (action) {
+    case 'till':
+      return `翻好了 (${tx}, ${ty}) 这块地。`;
+    case 'water':
+      return `给 (${tx}, ${ty}) 这块地浇过水了。`;
+    case 'plant':
+      return `把 ${ITEM_NAME_MAP[itemId ?? ''] ?? itemId ?? '种子'} 种在 (${tx}, ${ty}) 了。`;
+    case 'harvest':
+      return `收了 (${tx}, ${ty}) 这块地的作物。`;
+    default:
+      return '农活做完了。';
+  }
+}
+
+function announceNpcFarmResult(
+  scene: GameScene | null,
+  actorId: string | undefined,
+  action: 'till' | 'water' | 'plant' | 'harvest',
+  tx: number,
+  ty: number,
+  itemId?: string,
+): void {
+  if (!actorId || actorId === 'player') return;
+  scene?.makeNpcSay?.(actorId, npcFarmResultLine(action, tx, ty, itemId));
+}
+
 export function useFarmActions(
   sceneRef:          RefObject<GameScene | null>,
   multiplayRoomIdRef: RefObject<string | null>,
@@ -74,6 +101,7 @@ export function useFarmActions(
                   res.droppedSeed.itemId,
                 );
               }
+              announceNpcFarmResult(sceneRef.current, actorId, action, tx, ty, itemId);
               break;
             }
             case 'water':
@@ -82,6 +110,7 @@ export function useFarmActions(
                 if (res.farmTile) {
                   applyServerFarmTileUpdate(sceneRef.current, dispatch, res.farmTile as FarmTile & { tx: number; ty: number; state: string });
                 }
+                announceNpcFarmResult(sceneRef.current, actorId, action, tx, ty, itemId);
               }
               break;
 
@@ -97,6 +126,7 @@ export function useFarmActions(
                     applyServerFarmTileUpdate(sceneRef.current, dispatch, tile as FarmTile & { tx: number; ty: number; state: string });
                   }
                 }
+                announceNpcFarmResult(sceneRef.current, actorId, action, tx, ty, itemId);
               }
               break;
 
@@ -119,6 +149,7 @@ export function useFarmActions(
                   );
                 });
               }
+              announceNpcFarmResult(sceneRef.current, actorId, action, tx, ty, itemId);
               break;
             }
           }

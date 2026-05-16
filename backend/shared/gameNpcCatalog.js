@@ -20,7 +20,7 @@ const GAME_NPC_CATALOG = [
         role: 'farmer',
         title: '农夫',
         description: '会种田、浇水、收菜，喜欢把问题拆成一垄一垄慢慢做。',
-        price: 450,
+        price: 30,
         spawn: { x: 340, y: 500 },
         tint: 0x91d76f,
         skill: { type: 'file', path: 'tian-xiaohe.md' },
@@ -31,7 +31,7 @@ const GAME_NPC_CATALOG = [
         role: 'carpenter',
         title: '木匠',
         description: '会砍树、修家具、造桥，话少但手稳。',
-        price: 650,
+        price: 40,
         spawn: { x: 520, y: 520 },
         tint: 0xc8915f,
         skill: { type: 'file', path: 'liang-musheng.md' },
@@ -42,7 +42,7 @@ const GAME_NPC_CATALOG = [
         role: 'merchant',
         title: '商人',
         description: '会定时刷新商品，记得行情，也记得每个人的偏好。',
-        price: 800,
+        price: 50,
         spawn: { x: 760, y: 430 },
         tint: 0xffc85a,
         skill: { type: 'file', path: 'su-ling.md' },
@@ -53,7 +53,7 @@ const GAME_NPC_CATALOG = [
         role: 'scholar',
         title: '学者',
         description: '会总结记忆、任务和世界事件，说话像在给混乱装订目录。',
-        price: 900,
+        price: 60,
         spawn: { x: 900, y: 520 },
         tint: 0x9bb7ff,
         skill: { type: 'file', path: 'ji-wenqiu.md' },
@@ -64,7 +64,7 @@ const GAME_NPC_CATALOG = [
         role: 'rancher',
         title: '牧场工',
         description: '会照顾鸡、捡蛋、喂水，做事安静但很可靠。',
-        price: 700,
+        price: 45,
         spawn: { x: 1240, y: 820 },
         tint: 0xffb3c7,
         skill: { type: 'file', path: 'mu-aqing.md' },
@@ -105,6 +105,7 @@ function createDefaultNpcSave(definition) {
         catalogId: definition.id,
         role: definition.role,
         position: {
+            worldId: 'world:village',
             x: definition.spawn.x,
             y: definition.spawn.y,
             facing: 'down',
@@ -135,7 +136,7 @@ function ensureUnlockedNpcSaves(gameSave) {
     return gameSave;
 }
 
-function toShopItem(definition, unlockedIds) {
+function toShopItem(definition, unlockedIds, pendingIds = []) {
     const owned = unlockedIds.includes(definition.id);
     return {
         id: definition.id,
@@ -145,6 +146,7 @@ function toShopItem(definition, unlockedIds) {
         description: definition.description,
         price: definition.price,
         owned,
+        pendingArrival: pendingIds.includes(definition.id),
         ownedByDefault: Boolean(definition.ownedByDefault),
     };
 }

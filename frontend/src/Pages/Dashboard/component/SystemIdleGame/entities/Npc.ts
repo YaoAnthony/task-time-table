@@ -50,7 +50,7 @@ export class Npc {
   private pathing: PathingComponent | null = null;
   private readonly NAV_SPEED  = NPC_SPEED * 1.6;
   private readonly REACH_DIST = 24;
-  private navigationTarget: { x: number; y: number } | null = null;
+  private navigationTarget: { x: number; y: number; worldId?: string } | null = null;
 
   // Speech state
   private speechTimer   = 0;
@@ -80,6 +80,7 @@ export class Npc {
   private labelText!: Phaser.GameObjects.Text;
   private bubbleText!: Phaser.GameObjects.Text;
   private readonly speechOffset: { x: number; y: number };
+  private destroyed = false;
 
   /** Set the provider for the current auth token (sync getter, can't use bus). */
   setAuthProvider(fn: () => string | null): void {
@@ -133,13 +134,70 @@ export class Npc {
       padding:         { x: 4, y: 2 },
     }).setOrigin(0.5, 1).setDepth(9998);
 
-    this.bubbleText = this.scene.add.text(x + this.speechOffset.x, y - 74 + this.speechOffset.y, '', {
+    this.bubbleText = this.createBubbleText(x, y);
+  }
+
+  private createBubbleText(x: number, y: number): Phaser.GameObjects.Text {
+    return this.scene.add.text(x + this.speechOffset.x, y - 74 + this.speechOffset.y, '', {
       fontSize:        '9px',
       color:           '#222222',
       backgroundColor: '#ffffffdd',
       padding:         { x: 6, y: 4 },
       wordWrap:        { width: 132 },
     }).setOrigin(0.5, 1).setDepth(9999).setVisible(false);
+  }
+
+  private canMutateText(text?: Phaser.GameObjects.Text): text is Phaser.GameObjects.Text {
+    return Boolean(
+      !this.destroyed
+      && text
+      && text.scene
+      && text.active
+      && !(text as any).destroyed
+    );
+  }
+
+  private safeSetBubbleText(text: string, visible: boolean): boolean {
+    if (!this.canMutateText(this.bubbleText)) return false;
+    try {
+      this.bubbleText.setText(text).setVisible(visible);
+      return true;
+    } catch (error) {
+      console.warn('[Npc] bubble text update failed; recreating bubble text', {
+        npcName: this.name,
+        error,
+      });
+      try {
+        this.bubbleText.destroy();
+        this.bubbleText = this.createBubbleText(this.sprite.x, this.sprite.y);
+        this.bubbleText.setText(text).setVisible(visible);
+        return true;
+      } catch (retryError) {
+        console.warn('[Npc] bubble text recreate failed', {
+          npcName: this.name,
+          error: retryError,
+        });
+        return false;
+      }
+    }
+  }
+
+  private safeSetBubbleVisible(visible: boolean): void {
+    if (!this.canMutateText(this.bubbleText)) return;
+    try {
+      this.bubbleText.setVisible(visible);
+    } catch (error) {
+      console.warn('[Npc] bubble visibility update failed', { npcName: this.name, error });
+    }
+  }
+
+  private safeSetLabelVisible(visible: boolean): void {
+    if (!this.canMutateText(this.labelText)) return;
+    try {
+      this.labelText.setVisible(visible);
+    } catch (error) {
+      console.warn('[Npc] label visibility update failed', { npcName: this.name, error });
+    }
   }
 
   // ── Memory ─────────────────────────────────────────────────────────────────
@@ -203,7 +261,8 @@ export class Npc {
     target.stopFollowing();
     target.lockConversationWith(this.sprite, duration + 3, true);
 
-    this.navigateTo(standAt.x, standAt.y, () => {
+    const targetWorldId = this.worldCtx?.getWorldIdAt?.(target.sprite.x, target.sprite.y);
+    this.navigateToWorldTarget({ x: standAt.x, y: standAt.y, worldId: targetWorldId }, () => {
       this.lockConversationWith(target.sprite, duration, false);
       target.lockConversationWith(this.sprite, duration, true);
       this.faceToward(target.sprite.x, target.sprite.y);
@@ -230,11 +289,11 @@ export class Npc {
    */
   startDispatch(carriedItems: Record<string, number> = {}): void {
     this.isFollowing = false;
-    this.navigateTo(PLAYER_HOUSE_DOOR.x, PLAYER_HOUSE_DOOR.y, () => {
+    this.navigateToWorldTarget({ x: PLAYER_HOUSE_DOOR.x, y: PLAYER_HOUSE_DOOR.y, worldId: 'world:village' }, () => {
       // Hide sprite + UI labels while away
       this.sprite.setVisible(false);
-      this.labelText.setVisible(false);
-      this.bubbleText.setVisible(false);
+      this.safeSetLabelVisible(false);
+      this.safeSetBubbleVisible(false);
       (this.sprite.body as Phaser.Physics.Arcade.Body).enable = false;
       this.isDispatched = true;
       this.clearNavigation();
@@ -242,9 +301,10 @@ export class Npc {
 
       // Return after 10 s
       this.scene.time.delayedCall(10_000, () => {
+        if (this.destroyed || !this.sprite?.scene) return;
         this.sprite.setPosition(PLAYER_HOUSE_DOOR.x, PLAYER_HOUSE_DOOR.y);
         this.sprite.setVisible(true);
-        this.labelText.setVisible(true);
+        this.safeSetLabelVisible(true);
         (this.sprite.body as Phaser.Physics.Arcade.Body).enable = true;
         this.stopMovement();
         this.isDispatched = false;
@@ -272,6 +332,20 @@ export class Npc {
       // No pathfinder — head straight
       this.startMoveTo(tx, ty);
     }
+  }
+
+  private navigateToWorldTarget(target: { x: number; y: number; worldId?: string }, onArrive?: () => void): void {
+    const routed = this.worldCtx?.navigateNpcToWorldPosition?.(this.name, target, onArrive);
+    if (routed) {
+      this.navigationTarget = target;
+      this.mode = 'walk';
+      return;
+    }
+    this.navigateTo(target.x, target.y, onArrive);
+  }
+
+  private targetWithWorld(x: number, y: number, worldId?: string): { x: number; y: number; worldId?: string } {
+    return { x, y, worldId: worldId ?? this.worldCtx?.getWorldIdAt?.(x, y) };
   }
 
   /** Stop all active navigation immediately. */
@@ -307,6 +381,8 @@ export class Npc {
 
   // ── Frame update (called from GameScene.update) ───────────────────────────
   update(dt: number, gameTick: number): void {
+    if (this.destroyed || !this.sprite?.active) return;
+
     // Skip ALL updates while NPC is off on a dispatch mission
     if (this.isDispatched) return;
 
@@ -334,7 +410,7 @@ export class Npc {
         );
         if (dist > 72 && !this.pathing?.isMoving()) {
           // Stay slightly behind the player, not exactly on top
-          this.navigateTo(this.playerSprite.x, this.playerSprite.y + 32);
+          this.navigateToWorldTarget(this.targetWithWorld(this.playerSprite.x, this.playerSprite.y + 32));
         }
       }
     }
@@ -382,7 +458,7 @@ export class Npc {
     if (!this._isThinking && this.speechTimer > 0) {
       this.speechTimer -= dt;
       if (this.speechTimer <= 0) {
-        this.bubbleText.setVisible(false);
+        this.safeSetBubbleVisible(false);
       }
     }
 
@@ -390,12 +466,14 @@ export class Npc {
     this.sprite.setDepth(this.sprite.y + 96);
 
     // Keep labels glued to sprite
-    this.labelText.setPosition(this.sprite.x, this.sprite.y - 58);
-    if (this.bubbleText.visible) {
+    if (this.canMutateText(this.labelText)) {
+      this.labelText.setPosition(this.sprite.x, this.sprite.y - 58);
+    }
+    if (this.canMutateText(this.bubbleText) && this.bubbleText.visible) {
       this.bubbleText.setPosition(
-        this.sprite.x + this.speechOffset.x,
-        this.sprite.y - 74 + this.speechOffset.y,
-      );
+          this.sprite.x + this.speechOffset.x,
+          this.sprite.y - 74 + this.speechOffset.y,
+        );
     }
   }
 
@@ -412,7 +490,7 @@ export class Npc {
       case 'water': {
         // target must be pre-resolved to 'coords' by ActionExecutor before queuing
         if (action.target?.kind === 'coords') {
-          this.navigateTo(action.target.x, action.target.y);
+          this.navigateToWorldTarget(action.target);
         } else {
           // Legacy fallback (x/y fields no longer used)
           this.navigateTo(this.sprite.x, this.sprite.y);
@@ -430,8 +508,8 @@ export class Npc {
         // target is pre-resolved to coords by ActionExecutor before queuing
         if (action.target?.kind === 'coords' && action.itemId) {
           const itemId = action.itemId;
-          const target = { x: action.target.x, y: action.target.y };
-          this.navigateTo(target.x, target.y, () => {
+          const target = this.targetWithWorld(action.target.x, action.target.y, action.target.worldId);
+          this.navigateToWorldTarget(target, () => {
             console.log(`[Npc] pickup_item onArrive: claiming itemId=${itemId}`);
             // Use worldCtx if available (immediate path), else fall back to callback
             if (this.worldCtx) {
@@ -457,7 +535,7 @@ export class Npc {
         console.log(`[Npc] executeAction chop_tree: worldCtx=${!!this.worldCtx} treeTarget=`, treeTarget);
         if (treeTarget) {
           const { id: treeId, x, y } = treeTarget;
-          this.navigateTo(x, y, () => {
+          this.navigateToWorldTarget(this.targetWithWorld(x, y, action.target?.kind === 'coords' ? action.target.worldId : undefined), () => {
             console.log(`[Npc] chop_tree onArrive: chopping treeId=${treeId}`);
             if (this.worldCtx) {
               this.worldCtx.chopTreeById(treeId);
@@ -521,7 +599,7 @@ export class Npc {
             this.name,
             action.skillId,
             { x: this.sprite.x, y: this.sprite.y },
-            (x, y, onArrive) => this.navigateTo(x, y, onArrive),
+            (x, y, onArrive) => this.navigateToWorldTarget(this.targetWithWorld(x, y), onArrive),
             gameTick,
           );
         }
@@ -543,6 +621,36 @@ export class Npc {
         break;
       }
 
+      case 'enter_house': {
+        const entry = this.worldCtx?.findHouseEntryTarget(action.houseId, this.name);
+        const target = action.target?.kind === 'coords'
+          ? { houseId: action.houseId ?? entry?.houseId, roomId: action.roomId ?? entry?.roomId, x: action.target.x, y: action.target.y }
+          : entry;
+        if (target?.houseId) {
+          const targetHouseId = target.houseId;
+          this.navigateToWorldTarget({ x: target.x, y: target.y + 40, worldId: 'world:village' }, () => {
+            const ok = this.worldCtx?.enterHouseForNpc(this.name, targetHouseId);
+            if (!ok) this.say('I could not enter the house.', gameTick);
+          });
+        } else {
+          this.say('I cannot find that house door.', gameTick);
+        }
+        this.timer = action.duration ?? 4;
+        break;
+      }
+
+      case 'remember_home_house': {
+        const entry = this.worldCtx?.findHouseEntryTarget(action.houseId, this.name);
+        if (entry?.houseId) {
+          const ok = this.worldCtx?.rememberHomeHouseForNpc(this.name, entry.houseId, gameTick);
+          if (ok) this.say('I will remember this as my home.', gameTick);
+        } else {
+          this.say('I cannot tell which house is mine yet.', gameTick);
+        }
+        this.timer = action.duration ?? 2;
+        break;
+      }
+
       case 'till_tile':
       case 'water_tile':
       case 'plant_crop':
@@ -559,7 +667,7 @@ export class Npc {
             ? { tx: action.tx, ty: action.ty, x: action.tx * 32 + 16, y: action.ty * 32 + 16 }
             : this.worldCtx.findFarmTarget(kind, this.sprite.x, this.sprite.y, 12, this.name);
           if (target) {
-            this.navigateTo(target.x, target.y, () => {
+            this.navigateToWorldTarget(this.targetWithWorld(target.x, target.y), () => {
               this.worldCtx?.performFarmAction(this.name, kind, target, action.itemId);
             });
           }
@@ -589,10 +697,11 @@ export class Npc {
   }
 
   say(text: string, gameTick: number): void {
+    if (!this.isAlive()) return;
     const normalized = text.trim();
     if (!normalized || normalized === '-' || normalized === '...') return;
     this._isThinking = false;
-    this.bubbleText.setText(normalized).setVisible(true);
+    if (!this.safeSetBubbleText(normalized, true)) return;
     this.speechTimer = 4.5;
     this.addMemory(normalized, 'npc', gameTick);
     gameBus.emit('npc:speak', { text: normalized, npcName: this.name });
@@ -616,14 +725,18 @@ export class Npc {
    * While thinking=true the auto-dismiss timer is paused.
    */
   setThinking(thinking: boolean): void {
+    if (!this.isAlive()) {
+      this._isThinking = false;
+      return;
+    }
     this._isThinking = thinking;
     if (thinking) {
-      this.bubbleText.setText('...').setVisible(true);
+      this.safeSetBubbleText('...', true);
       this.speechTimer = 0;   // will stay visible until setThinking(false)
     } else {
       // If still showing the placeholder, hide it (say() will show the reply)
-      if (this.bubbleText.text === '...') {
-        this.bubbleText.setVisible(false);
+      if (this.canMutateText(this.bubbleText) && this.bubbleText.text === '...') {
+        this.safeSetBubbleVisible(false);
       }
     }
   }
@@ -633,7 +746,7 @@ export class Npc {
   }
 
   isSpeaking(): boolean {
-    return this.bubbleText?.visible ?? false;
+    return this.canMutateText(this.bubbleText) ? this.bubbleText.visible : false;
   }
 
   setBrainEnabled(enabled: boolean): void {
@@ -679,6 +792,10 @@ export class Npc {
     return this.pathing?.isMoving() ?? false;
   }
 
+  isAlive(): boolean {
+    return Boolean(!this.destroyed && this.sprite?.active && this.sprite?.scene);
+  }
+
   getPathDebugPoints(): [number, number][] {
     const waypoints = this.pathing?.getWaypoints() ?? [];
     if (waypoints.length === 0) return [];
@@ -690,12 +807,14 @@ export class Npc {
     if (!target) return;
     gameBus.emit('npc:navigation_failed', {
       npcName: this.name,
-      x: this.sprite.x,
-      y: this.sprite.y,
-      targetX: target.x,
-      targetY: target.y,
-      reason,
-    });
+          x: this.sprite.x,
+          y: this.sprite.y,
+          worldId: this.worldCtx?.getWorldIdAt?.(this.sprite.x, this.sprite.y),
+          targetX: target.x,
+          targetY: target.y,
+          targetWorldId: target.worldId,
+          reason,
+        });
     this.navigationTarget = null;
   }
 
@@ -704,6 +823,7 @@ export class Npc {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.sprite.destroy();
     this.labelText?.destroy();
     this.bubbleText?.destroy();

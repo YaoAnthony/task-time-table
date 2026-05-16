@@ -6,8 +6,20 @@ const {
     normalizeUnlockedNpcIds,
     ensureUnlockedNpcSaves,
 } = require('./gameNpcCatalog');
+const {
+    createDefaultEventState,
+    normalizeEventState,
+} = require('./gameEventService');
+const {
+    normalizeHouseInstances,
+    normalizeHouseContracts,
+} = require('./gameHouseCatalog');
+const {
+    normalizeStorageChests,
+} = require('./gameStorageChestCatalog');
 
 const SCHEMA_VERSION = 1;
+const DEFAULT_WORLD_ID = 'world:village';
 
 function clone(value) {
     return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -65,10 +77,14 @@ function createDefaultGameSave({ userId, username, roomId }) {
                 chests: [],
                 worldItems: [],
                 creatures: [],
+                houses: [],
+                houseContracts: [],
+                storageChests: [],
             },
             npcCatalogVersion: NPC_CATALOG_VERSION,
             unlockedNpcs: normalizeUnlockedNpcIds(null),
             npcs: {},
+            events: createDefaultEventState(),
         },
         players: {
             [String(userId)]: createDefaultPlayerSave({
@@ -86,6 +102,7 @@ function createDefaultPlayerSave({ userId, username, permissionLevel = 'guest' }
         id: String(userId),
         name: username || 'player',
         position: {
+            worldId: DEFAULT_WORLD_ID,
             x: 400,
             y: 1000,
             facing: 'down',
@@ -100,12 +117,75 @@ function createDefaultPlayerSave({ userId, username, permissionLevel = 'guest' }
     };
 }
 
+function normalizeWorldId(input) {
+    const value = String(input || '').trim();
+    return value || DEFAULT_WORLD_ID;
+}
+
+function normalizePosition(input, fallback = {}) {
+    return {
+        worldId: normalizeWorldId(input?.worldId || fallback.worldId),
+        x: typeof input?.x === 'number' ? input.x : Number(fallback.x || 0),
+        y: typeof input?.y === 'number' ? input.y : Number(fallback.y || 0),
+        facing: ['up', 'down', 'left', 'right'].includes(input?.facing)
+            ? input.facing
+            : fallback.facing || 'down',
+    };
+}
+
+function normalizeNpcSaves(gameSave) {
+    if (!gameSave.worldStatus.npcs || typeof gameSave.worldStatus.npcs !== 'object') {
+        gameSave.worldStatus.npcs = {};
+        return;
+    }
+    for (const [id, npc] of Object.entries(gameSave.worldStatus.npcs)) {
+        if (!npc || typeof npc !== 'object') continue;
+        npc.id = String(npc.id || id);
+        npc.name = npc.name || id;
+        npc.position = normalizePosition(npc.position, { x: 0, y: 0, facing: 'down' });
+        npc.inventory = npc.inventory && typeof npc.inventory === 'object' ? npc.inventory : {};
+        npc.memory = Array.isArray(npc.memory) ? npc.memory : [];
+        npc.mind = npc.mind && typeof npc.mind === 'object' ? npc.mind : null;
+    }
+}
+
 function normalizeInventory(input) {
     return {
-        gameInventory: Array.isArray(input?.gameInventory) ? clone(input.gameInventory) : [],
+        gameInventory: Array.isArray(input?.gameInventory) ? normalizeInventoryEntries(input.gameInventory) : [],
         hotbarSlots: Array.isArray(input?.hotbarSlots) ? clone(input.hotbarSlots) : Array(10).fill(null),
         backpackSlots: Array.isArray(input?.backpackSlots) ? clone(input.backpackSlots) : Array(40).fill(null),
     };
+}
+
+function normalizeInventoryEntries(entries) {
+    return Array.isArray(entries)
+        ? entries
+            .map((entry) => {
+                if (!entry || typeof entry !== 'object' || !entry.itemId) return null;
+                return {
+                    itemId: String(entry.itemId),
+                    quantity: Math.max(0, Number(entry.quantity || 0)),
+                    instanceData: normalizeInstanceData(entry.instanceData),
+                };
+            })
+            .filter((entry) => entry && entry.quantity > 0)
+        : [];
+}
+
+function normalizeInstanceData(input) {
+    return {
+        durability: Number.isFinite(Number(input?.durability)) ? Number(input.durability) : null,
+        freshness: Number.isFinite(Number(input?.freshness)) ? Number(input.freshness) : null,
+        customMeta: input?.customMeta && typeof input.customMeta === 'object'
+            ? clone(input.customMeta)
+            : {},
+    };
+}
+
+function getInventoryEntryKey(entry) {
+    const meta = entry?.instanceData?.customMeta || {};
+    const instanceId = meta.instanceId || meta.houseId || meta.storageChestId;
+    return instanceId ? `${entry.itemId}:${instanceId}` : String(entry.itemId);
 }
 
 function normalizeSettings(input) {
@@ -151,13 +231,17 @@ function normalizeGameSave(input, { userId, username, roomId }) {
                     ? entities.worldState
                     : emptyWorldState(typeof world.gameTick === 'number' ? world.gameTick : 0),
                 farmTiles: Array.isArray(entities.farmTiles) ? entities.farmTiles : [],
-                chests: Array.isArray(entities.chests) ? entities.chests : [],
+                chests: Array.isArray(entities.chests) ? entities.chests.filter(chest => !chest?.opened) : [],
                 worldItems: Array.isArray(entities.worldItems) ? entities.worldItems : [],
                 creatures: Array.isArray(entities.creatures) ? entities.creatures : [],
+                houses: normalizeHouseInstances(entities.houses),
+                houseContracts: normalizeHouseContracts(entities.houseContracts),
+                storageChests: normalizeStorageChests(entities.storageChests),
             },
             npcCatalogVersion: NPC_CATALOG_VERSION,
             unlockedNpcs: normalizeUnlockedNpcIds(world.unlockedNpcs),
             npcs: world.npcs && typeof world.npcs === 'object' ? world.npcs : {},
+            events: normalizeEventState(world.events),
         },
         players: {},
     };
@@ -167,13 +251,7 @@ function normalizeGameSave(input, { userId, username, roomId }) {
         next.players[id] = {
             id: String(playerObj.id || id),
             name: playerObj.name || (String(id) === String(userId) ? username : 'player'),
-            position: {
-                x: typeof playerObj.position?.x === 'number' ? playerObj.position.x : 400,
-                y: typeof playerObj.position?.y === 'number' ? playerObj.position.y : 1000,
-                facing: ['up', 'down', 'left', 'right'].includes(playerObj.position?.facing)
-                    ? playerObj.position.facing
-                    : 'down',
-            },
+            position: normalizePosition(playerObj.position, { x: 400, y: 1000, facing: 'down' }),
             inventory: normalizeInventory(playerObj.inventory),
             permissionLevel: playerObj.permissionLevel === 'op' ? 'op' : 'guest',
             sleeping: Boolean(playerObj.sleeping),
@@ -182,6 +260,7 @@ function normalizeGameSave(input, { userId, username, roomId }) {
 
     ensurePlayer(next, userId, username, String(userId) === next.worldStatus.roomId ? 'op' : 'guest');
     ensureUnlockedNpcSaves(next);
+    normalizeNpcSaves(next);
     return next;
 }
 
@@ -218,11 +297,32 @@ async function loadOrCreateGameSave(userId, requestedRoomId) {
 }
 
 async function persistGameSave({ profile, room, gameSave, userId, username, roomId, bumpVersion = true }) {
+    const serverSource = room?.gameSave || profile?.gameSave || null;
+    const serverSave = serverSource
+        ? normalizeGameSave(serverSource, {
+            userId: userId || Object.keys(serverSource.players || {})[0] || 'player',
+            username: username || 'player',
+            roomId: roomId || serverSource.worldStatus?.roomId,
+        })
+        : null;
     const next = normalizeGameSave(gameSave, {
         userId: userId || Object.keys(gameSave.players || {})[0] || 'player',
         username: username || 'player',
         roomId: roomId || gameSave.worldStatus?.roomId,
     });
+    if (serverSave && Number(gameSave?.saveVersion || 0) < Number(serverSave.saveVersion || 0)) {
+        next.worldStatus.entities.houses = clone(serverSave.worldStatus?.entities?.houses || []);
+        next.worldStatus.entities.houseContracts = clone(serverSave.worldStatus?.entities?.houseContracts || []);
+        next.worldStatus.entities.storageChests = clone(serverSave.worldStatus?.entities?.storageChests || []);
+        for (const [playerId, serverPlayer] of Object.entries(serverSave.players || {})) {
+            if (!serverPlayer?.inventory) continue;
+            if (!next.players[playerId]) {
+                next.players[playerId] = clone(serverPlayer);
+            } else {
+                next.players[playerId].inventory = normalizeInventory(serverPlayer.inventory);
+            }
+        }
+    }
     next.saveVersion = Number(next.saveVersion || 0) + (bumpVersion ? 1 : 0);
     next.updatedAt = new Date().toISOString();
 
@@ -237,6 +337,47 @@ async function persistGameSave({ profile, room, gameSave, userId, username, room
     return next;
 }
 
+async function resetGameSaveForUser(userId, requestedRoomId) {
+    const { user, profile } = await loadProfile(userId);
+    if (!user || !profile) return { error: 'Profile not found', status: 404 };
+
+    const ownRoomId = String(userId);
+    const roomId = resolveRoomId(userId, requestedRoomId);
+    if (roomId !== ownRoomId) {
+        return { error: 'Only the owner can delete this world save', status: 403 };
+    }
+
+    const username = getDisplayName(user);
+    const gameSave = createDefaultGameSave({ userId, username, roomId: ownRoomId });
+    const room = await loadOrCreateRoom(ownRoomId);
+
+    profile.gameSave = gameSave;
+    profile.gameInventory = [];
+    profile.gameChests = [];
+    profile.npcMemories = {};
+    profile.idleGame = {};
+    profile.gameState = { farmTiles: [], creatures: [] };
+    profile.markModified('gameSave');
+    profile.markModified('gameInventory');
+    profile.markModified('gameChests');
+    profile.markModified('npcMemories');
+    profile.markModified('idleGame');
+    profile.markModified('gameState');
+
+    room.gameSave = gameSave;
+    room.farmTiles = [];
+    room.creatures = [];
+    room.worldItems = [];
+    room.trees = [];
+    room.worldState = null;
+    room.gameTick = 0;
+    room.version = Number(room.version || 0) + 1;
+    room.markModified('gameSave');
+
+    await Promise.all([profile.save(), room.save()]);
+    return { user, profile, room, gameSave, roomId: ownRoomId };
+}
+
 function ensurePlayer(gameSave, userId, username, permissionLevel = 'guest') {
     const id = String(userId);
     if (!gameSave.players || typeof gameSave.players !== 'object') gameSave.players = {};
@@ -248,13 +389,7 @@ function ensurePlayer(gameSave, userId, username, permissionLevel = 'guest') {
     existing.id = String(existing.id || id);
     existing.name = existing.name || username || 'player';
     existing.inventory = normalizeInventory(existing.inventory);
-    existing.position = {
-        x: typeof existing.position?.x === 'number' ? existing.position.x : 400,
-        y: typeof existing.position?.y === 'number' ? existing.position.y : 1000,
-        facing: ['up', 'down', 'left', 'right'].includes(existing.position?.facing)
-            ? existing.position.facing
-            : 'down',
-    };
+    existing.position = normalizePosition(existing.position, { x: 400, y: 1000, facing: 'down' });
     existing.permissionLevel = existing.permissionLevel === 'op' ? 'op' : permissionLevel;
     existing.sleeping = Boolean(existing.sleeping);
     return existing;
@@ -269,29 +404,51 @@ function setPlayerInventory(gameSave, userId, inventory) {
     const player = ensurePlayer(gameSave, userId, 'player');
     player.inventory = {
         ...normalizeInventory(player.inventory),
-        gameInventory: Array.isArray(inventory) ? clone(inventory) : [],
+        gameInventory: normalizeInventoryEntries(inventory),
     };
 }
 
-function upsertPlayerInventoryItem(gameSave, userId, itemId, quantity) {
+function upsertPlayerInventoryItem(gameSave, userId, itemId, quantity, instanceData = undefined) {
     const inv = getPlayerInventory(gameSave, userId);
-    const existing = inv.find((entry) => entry.itemId === itemId);
+    const nextEntry = {
+        itemId: String(itemId),
+        quantity: Math.max(0, Number(quantity || 0)),
+        instanceData: normalizeInstanceData(instanceData),
+    };
+    const key = getInventoryEntryKey(nextEntry);
+    const existing = inv.find((entry) => getInventoryEntryKey(entry) === key);
     if (existing) {
-        existing.quantity += quantity;
-    } else if (quantity > 0) {
-        inv.push({ itemId, quantity, instanceData: {} });
+        existing.quantity += Number(quantity || 0);
+        existing.instanceData = normalizeInstanceData(existing.instanceData || instanceData);
+    } else if (Number(quantity || 0) > 0) {
+        inv.push(nextEntry);
     }
     setPlayerInventory(gameSave, userId, inv.filter((entry) => Number(entry.quantity || 0) > 0));
     return getPlayerInventory(gameSave, userId);
 }
 
-function consumePlayerInventoryItem(gameSave, userId, itemId, quantity) {
+function consumePlayerInventoryItem(gameSave, userId, itemId, quantity, matchMeta = undefined) {
     const inv = getPlayerInventory(gameSave, userId);
-    const existing = inv.find((entry) => entry.itemId === itemId);
+    const existing = inv.find((entry) => {
+        if (entry.itemId !== itemId) return false;
+        if (!matchMeta || typeof matchMeta !== 'object') return true;
+        const meta = entry.instanceData?.customMeta || {};
+        return Object.entries(matchMeta).every(([key, value]) => String(meta[key]) === String(value));
+    });
     if (!existing || existing.quantity < quantity) return null;
     existing.quantity -= quantity;
     setPlayerInventory(gameSave, userId, inv.filter((entry) => Number(entry.quantity || 0) > 0));
     return getPlayerInventory(gameSave, userId);
+}
+
+function hasPlayerInventoryItem(gameSave, userId, itemId, matchMeta = undefined) {
+    const inv = getPlayerInventory(gameSave, userId);
+    return inv.some((entry) => {
+        if (entry.itemId !== itemId || Number(entry.quantity || 0) <= 0) return false;
+        if (!matchMeta || typeof matchMeta !== 'object') return true;
+        const meta = entry.instanceData?.customMeta || {};
+        return Object.entries(matchMeta).every(([key, value]) => String(meta[key]) === String(value));
+    });
 }
 
 function getFarmTiles(gameSave) {
@@ -315,7 +472,17 @@ function getChests(gameSave) {
 }
 
 function setChests(gameSave, chests) {
-    gameSave.worldStatus.entities.chests = Array.isArray(chests) ? clone(chests) : [];
+    gameSave.worldStatus.entities.chests = Array.isArray(chests)
+        ? clone(chests.filter(chest => !chest?.opened))
+        : [];
+}
+
+function getStorageChests(gameSave) {
+    return normalizeStorageChests(gameSave.worldStatus?.entities?.storageChests);
+}
+
+function setStorageChests(gameSave, storageChests) {
+    gameSave.worldStatus.entities.storageChests = normalizeStorageChests(storageChests);
 }
 
 function ensureNpc(gameSave, npcName) {
@@ -327,7 +494,7 @@ function ensureNpc(gameSave, npcName) {
     gameSave.worldStatus.npcs[npcName] = {
         id: npcName,
         name: npcName,
-        position: { x: 0, y: 0, facing: 'down' },
+        position: { worldId: DEFAULT_WORLD_ID, x: 0, y: 0, facing: 'down' },
         inventory: {},
         mind: null,
         memory: [],
@@ -352,17 +519,21 @@ module.exports = {
     normalizeGameSave,
     loadOrCreateGameSave,
     persistGameSave,
+    resetGameSaveForUser,
     ensurePlayer,
     getPlayerInventory,
     setPlayerInventory,
     upsertPlayerInventoryItem,
     consumePlayerInventoryItem,
+    hasPlayerInventoryItem,
     getFarmTiles,
     setFarmTiles,
     getCreatures,
     setCreatures,
     getChests,
     setChests,
+    getStorageChests,
+    setStorageChests,
     ensureNpc,
     getNpcMemory,
     setNpcMemory,

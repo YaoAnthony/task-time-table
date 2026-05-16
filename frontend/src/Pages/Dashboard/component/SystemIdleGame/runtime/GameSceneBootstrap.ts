@@ -40,6 +40,20 @@ import { WorldFacade } from '../systems/WorldFacade';
 import { VILLAGE_LAYOUT } from '../world/layouts/villageLayout';
 import { GAME_NPC_CATALOG, getNpcDefinitionsForSave, type GameNpcDefinition } from '../shared/GameNpcCatalog';
 import type { WorldContext } from '../systems/ActionExecutor';
+import { EventSystem } from '../event/EventSystem';
+import { EventActionExecutor } from '../event/EventActionExecutor';
+import { createEventRuntimeContext } from '../event/EventRuntimeContext';
+import { VehicleSystem } from '../event/VehicleSystem';
+import { CutsceneDirector } from '../event/CutsceneDirector';
+import { RoomLocationSystem } from '../locations/RoomLocationSystem';
+import {
+  HouseSaveAdapter,
+  HousePlacementSystem,
+  HouseConstructionSystem,
+  HouseInteractionSystem,
+  HouseContractSystem,
+} from '../housing';
+import { StorageChestSystem } from '../storage';
 
 export function createGameScene(scene: any): void {
     scene.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -135,6 +149,13 @@ export function createGameScene(scene: any): void {
     scene.weather  = new WeatherSystem(scene);
     scene.commands = new CommandSystem();
     scene.pathDebugSystem = new PathDebugSystem(scene);
+    scene.locationSystem = new RoomLocationSystem(scene);
+    scene.houseSaveAdapter = new HouseSaveAdapter(scene);
+    scene.housePlacementSystem = new HousePlacementSystem(scene);
+    scene.houseConstructionSystem = new HouseConstructionSystem(scene);
+    scene.houseInteractionSystem = new HouseInteractionSystem(scene);
+    scene.houseContractSystem = new HouseContractSystem(scene);
+    scene.storageChestSystem = new StorageChestSystem(scene);
     scene._registerCommands();
 
     // Houses
@@ -206,6 +227,7 @@ export function createGameScene(scene: any): void {
           y: scene.npcHouse.houseY + 128,
         },
       ]),
+      getWorldIdAt: (x: number, y: number) => scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village',
     });
     // FarmSystem (tilled-dirt plots, watering, harvesting)
     scene.farmSystem = new FarmSystem(scene, scene.worldGrid, scene.worldStateManager);
@@ -216,6 +238,8 @@ export function createGameScene(scene: any): void {
       scene.nestStateSystem,
       {
         onPlaceObject: (action: any) => scene.applyPlaceObjectAction(action),
+        onPlaceHouse: (action: any) => scene.applyPlaceHouseAction(action),
+        onPlaceStorageChest: (action: any) => scene.applyPlaceStorageChestAction(action),
         onRemoveObject: (action: any) => scene.applyRemoveObjectAction(action),
         onPickupDrop: (action: any) => scene.applyPickupDropAction(action),
         onDropItem: (action: any) => scene.applyDropItemAction(action),
@@ -230,6 +254,7 @@ export function createGameScene(scene: any): void {
       scene.worldGrid,
       scene.actorActionService,
       scene.worldMapService,
+      (x: number, y: number) => scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village',
     );
     scene.treeStateSystem.setActionDispatcher(scene.worldActionGateway);
     scene.nestStateSystem.setActionDispatcher(scene.worldActionGateway);
@@ -280,6 +305,15 @@ export function createGameScene(scene: any): void {
         scene.npcDirectorSystem?.pauseNpc(npcId, gameTick, seconds, reason),
     });
     scene.dialogueSystem.start();
+    scene.vehicleSystem = new VehicleSystem(scene);
+    scene.cutsceneDirector = new CutsceneDirector(scene, scene.vehicleSystem);
+    scene.eventActionExecutor = new EventActionExecutor(createEventRuntimeContext(scene));
+    scene.eventSystem = new EventSystem(
+      scene.initialGameSave?.worldStatus?.events,
+      scene.initialGameSave?.worldStatus?.unlockedNpcs ?? [],
+      scene.eventActionExecutor,
+      () => scene.dayCycle?.gameTick ?? 0,
+    );
 
     // NPC daily routine + internal drives
     // Schedule pushes time-of-day actions (work_farm at 08:00, lunch at 12:00, etc.)
@@ -374,9 +408,15 @@ export function createGameScene(scene: any): void {
           createdAt: scene.dayCycle?.gameTick ?? 0,
         })),
       getCreatureStates: () => scene.getCreatureStates(),
+      getHouses: () => scene.houseSaveAdapter?.exportHouses?.() ?? [],
+      getHouseContracts: () => scene.houseSaveAdapter?.exportContracts?.() ?? [],
+      getStorageChests: () => scene.storageChestSystem?.exportSaveData?.() ?? [],
       getNpcMemories: () => Object.fromEntries(
         scene.getNpcRegistrations().map(({ id, npc }: { id: string; npc: any }) => [id, [...npc.memory]]),
       ),
+      getEventState: () => scene.eventSystem?.exportSaveData(),
+      getUnlockedNpcIds: () => scene.eventSystem?.getUnlockedNpcIds(),
+      getWorldIdAt: (x: number, y: number) => scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village',
     });
     scene.savingSystem.init();
 
@@ -402,6 +442,9 @@ export function createGameScene(scene: any): void {
     // Restore saved world entities (beds positions, nest states)
     // Must run AFTER _spawnBeds() and createChickens() so defaults exist first.
     scene._loadWorldState(scene.initialState.worldState ?? null);
+    scene.houseSaveAdapter?.loadFromGameSave(scene.initialGameSave);
+    scene.storageChestSystem?.loadFromGameSave(scene.initialGameSave);
+    scene.locationSystem?.restoreSavedLocations?.(scene.initialGameSave, scene.activeUserId ?? 'player');
     scene.ensureAllNpcMindStates();
     scene.syncNpcAgentWorldContexts();
 

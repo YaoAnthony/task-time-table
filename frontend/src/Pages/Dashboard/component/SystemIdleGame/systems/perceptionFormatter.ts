@@ -8,7 +8,8 @@ import type {
 const ITEM_LABELS: Record<string, string> = {
   watering_can: '水壶',
   axe: '斧头',
-  scythe: '镰刀',
+  scythe: '锄头',
+  shovel: '铲子',
   wheat_seed: '小麦种子',
   tomato_seed: '番茄种子',
   wheat: '小麦',
@@ -25,12 +26,16 @@ const ITEM_LABELS: Record<string, string> = {
 const OBJECT_LABELS: Record<string, string> = {
   bed: '床',
   chest: '宝箱',
+  storage_chest: '储物箱',
   nest: '鸡窝',
   berry_bush: '树莓灌木',
   bush: '灌木',
   rock: '石头',
   farm_tile: '农田',
   house: '房子',
+  room: '房间',
+  room_exit: '门口',
+  furniture: '家具',
   decoration: '装饰物',
 };
 
@@ -50,6 +55,7 @@ function formatEntity(entity: PerceivedEntity): string {
 
 function objectLabel(objectItem: PerceivedObject): string {
   const base = OBJECT_LABELS[objectItem.type] ?? objectItem.type;
+  if (typeof objectItem.meta?.summary === 'string') return objectItem.meta.summary;
   if (objectItem.type === 'bed' && objectItem.state) return `${objectItem.state}${base}`;
   if (objectItem.type === 'tree' && objectItem.meta?.hasFruit) return '结果的树';
   return base;
@@ -74,6 +80,17 @@ export function formatPerceptionForNpcPrompt(result: PerceptionResult): string {
   const nearestLandmark = result.landmarks[0];
   if (nearestLandmark && nearestLandmark.distance <= 120) {
     parts.push(`你现在大概在${landmarkLabel(nearestLandmark)}附近。`);
+  }
+
+  const currentRoom = result.visibleObjects.find((objectItem) => (
+    objectItem.type === 'room'
+    && objectItem.distance <= 280
+    && objectItem.meta?.isInterior === true
+  ));
+  if (currentRoom) {
+    const roomLabel = typeof currentRoom.meta?.label === 'string' ? currentRoom.meta.label : '房间';
+    const roomSummary = typeof currentRoom.meta?.summary === 'string' ? currentRoom.meta.summary : '';
+    parts.push(`你现在在${roomLabel}里面。${roomSummary}`);
   }
 
   const liveTrees = result.visibleObjects.filter((objectItem) => (

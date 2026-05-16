@@ -98,9 +98,30 @@ export function usePhaserBoot({
     }
 
     // ── gameBus 订阅 ──────────────────────────────────────────────────────
+    const saveCurrentGame = () => {
+      const s = sceneRef.current;
+      if (!s) return;
+      const roomId = multiplayRoomIdRef.current ?? undefined;
+      const gameSave = s.getGameSaveData({
+        previousSave: savedGameSaveRef.current,
+        roomId,
+        userId,
+        username,
+        settings: gameSettingsRef.current,
+        inventory: {
+          gameInventory: gameInventoryRef.current,
+          hotbarSlots: hotbarSlotsRef.current as (SlotItem | null)[],
+          backpackSlots: backpackSlotsRef.current,
+        },
+        npcInventories: npcInventoriesRef.current,
+      });
+      saveGameSave({ gameSave, roomId }).catch(() => {});
+    };
+
     const unsubs = [
       // 时间 HUD — 显示完整日期+时间 ("2026-01-01 06:00")
       gameBus.on('tick:update', ({ dateTimeStr }) => setTimeStr(dateTimeStr)),
+      gameBus.on('game:save_requested', () => saveCurrentGame()),
 
       // 场景就绪 → 连接 NPC 提供者 + 加载持久数据
       gameBus.on('game:ready', () => {
@@ -186,25 +207,7 @@ export function usePhaserBoot({
     document.addEventListener('keydown', onKeyDown, true);
 
     // ── 自动存档（每 30 s）─────────────────────────────────────────────────
-    const saveTimer = setInterval(() => {
-      const s = sceneRef.current;
-      if (!s) return;
-      const roomId = multiplayRoomIdRef.current ?? undefined;
-      const gameSave = s.getGameSaveData({
-        previousSave: savedGameSaveRef.current,
-        roomId,
-        userId,
-        username,
-        settings: gameSettingsRef.current,
-        inventory: {
-          gameInventory: gameInventoryRef.current,
-          hotbarSlots: hotbarSlotsRef.current as (SlotItem | null)[],
-          backpackSlots: backpackSlotsRef.current,
-        },
-        npcInventories: npcInventoriesRef.current,
-      });
-      saveGameSave({ gameSave, roomId }).catch(() => {});
-    }, 30_000);
+    const saveTimer = setInterval(saveCurrentGame, 30_000);
 
     // ── ResizeObserver ───────────────────────────────────────────────────────
     const ro = new ResizeObserver(() => {

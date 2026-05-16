@@ -7,9 +7,11 @@ export function updateGameScene(scene: any, time: number, delta: number): void {
     // Day/Night cycle update (advances time, repaints overlay)
     scene.dayCycle.update(dt);
     scene.syncWorldStateMeta();
+    scene.eventSystem?.update(scene.dayCycle.gameTick);
 
     // Farm: update crop visuals every frame
     scene.farmSystem?.update(scene.dayCycle.gameTick);
+    scene.houseConstructionSystem?.update(scene.dayCycle.gameTick);
 
     // Emit time string to React HUD (max once per real second)
     if (time - scene._lastTimeEmit > 1000) {
@@ -67,6 +69,8 @@ export function updateGameScene(scene: any, time: number, delta: number): void {
 
     // NPC + chickens
     scene.npcSystem?.updateActors(dt, scene.dayCycle.gameTick);
+    scene.houseInteractionSystem?.update(time);
+    scene.locationSystem?.update(time);
     scene.pathDebugSystem?.update(scene.allNpcs());
     scene.treeStateSystem?.update(time);
     scene.objectSystem?.update(time, delta);

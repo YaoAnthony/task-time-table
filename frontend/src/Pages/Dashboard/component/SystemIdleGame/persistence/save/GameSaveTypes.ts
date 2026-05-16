@@ -6,6 +6,9 @@ import type {
   SlotItem,
 } from '../../../../../../Redux/Features/gameSlice';
 import type { Direction, NpcMemoryEntry } from '../../types';
+import type { GameEventSaveState } from '../../event/EventTypes';
+import type { HouseContractSave, HouseInstanceSave } from '../../housing/HouseTypes';
+import type { StorageChestSave } from '../../storage/StorageChestTypes';
 import type { DropState, NpcMindState, WorldState } from '../../shared/worldStateTypes';
 
 export interface GameSaveSettings {
@@ -22,6 +25,7 @@ export interface PlayerSave {
   id: string;
   name: string;
   position: {
+    worldId: string;
     x: number;
     y: number;
     facing: Direction;
@@ -41,6 +45,7 @@ export interface NpcSave {
   catalogId?: string;
   role?: string;
   position: {
+    worldId: string;
     x: number;
     y: number;
     facing?: Direction;
@@ -64,10 +69,14 @@ export interface GameSaveV1 {
       chests: GameChest[];
       worldItems: DropState[];
       creatures: CreatureState[];
+      houses: HouseInstanceSave[];
+      houseContracts: HouseContractSave[];
+      storageChests: StorageChestSave[];
     };
     npcCatalogVersion: number;
     unlockedNpcs: string[];
     npcs: Record<string, NpcSave>;
+    events: GameEventSaveState;
   };
   players: Record<string, PlayerSave>;
 }

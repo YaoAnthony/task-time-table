@@ -8,7 +8,7 @@ import { NpcMemorySystem } from './NpcMemorySystem';
 import type { PerceptionResult } from './WorldPerceptionSystem';
 import { PerceptionSystem } from './WorldPerceptionSystem';
 import { canRunFreeThink, canRunScheduleDrivenThink } from './NpcBehaviorPolicy';
-import type { AgentWorldContext, AgentWorldModel } from './AgentWorldModel';
+import type { AgentAffordance, AgentWorldContext, AgentWorldModel } from './AgentWorldModel';
 
 interface NpcRegistration {
   id: string;
@@ -19,6 +19,17 @@ interface NpcThinkOutcome {
   intent: Omit<NpcIntentState, 'updatedAtTick'>;
   actions: NpcAction[];
 }
+
+const SCHEDULED_FARM_PRIORITY: Array<{
+  action: string;
+  type: NpcAction['type'];
+  itemId?: string;
+}> = [
+  { action: 'harvest_crop', type: 'harvest_crop' },
+  { action: 'water_tile', type: 'water_tile', itemId: 'watering_can' },
+  { action: 'till_tile', type: 'till_tile', itemId: 'scythe' },
+  { action: 'plant_crop', type: 'plant_crop', itemId: 'wheat_seed' },
+];
 
 export interface NpcThinkSystemOptions {
   worldStateManager: WorldStateManager;
@@ -146,25 +157,20 @@ export class NpcThinkSystem {
 
     const currentMinute = Math.floor(gameTick * GAME_MINS_PER_SEC) % MINS_PER_DAY;
     const isDaylight = currentMinute >= 480 && currentMinute < 1080;
-    const hasFarmAction = agentWorld?.availableActions.some((action) => (
-      action.feasible
-      && ['harvest_crop', 'plant_crop', 'water_tile', 'till_tile'].includes(action.action)
-    )) ?? true;
-    if (isDaylight && memory.schedule?.currentActivity === 'work_farm' && hasFarmAction) {
+    const scheduledFarmAction = this.pickScheduledFarmAction(agentWorld, gameTick);
+    if (isDaylight && memory.schedule?.currentActivity === 'work_farm' && scheduledFarmAction) {
       return {
         intent: {
           kind: 'perform_skill',
           reason: 'scheduled_farm_work',
-          targetKey: 'skill:farm_sow_wheat_day',
-          targetId: 'farm_sow_wheat_day',
-          targetType: 'knowledge_skill',
+          targetKey: `${scheduledFarmAction.type}:${scheduledFarmAction.tx ?? ''},${scheduledFarmAction.ty ?? ''}`,
+          targetId: `${scheduledFarmAction.tx ?? ''},${scheduledFarmAction.ty ?? ''}`,
+          targetType: scheduledFarmAction.type,
+          targetWorldId: scheduledFarmAction.target?.kind === 'coords' ? scheduledFarmAction.target.worldId : undefined,
+          targetX: typeof scheduledFarmAction.tx === 'number' ? scheduledFarmAction.tx * 32 + 16 : undefined,
+          targetY: typeof scheduledFarmAction.ty === 'number' ? scheduledFarmAction.ty * 32 + 16 : undefined,
         },
-        actions: [
-          {
-            type: 'use_skill',
-            skillId: 'farm_sow_wheat_day',
-          },
-        ],
+        actions: [scheduledFarmAction],
       };
     }
 
@@ -187,6 +193,7 @@ export class NpcThinkSystem {
           targetKey: `drop:${visibleDrop.id}`,
           targetId: visibleDrop.id,
           targetType: visibleDrop.itemId,
+          targetWorldId: visibleDrop.worldId,
           targetX: visibleDrop.x,
           targetY: visibleDrop.y,
         },
@@ -194,14 +201,14 @@ export class NpcThinkSystem {
           {
             type: 'pickup_item',
             itemId: visibleDrop.itemId,
-            target: { kind: 'coords', x: visibleDrop.x, y: visibleDrop.y },
+            target: { kind: 'coords', x: visibleDrop.x, y: visibleDrop.y, worldId: visibleDrop.worldId },
           },
         ],
       };
     }
 
     const rememberedDrop = this.findFreshMemory(memory, 'drop', gameTick);
-    if (rememberedDrop && !this.hasRecentFailureForTarget(memory, rememberedDrop.x, rememberedDrop.y, gameTick)) {
+    if (rememberedDrop && !this.hasRecentFailureForTarget(memory, rememberedDrop.x, rememberedDrop.y, gameTick, rememberedDrop.worldId)) {
       return {
         intent: {
           kind: 'seek_drop',
@@ -209,33 +216,35 @@ export class NpcThinkSystem {
           targetKey: rememberedDrop.key,
           targetId: rememberedDrop.sourceId,
           targetType: rememberedDrop.type,
+          targetWorldId: rememberedDrop.worldId,
           targetX: rememberedDrop.x,
           targetY: rememberedDrop.y,
         },
         actions: [
           {
             type: 'move',
-            target: { kind: 'coords', x: rememberedDrop.x, y: rememberedDrop.y },
+            target: { kind: 'coords', x: rememberedDrop.x, y: rememberedDrop.y, worldId: rememberedDrop.worldId },
           },
         ],
       };
     }
 
     const rememberedLandmark = this.pickExploreLandmark(memory, gameTick);
-    if (rememberedLandmark && !this.hasRecentFailureForTarget(memory, rememberedLandmark.x, rememberedLandmark.y, gameTick)) {
+    if (rememberedLandmark && !this.hasRecentFailureForTarget(memory, rememberedLandmark.x, rememberedLandmark.y, gameTick, rememberedLandmark.worldId)) {
       return {
         intent: {
           kind: 'move_to_landmark',
           reason: 'known_landmark_explore',
           targetKey: rememberedLandmark.key,
           targetType: rememberedLandmark.type,
+          targetWorldId: rememberedLandmark.worldId,
           targetX: rememberedLandmark.x,
           targetY: rememberedLandmark.y,
         },
         actions: [
           {
             type: 'move',
-            target: { kind: 'coords', x: rememberedLandmark.x, y: rememberedLandmark.y },
+            target: { kind: 'coords', x: rememberedLandmark.x, y: rememberedLandmark.y, worldId: rememberedLandmark.worldId },
           },
         ],
       };
@@ -246,13 +255,14 @@ export class NpcThinkSystem {
       intent: {
         kind: 'explore',
         reason: 'fallback_explore',
+        targetWorldId: perception.self.worldId,
         targetX: exploreTarget.x,
         targetY: exploreTarget.y,
       },
       actions: [
         {
           type: 'move',
-          target: { kind: 'coords', x: exploreTarget.x, y: exploreTarget.y },
+          target: { kind: 'coords', x: exploreTarget.x, y: exploreTarget.y, worldId: perception.self.worldId },
         },
       ],
     };
@@ -264,6 +274,58 @@ export class NpcThinkSystem {
       .sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity))[0] ?? null;
   }
 
+  private pickScheduledFarmAction(agentWorld: AgentWorldContext | null, gameTick: number): NpcAction | null {
+    if (!agentWorld) return { type: 'use_skill', skillId: 'farm_till_day' };
+
+    for (const priority of SCHEDULED_FARM_PRIORITY) {
+      const affordance = agentWorld.availableActions.find((action) => (
+        action.action === priority.action
+        && action.feasible
+        && typeof action.tx === 'number'
+        && typeof action.ty === 'number'
+        && !this.hasRecentActionFailure(agentWorld, action, gameTick)
+      ));
+      if (!affordance) continue;
+      return {
+        type: priority.type,
+        tx: affordance.tx,
+        ty: affordance.ty,
+        itemId: priority.itemId,
+        duration: 1,
+      };
+    }
+
+    return null;
+  }
+
+  private hasRecentActionFailure(agentWorld: AgentWorldContext, action: AgentAffordance, gameTick: number): boolean {
+    if (typeof action.x !== 'number' || typeof action.y !== 'number') return false;
+    const actionX = action.x;
+    const actionY = action.y;
+    return agentWorld.recentFailures.some((failure) => {
+      if (failure.action !== `farm_${this.farmKindForAction(action.action)}`) return false;
+      if (gameTick - failure.tick > 90) return false;
+      if (typeof failure.targetX !== 'number' || typeof failure.targetY !== 'number') return false;
+      if (failure.targetWorldId && action.worldId && failure.targetWorldId !== action.worldId) return false;
+      return Math.hypot(failure.targetX - actionX, failure.targetY - actionY) < 36;
+    });
+  }
+
+  private farmKindForAction(action: string): string {
+    switch (action) {
+      case 'till_tile':
+        return 'till';
+      case 'water_tile':
+        return 'water';
+      case 'plant_crop':
+        return 'plant';
+      case 'harvest_crop':
+        return 'harvest';
+      default:
+        return action;
+    }
+  }
+
   private pickExploreLandmark(mind: NpcMindState, gameTick: number): NpcMemoryRecord | null {
     const candidates = Object.values(mind.knownLandmarks)
       .filter((record) => gameTick - record.lastSeenTick <= 600);
@@ -271,13 +333,15 @@ export class NpcThinkSystem {
     return candidates[gameTick % candidates.length];
   }
 
-  private hasRecentFailureForTarget(mind: NpcMindState, x: number, y: number, gameTick: number): boolean {
+  private hasRecentFailureForTarget(mind: NpcMindState, x: number, y: number, gameTick: number, worldId?: string): boolean {
     return Object.values(mind.recentMemories).some((record) => {
       if (record.kind !== 'action' || record.meta?.status !== 'failed') return false;
       if (gameTick - record.lastSeenTick > 120) return false;
       const targetX = Number(record.meta?.targetX);
       const targetY = Number(record.meta?.targetY);
       if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return false;
+      const failureWorldId = typeof record.meta?.targetWorldId === 'string' ? record.meta.targetWorldId : record.worldId;
+      if (worldId && failureWorldId && worldId !== failureWorldId) return false;
       return Math.hypot(targetX - x, targetY - y) < 48;
     });
   }

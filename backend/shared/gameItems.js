@@ -54,10 +54,16 @@ const GAME_ITEMS = {
     rarity: 'common', image: 'tools', description: '为耕地浇水。',
     capabilities: [{ action: 'water' }], tags: ['tool', 'farming'],
   },
-  scythe: {
-    id: 'scythe', name: 'Scythe', nameZh: '镰刀',
+  shovel: {
+    id: 'shovel', name: 'Shovel', nameZh: '铲子',
     type: 'tool', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'tools', description: '开垦土地用的镰刀。',
+    rarity: 'common', image: 'tools', description: '基础挖掘工具。',
+    capabilities: [], tags: ['tool', 'digging'],
+  },
+  scythe: {
+    id: 'scythe', name: 'Hoe', nameZh: '锄头',
+    type: 'tool', category: 'game', stackable: false, maxStack: 1,
+    rarity: 'common', image: 'tools', description: '开垦土地用的锄头。',
     capabilities: [{ action: 'till' }], tags: ['tool', 'farming'],
   },
   axe: {
@@ -71,6 +77,27 @@ const GAME_ITEMS = {
     type: 'consumable', category: 'game', stackable: true, maxStack: 99,
     rarity: 'common', image: '', description: '喂鸡可加速成长。',
     capabilities: [{ action: 'feed' }], tags: ['food', 'animal'],
+  },
+  house_blueprint_greenhouse: {
+    id: 'house_blueprint_greenhouse', name: 'Greenhouse Blueprint', nameZh: '温室蓝图',
+    type: 'house_blueprint', category: 'game', stackable: true, maxStack: 99,
+    rarity: 'common', image: 'green-house/house-close', description: '可以在空地上建造一间温室小屋。',
+    capabilities: [{ action: 'place_house', definitionId: 'greenhouse' }],
+    tags: ['house', 'blueprint', 'building'],
+  },
+  house_key: {
+    id: 'house_key', name: 'House Key', nameZh: '房屋钥匙',
+    type: 'key', category: 'game', stackable: false, maxStack: 1,
+    rarity: 'common', image: 'icon/key', description: '打开指定房子的钥匙。',
+    capabilities: [{ action: 'open_house' }],
+    tags: ['house', 'key'],
+  },
+  storage_chest_basic: {
+    id: 'storage_chest_basic', name: 'Storage Chest', nameZh: 'Storage Chest',
+    type: 'storage', category: 'game', stackable: true, maxStack: 99,
+    rarity: 'common', image: 'chest', description: 'Place it in the world to store backpack items.',
+    capabilities: [{ action: 'place_storage_chest', definitionId: 'basic' }],
+    tags: ['storage', 'chest', 'building'],
   },
 };
 

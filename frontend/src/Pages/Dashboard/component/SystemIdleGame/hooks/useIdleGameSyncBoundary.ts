@@ -27,6 +27,7 @@ export function applyServerChestSpawn(
   setAvailableChests: Dispatch<SetStateAction<GameChest[]>>,
   chest: GameChest,
 ): void {
+  if (chest.opened) return;
   setAvailableChests((prev) => (
     prev.some((entry) => entry.id === chest.id) ? prev : [...prev, chest]
   ));

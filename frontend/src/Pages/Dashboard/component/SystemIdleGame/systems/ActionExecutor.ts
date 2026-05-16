@@ -33,7 +33,17 @@ export interface WorldContext {
   /** Create a WorldItem at (x, y) for the NPC dropping an item. */
   dropWorldItem(x: number, y: number, itemId: string, npcName: string): void;
   /** Remove a WorldItem from the world (NPC picked it up); fires onNpcPickupWorldItem. */
-  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number }): void;
+  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number; worldId?: string }): void;
+  /** Resolve which logical world/room contains a point. */
+  getWorldIdAt?(x: number, y: number): string;
+  /** Resolve an NPC's current logical world/room. */
+  getNpcWorldId?(npcName: string): string;
+  /** Navigate across room/village boundaries before walking to the final point. */
+  navigateNpcToWorldPosition?(
+    npcName: string,
+    target: { x: number; y: number; worldId?: string },
+    onArrive?: () => void,
+  ): boolean;
   /** Find a farm tile/cell target for a semantic farm action. */
   findFarmTarget(action: FarmActionKind, x: number, y: number, maxRadiusCells?: number, actorId?: string): FarmActionTarget | null;
   /** Apply a farm action through the same world-action path used by the player. */
@@ -50,6 +60,12 @@ export interface WorldContext {
   findNpcByName(name: string): Npc | null;
   /** Pick a walkable adjacent spot for one NPC to stand while talking to another. */
   findConversationSpotForNpc(sourceName: string, targetName: string): { x: number; y: number } | null;
+  /** Resolve a house door target for an NPC, preferring their remembered/contracted home when possible. */
+  findHouseEntryTarget(houseId?: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null;
+  /** Move the NPC into the matching room instance after they reached the door. */
+  enterHouseForNpc(npcName: string, houseId: string): boolean;
+  /** Persist a house as the NPC's remembered home. */
+  rememberHomeHouseForNpc(npcName: string, houseId: string, gameTick: number): boolean;
 }
 
 // Named locations are now defined in shared/WorldLocations.ts
@@ -63,16 +79,36 @@ type ActionExecutorFn = (
   world?:   WorldContext,
 ) => void;
 
+type ResolvedCoords = { x: number; y: number; worldId?: string };
+
+function withWorldId(world: WorldContext | undefined, coords: { x: number; y: number; worldId?: string }): ResolvedCoords {
+  return {
+    ...coords,
+    worldId: coords.worldId ?? world?.getWorldIdAt?.(coords.x, coords.y),
+  };
+}
+
+function navigateNpcTo(
+  npc: Npc,
+  coords: ResolvedCoords,
+  world?: WorldContext,
+  onArrive?: () => void,
+): void {
+  const routed = world?.navigateNpcToWorldPosition?.(npc.name, coords, onArrive);
+  if (routed) return;
+  npc.navigateTo(coords.x, coords.y, onArrive);
+}
+
 // ─── Default action registry ──────────────────────────────────────────────────
 const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
   say: (action, npc, _player, gameTick) => {
     if (action.text) npc.say(action.text, gameTick);
   },
 
-  move: (action, npc, player) => {
+  move: (action, npc, player, _gameTick, world) => {
     if (!action.target) return;
-    const coords = resolveTarget(action.target, npc, player);
-    if (coords) npc.navigateTo(coords.x, coords.y);
+    const coords = resolveTarget(action.target, npc, player, world);
+    if (coords) navigateNpcTo(npc, coords, world);
   },
 
   idle: (_action, npc) => {
@@ -80,11 +116,11 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
   },
 
   // ── Future stubs (register real implementations when features are ready) ──
-  water: (action, npc, player) => {
+  water: (action, npc, player, _gameTick, world) => {
     // Move to target, then TODO: play watering animation on arrival
     if (action.target) {
-      const coords = resolveTarget(action.target, npc, player);
-      if (coords) npc.navigateTo(coords.x, coords.y);
+      const coords = resolveTarget(action.target, npc, player, world);
+      if (coords) navigateNpcTo(npc, coords, world);
     }
   },
   eat:    () => { /* TODO: play eat animation, update hunger stat */ },
@@ -106,8 +142,9 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
     }
     const x = resolvedTarget?.x ?? item!.worldX;
     const y = resolvedTarget?.y ?? item!.worldY;
-    npc.navigateTo(x, y, () => {
-      world.claimWorldItem(action.itemId!, npc.name, { x, y });
+    const target = withWorldId(world, { x, y, worldId: resolvedTarget?.worldId });
+    navigateNpcTo(npc, target, world, () => {
+      world.claimWorldItem(action.itemId!, npc.name, target);
     });
   },
 
@@ -125,7 +162,7 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
       npc.say('附近没有可以砍的树。', gameTick);
       return;
     }
-    npc.navigateTo(nearest.x, nearest.y, () => {
+    navigateNpcTo(npc, withWorldId(world, nearest), world, () => {
       console.log(`[ActionExecutor] chop_tree onArrive: chopping tree id=${nearest.id}`);
       world.chopTreeById(nearest.id);
     });
@@ -137,7 +174,7 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
       npc.name,
       action.skillId,
       { x: npc.sprite.x, y: npc.sprite.y },
-      (x, y, onArrive) => npc.navigateTo(x, y, onArrive),
+      (x, y, onArrive) => navigateNpcTo(npc, withWorldId(world, { x, y }), world, onArrive),
       gameTick,
     );
     if (!ok) npc.say('I do not know that skill yet.', gameTick);
@@ -152,6 +189,31 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
       y: target.sprite.y,
     };
     npc.talkWithNpc(target, standAt, gameTick, action.duration ?? 14, action.text);
+  },
+
+  enter_house: (action, npc, _player, gameTick, world) => {
+    if (!world) return;
+    const entry = world.findHouseEntryTarget(action.houseId, npc.name);
+    if (!entry) {
+      npc.say('I cannot find that house door.', gameTick);
+      return;
+    }
+    const approach = withWorldId(world, { x: entry.x, y: entry.y + 40, worldId: 'world:village' });
+    navigateNpcTo(npc, approach, world, () => {
+      const ok = world.enterHouseForNpc(npc.name, entry.houseId);
+      if (!ok) npc.say('I could not enter the house.', gameTick);
+    });
+  },
+
+  remember_home_house: (action, npc, _player, gameTick, world) => {
+    if (!world) return;
+    const entry = world.findHouseEntryTarget(action.houseId, npc.name);
+    if (!entry) {
+      npc.say('I cannot tell which house is mine yet.', gameTick);
+      return;
+    }
+    const ok = world.rememberHomeHouseForNpc(npc.name, entry.houseId, gameTick);
+    if (ok) npc.say('I will remember this as my home.', gameTick);
   },
 
   till_tile: (action, npc, _player, gameTick, world) => {
@@ -209,7 +271,7 @@ function executeFarmAction(
     return;
   }
 
-  npc.navigateTo(target.x, target.y, () => {
+  navigateNpcTo(npc, withWorldId(world, target), world, () => {
     const ok = world.performFarmAction(npc.name, kind, target, itemId);
     if (!ok) npc.say('That farm action failed.', gameTick);
   });
@@ -219,10 +281,11 @@ function resolveTarget(
   target: ActionTarget,
   npc:    Npc,
   player: Player,
-): { x: number; y: number } | null {
+  world?: WorldContext,
+): ResolvedCoords | null {
   switch (target.kind) {
     case 'coords':
-      return { x: target.x, y: target.y };
+      return withWorldId(world, { x: target.x, y: target.y, worldId: target.worldId });
 
     case 'named': {
       const loc = resolveActorLocationTarget(target.place, npc.name);
@@ -230,21 +293,21 @@ function resolveTarget(
         console.warn(`[ActionExecutor] Unknown named location: "${target.place}"`);
         return null;
       }
-      return loc;
+      return withWorldId(world, loc);
     }
 
     case 'entity':
       if (target.ref === 'player') {
         // Offset slightly below player so NPC doesn't overlap
-        return { x: player.sprite.x, y: player.sprite.y + 40 };
+        return withWorldId(world, { x: player.sprite.x, y: player.sprite.y + 40 });
       }
       if (target.ref === 'npc') {
-        return { x: npc.sprite.x, y: npc.sprite.y };
+        return withWorldId(world, { x: npc.sprite.x, y: npc.sprite.y });
       }
       return null;
 
     case 'relative':
-      return { x: npc.sprite.x + target.dx, y: npc.sprite.y + target.dy };
+      return withWorldId(world, { x: npc.sprite.x + target.dx, y: npc.sprite.y + target.dy });
 
     default:
       return null;
@@ -284,6 +347,7 @@ export class ActionExecutor {
       'pickup_item',
       'dispatch',
       'talk_with',
+      'enter_house',
       'use_skill',
       'till_tile',
       'water_tile',
@@ -333,22 +397,34 @@ export class ActionExecutor {
     if (action.type === 'chop_tree') {
       const tree = this.world?.findNearestTree(npc.sprite.x, npc.sprite.y);
       if (!tree) return action;
-      return { ...action, target: { kind: 'coords', x: tree.x, y: tree.y }, itemId: tree.id };
+      const target = withWorldId(this.world, tree);
+      return { ...action, target: { kind: 'coords', x: target.x, y: target.y, worldId: target.worldId }, itemId: tree.id };
     }
     // pickup_item: resolve itemId → world item coords
     if (action.type === 'pickup_item' && action.itemId) {
       if (action.target?.kind === 'coords') return action;
       const item = this.world?.findWorldItem(action.itemId);
       if (!item) return action;
-      return { ...action, target: { kind: 'coords', x: item.worldX, y: item.worldY } };
+      const target = withWorldId(this.world, { x: item.worldX, y: item.worldY });
+      return { ...action, target: { kind: 'coords', x: target.x, y: target.y, worldId: target.worldId } };
+    }
+    if (action.type === 'enter_house') {
+      const entry = this.world?.findHouseEntryTarget(action.houseId, npc.name);
+      if (!entry) return action;
+      return {
+        ...action,
+        houseId: entry.houseId,
+        roomId: entry.roomId,
+        target: { kind: 'coords', x: entry.x, y: entry.y, worldId: 'world:village' },
+      };
     }
     // dispatch: always head to the door
     if (action.type === 'dispatch') {
-      return { ...action, target: { kind: 'coords', x: PLAYER_HOUSE_DOOR.x, y: PLAYER_HOUSE_DOOR.y } };
+      return { ...action, target: { kind: 'coords', x: PLAYER_HOUSE_DOOR.x, y: PLAYER_HOUSE_DOOR.y, worldId: 'world:village' } };
     }
     if (!action.target || action.target.kind === 'coords') return action;
-    const coords = resolveTarget(action.target, npc, this.player);
+    const coords = resolveTarget(action.target, npc, this.player, this.world);
     if (!coords) return { ...action, target: undefined };
-    return { ...action, target: { kind: 'coords', x: coords.x, y: coords.y } };
+    return { ...action, target: { kind: 'coords', x: coords.x, y: coords.y, worldId: coords.worldId } };
   }
 }

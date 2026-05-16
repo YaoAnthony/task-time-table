@@ -163,6 +163,8 @@ export function getDynamicLightConfigs(scene: any) : LightConfig[] {
       });
     }
 
+    lights.push(...(scene.vehicleSystem?.getLightConfigs?.() ?? []));
+
     return lights;
   
 }

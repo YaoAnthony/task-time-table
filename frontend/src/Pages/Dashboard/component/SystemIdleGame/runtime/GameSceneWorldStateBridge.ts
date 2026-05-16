@@ -4,6 +4,7 @@ import type { Bed } from '../entities/Bed';
 import type { DropItem } from '../entities/DropItem';
 import type { Npc } from '../entities/Npc';
 import type { Interactable } from '../types';
+import type { WorldObjectKind } from '../shared/worldStateTypes';
 import { gameBus } from '../shared/EventBus';
 import type { WorldAction, WorldActionResult } from '../systems/WorldActionSystem';
 import type { WorldSyncSource } from '../sync/syncPolicy';
@@ -165,7 +166,7 @@ export function syncNpcAgentWorldContexts(scene: any) : void {
 
 export function registerWorldObject(scene: any, 
     id: string,
-    kind: 'tree' | 'chest' | 'bed' | 'nest',
+    kind: WorldObjectKind,
     x: number,
     y: number,
     opts?: { blocking?: boolean; interactable?: boolean; state?: string; meta?: Record<string, unknown> },
@@ -263,12 +264,17 @@ export function findDropByItemAndPosition(scene: any, itemId: string, x: number,
 export function findInteractableObjectByStateId(scene: any, objectId: string) : Interactable | null {
     if (scene.trees.has(objectId)) return scene.trees.get(objectId) ?? null;
     if (scene.chests.has(objectId)) return scene.chests.get(objectId) ?? null;
+    const storageChest = scene.storageChestSystem?.getView?.(objectId);
+    if (storageChest) return storageChest;
 
     const bed = scene.beds.find((entry: any) => scene.getRuntimeObjectId(entry) === objectId);
     if (bed) return bed;
 
     const nest = scene.nests.find((entry: any) => entry.id === objectId || scene.getRuntimeObjectId(entry) === objectId);
     if (nest) return nest;
+
+    const house = scene.houseSaveAdapter?.getView?.(objectId);
+    if (house) return house;
 
     return null;
   
@@ -286,6 +292,28 @@ export function applyPlaceObjectAction(scene: any, action: Extract<WorldAction, 
       action,
       reason: placed ? undefined : 'Object placement failed',
       changedIds: placed ? [action.itemId] : [],
+    };
+  
+}
+
+export function applyPlaceHouseAction(scene: any, action: Extract<WorldAction, { type: 'PLACE_HOUSE' }>) : WorldActionResult {
+    const requested = scene.housePlacementSystem?.requestPlacement(action.definitionId, action.blueprintItemId) ?? false;
+    return {
+      ok: requested,
+      action,
+      reason: requested ? undefined : 'House placement request failed',
+      changedIds: requested ? [action.blueprintItemId] : [],
+    };
+  
+}
+
+export function applyPlaceStorageChestAction(scene: any, action: Extract<WorldAction, { type: 'PLACE_STORAGE_CHEST' }>) : WorldActionResult {
+    const requested = scene.storageChestSystem?.requestPlacement(action.itemId) ?? false;
+    return {
+      ok: requested,
+      action,
+      reason: requested ? undefined : 'Storage chest placement request failed',
+      changedIds: requested ? [action.itemId] : [],
     };
   
 }
@@ -337,6 +365,10 @@ export function applyDropItemAction(scene: any, action: Extract<WorldAction, { t
 export function applyRemoveObjectAction(scene: any, action: Extract<WorldAction, { type: 'REMOVE_OBJECT' }>) : WorldActionResult {
     if (action.objectKind === 'chest') {
       scene.removeChest(action.objectId);
+      return { ok: true, action, changedIds: [action.objectId] };
+    }
+    if (action.objectKind === 'storage_chest') {
+      scene.storageChestSystem?.remove?.(action.objectId);
       return { ok: true, action, changedIds: [action.objectId] };
     }
     scene.worldStateManager.unregisterObject(action.objectId);

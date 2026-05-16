@@ -161,6 +161,7 @@ export class NpcMemorySystem {
       targetY?: number;
       x?: number;
       y?: number;
+      worldId?: string;
     },
   ): NpcMindState {
     const current = this.ensureNpcMindState(npcId, gameTick);
@@ -169,10 +170,11 @@ export class NpcMemorySystem {
       ...current.recentMemories,
       [key]: {
         key,
-        kind: 'action' as const,
-        type: input.actionType,
-        label: `${input.actionType}_${input.status}`,
-        x: input.targetX ?? input.x ?? 0,
+      kind: 'action' as const,
+      type: input.actionType,
+      label: `${input.actionType}_${input.status}`,
+      worldId: input.worldId,
+      x: input.targetX ?? input.x ?? 0,
         y: input.targetY ?? input.y ?? 0,
         lastSeenTick: gameTick,
         meta: {
@@ -182,6 +184,7 @@ export class NpcMemorySystem {
           actorY: input.y,
           targetX: input.targetX,
           targetY: input.targetY,
+          targetWorldId: input.worldId,
         },
       },
     };
@@ -196,6 +199,7 @@ export class NpcMemorySystem {
             reason: input.reason ?? `${input.actionType}_failed`,
             targetX: input.targetX,
             targetY: input.targetY,
+            targetWorldId: input.worldId,
             updatedAtTick: gameTick,
           }
         : current.currentIntent,
@@ -226,6 +230,7 @@ export class NpcMemorySystem {
       kind: 'object',
       type: entry.type,
       label: entry.type,
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,
@@ -241,6 +246,7 @@ export class NpcMemorySystem {
       kind: 'drop',
       type: entry.itemId,
       label: entry.itemId,
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,
@@ -256,6 +262,7 @@ export class NpcMemorySystem {
       kind: 'entity',
       type: entry.type,
       label: entry.displayName ?? entry.type,
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,
@@ -271,6 +278,7 @@ export class NpcMemorySystem {
       kind: 'crop',
       type: entry.cropId,
       label: entry.cropId,
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,
@@ -289,6 +297,7 @@ export class NpcMemorySystem {
       kind: 'landmark',
       type: entry.kind,
       label: entry.label,
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,
@@ -302,6 +311,7 @@ export class NpcMemorySystem {
       kind: 'water',
       type: 'water',
       label: 'water',
+      worldId: entry.worldId,
       x: entry.x,
       y: entry.y,
       distance: entry.distance,

@@ -16,6 +16,7 @@ export interface GameInventoryItem {
 export interface SlotItem {
   itemId:   string;
   quantity: number;
+  instanceData?: GameInventoryItem['instanceData'];
 }
 
 export type FarmTileState =
@@ -104,12 +105,25 @@ const initialState: GameReduxState = {
 
 /** Rebuild flat gameInventory from both slot arrays. */
 function rebuildInventory(hotbar: (SlotItem | null)[], backpack: (SlotItem | null)[]): GameInventoryItem[] {
-  const map = new Map<string, number>();
+  const map = new Map<string, GameInventoryItem>();
   for (const s of [...hotbar, ...backpack]) {
     if (!s || s.quantity <= 0) continue;
-    map.set(s.itemId, (map.get(s.itemId) ?? 0) + s.quantity);
+    const key = slotKey(s);
+    const existing = map.get(key);
+    if (existing) existing.quantity += s.quantity;
+    else map.set(key, { itemId: s.itemId, quantity: s.quantity, instanceData: s.instanceData });
   }
-  return Array.from(map.entries()).map(([itemId, quantity]) => ({ itemId, quantity }));
+  return Array.from(map.values());
+}
+
+function slotKey(item: Pick<SlotItem, 'itemId' | 'instanceData'>): string {
+  const meta = item.instanceData?.customMeta || {};
+  const instanceId = meta.instanceId || meta.houseId;
+  return instanceId ? `${item.itemId}:${String(instanceId)}` : item.itemId;
+}
+
+function inventoryToSlot(item: GameInventoryItem): SlotItem {
+  return { itemId: item.itemId, quantity: item.quantity, instanceData: item.instanceData };
 }
 
 // ── Slice ─────────────────────────────────────────────────────────────────────
@@ -132,11 +146,11 @@ const gameSlice = createSlice({
         for (let i = 0; i < arr.length; i++) {
           const slot = arr[i];
           if (!slot) continue;
-          const updated = incoming.find(it => it.itemId === slot.itemId);
+          const updated = incoming.find(it => slotKey(it) === slotKey(slot));
           if (!updated || updated.quantity <= 0) {
             arr[i] = null;          // item gone — clear slot
           } else {
-            arr[i] = { itemId: slot.itemId, quantity: updated.quantity };
+            arr[i] = inventoryToSlot(updated);
           }
         }
       }
@@ -144,14 +158,14 @@ const gameSlice = createSlice({
       // Place any new items not yet in any slot
       for (const item of incoming) {
         if (item.quantity <= 0) continue;
-        const inHotbar  = state.hotbarSlots.some(s => s?.itemId === item.itemId);
-        const inBackpack = state.backpackSlots.some(s => s?.itemId === item.itemId);
+        const inHotbar  = state.hotbarSlots.some(s => s && slotKey(s) === slotKey(item));
+        const inBackpack = state.backpackSlots.some(s => s && slotKey(s) === slotKey(item));
         if (inHotbar || inBackpack) continue;
         // Slot it in first empty hotbar, then backpack
         const hi = state.hotbarSlots.findIndex(s => s === null);
-        if (hi >= 0) { state.hotbarSlots[hi] = { itemId: item.itemId, quantity: item.quantity }; continue; }
+        if (hi >= 0) { state.hotbarSlots[hi] = inventoryToSlot(item); continue; }
         const bi = state.backpackSlots.findIndex(s => s === null);
-        if (bi >= 0) { state.backpackSlots[bi] = { itemId: item.itemId, quantity: item.quantity }; }
+        if (bi >= 0) { state.backpackSlots[bi] = inventoryToSlot(item); }
       }
     },
 
@@ -167,9 +181,9 @@ const gameSlice = createSlice({
       let hi = 0, bi = 0;
       for (const item of action.payload) {
         if (hi < HOTBAR_SIZE) {
-          state.hotbarSlots[hi++] = { itemId: item.itemId, quantity: item.quantity };
+          state.hotbarSlots[hi++] = inventoryToSlot(item);
         } else if (bi < BACKPACK_SIZE) {
-          state.backpackSlots[bi++] = { itemId: item.itemId, quantity: item.quantity };
+          state.backpackSlots[bi++] = inventoryToSlot(item);
         }
       }
     },
@@ -179,11 +193,12 @@ const gameSlice = createSlice({
      * Stacks with existing slot of same itemId before claiming a new slot.
      */
     addItemToBackpack(state, action: PayloadAction<SlotItem>) {
-      const { itemId, quantity } = action.payload;
+      const { quantity } = action.payload;
       if (quantity === 0) return;
+      const incomingKey = slotKey(action.payload);
 
       // 1. Stack in existing hotbar slot
-      const hotbarStack = state.hotbarSlots.findIndex(s => s?.itemId === itemId);
+      const hotbarStack = state.hotbarSlots.findIndex(s => s && slotKey(s) === incomingKey);
       if (hotbarStack >= 0) {
         state.hotbarSlots[hotbarStack]!.quantity += quantity;
         if (state.hotbarSlots[hotbarStack]!.quantity <= 0) {
@@ -194,7 +209,7 @@ const gameSlice = createSlice({
       }
 
       // 2. Stack in existing backpack slot
-      const packStack = state.backpackSlots.findIndex(s => s?.itemId === itemId);
+      const packStack = state.backpackSlots.findIndex(s => s && slotKey(s) === incomingKey);
       if (packStack >= 0) {
         state.backpackSlots[packStack]!.quantity += quantity;
         if (state.backpackSlots[packStack]!.quantity <= 0) {
@@ -210,7 +225,7 @@ const gameSlice = createSlice({
       // 3. First empty hotbar slot
       const hotbarEmpty = state.hotbarSlots.findIndex(s => s === null);
       if (hotbarEmpty >= 0) {
-        state.hotbarSlots[hotbarEmpty] = { itemId, quantity };
+        state.hotbarSlots[hotbarEmpty] = action.payload;
         state.gameInventory = rebuildInventory(state.hotbarSlots, state.backpackSlots);
         return;
       }
@@ -218,7 +233,7 @@ const gameSlice = createSlice({
       // 4. Overflow to backpack
       const packEmpty = state.backpackSlots.findIndex(s => s === null);
       if (packEmpty >= 0) {
-        state.backpackSlots[packEmpty] = { itemId, quantity };
+        state.backpackSlots[packEmpty] = action.payload;
       }
       state.gameInventory = rebuildInventory(state.hotbarSlots, state.backpackSlots);
     },

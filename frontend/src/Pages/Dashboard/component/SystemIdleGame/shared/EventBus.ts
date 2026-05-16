@@ -15,10 +15,11 @@
  */
 
 import type { ToolType, FarmTileStateType } from '../types';
-import type { ChestRewardItem }             from '../../../../../Types/Profile';
+import type { ChestRewardItem, GameChest }  from '../../../../../Types/Profile';
 import type { RemoteGameEvent, WorldSnapshot, MultiplayRoomPlayer } from '../systems/MultiplaySystem';
 import type { WorldAction, WorldActionResult } from '../systems/WorldActionSystem';
 import type { WorldSyncSource } from '../sync/syncPolicy';
+import type { GameEventHistoryEntry, GameEventInstance } from '../event/EventTypes';
 
 // ─── Event payload map ────────────────────────────────────────────────────────
 export interface GameEventMap {
@@ -60,7 +61,7 @@ export interface GameEventMap {
   /** NPC returned from dispatch — React should call backend for story + rewards. */
   'npc:dispatch_return':   { npcName: string; carriedItems: Record<string, number> };
   /** NPC navigation failed before reaching a target. */
-  'npc:navigation_failed':  { npcName: string; x: number; y: number; targetX: number; targetY: number; reason: string };
+  'npc:navigation_failed':  { npcName: string; x: number; y: number; worldId?: string; targetX: number; targetY: number; targetWorldId?: string; reason: string };
   /**
    * React → Phaser: make a named NPC say something.
    * (Opposite direction — React fires this after async LLM call.)
@@ -93,7 +94,17 @@ export interface GameEventMap {
 
   // ── Chest ─────────────────────────────────────────────────────────────────
   /** Player opened a chest — show reward UI. */
-  'chest:interact':        { chestId: string; rewards: { coins: number; items: ChestRewardItem[] } };
+  'chest:interact':        { chestId: string; rewards: { coins: number; items: ChestRewardItem[] }; chest?: GameChest };
+  /** A world chest was spawned by an event. */
+  'game:chest_spawned':    { chest: GameChest };
+
+  // Event system
+  /** A queued game event started running. */
+  'event:started':         { event: GameEventInstance };
+  /** A game event completed successfully. */
+  'event:completed':       { event: GameEventHistoryEntry };
+  /** A game event failed while running. */
+  'event:failed':          { event: GameEventHistoryEntry };
 
   // ── UI messages ───────────────────────────────────────────────────────────
   /** Show a transient HUD message to the local player. */
@@ -125,6 +136,35 @@ export interface GameEventMap {
   // ── Game lifecycle ────────────────────────────────────────────────────────
   /** GameScene.create() finished — safe to access NPC entities. */
   'game:ready':             Record<string, never>;
+  /** Runtime state changed in a way that should be persisted immediately. */
+  'game:save_requested':    { reason: string };
+  /** Player requested deleting the current personal world save. */
+  'game:save_delete_requested': { roomId?: string | null };
+  /** Phaser requested backend-atomic house placement. */
+  'game:house_place_requested': {
+    roomId?: string | null;
+    definitionId: string;
+    blueprintItemId: string;
+    x: number;
+    y: number;
+    placementProof: { requestedAtTick: number; footprint: { x: number; y: number; w: number; h: number } };
+  };
+  /** Phaser detected a house is ready and backend should complete it once. */
+  'game:house_complete_requested': { roomId?: string | null; houseId: string; gameTick: number };
+  /** Player used the matching key at a ready house door. */
+  'game:house_door_toggle_requested': { roomId?: string | null; houseId: string };
+  /** @deprecated use game:house_door_toggle_requested. */
+  'game:house_open_requested': { roomId?: string | null; houseId: string };
+  /** Phaser requested backend-atomic storage chest placement. */
+  'game:storage_chest_place_requested': {
+    roomId?: string | null;
+    itemId: string;
+    x: number;
+    y: number;
+    placementProof: { requestedAtTick: number; footprint: { x: number; y: number; w: number; h: number } };
+  };
+  /** Player opened a persistent storage chest. */
+  'game:storage_chest_open_requested': { roomId?: string | null; chestId: string };
 }
 
 // ─── Type helpers ─────────────────────────────────────────────────────────────

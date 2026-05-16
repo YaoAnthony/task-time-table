@@ -27,6 +27,7 @@ export interface NpcScheduleSystemOptions {
   npcMemorySystem: NpcMemorySystem;
   getNpcRegistrations: () => NpcRegistration[];
   schedules?: Record<string, ScheduleSlot[]>;
+  resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number } | null;
 }
 
 const STARTER_NPC_NAME = GAME_NPC_CATALOG.find((npc) => npc.id === STARTER_NPC_ID)?.name ?? '老李';
@@ -116,6 +117,7 @@ export class NpcScheduleSystem {
   private readonly npcMemorySystem: NpcMemorySystem;
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly schedules: Record<string, ScheduleSlot[]>;
+  private readonly resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number } | null;
   private lastSlotKeyByNpc = new Map<string, string>();
 
   constructor(opts: NpcScheduleSystemOptions) {
@@ -124,6 +126,7 @@ export class NpcScheduleSystem {
     this.npcMemorySystem = opts.npcMemorySystem;
     this.getNpcRegistrations = opts.getNpcRegistrations;
     this.schedules = opts.schedules ?? DEFAULT_NPC_SCHEDULES;
+    this.resolveNpcHome = opts.resolveNpcHome;
   }
 
   update(_dtSeconds: number, gameTick: number): void {
@@ -138,7 +141,10 @@ export class NpcScheduleSystem {
       const slot = findSlot(slots, minute);
       if (!slot) continue;
 
-      const slotKey = `${slot.startMin}:${slot.endMin}:${slot.activity}:${slot.locationId ?? ''}`;
+      const homeTarget = slot.locationId === 'room' || slot.activity === 'sleep'
+        ? this.resolveNpcHome?.(id) ?? null
+        : null;
+      const slotKey = `${slot.startMin}:${slot.endMin}:${slot.activity}:${slot.locationId ?? ''}:${homeTarget?.houseId ?? ''}`;
       if (this.lastSlotKeyByNpc.get(id) === slotKey) continue;
       this.lastSlotKeyByNpc.set(id, slotKey);
 
@@ -159,10 +165,21 @@ export class NpcScheduleSystem {
       });
 
       const actions: NpcAction[] = [];
-      if (slot.line) actions.push({ type: 'say', text: slot.line, duration: 3.5 });
-      if (slot.locationId) {
+      if (slot.line && slot.activity !== 'work_farm') actions.push({ type: 'say', text: slot.line, duration: 3.5 });
+      if (homeTarget) {
+        actions.push({
+          type: 'enter_house',
+          houseId: homeTarget.houseId,
+          roomId: homeTarget.roomId,
+          target: { kind: 'coords', x: homeTarget.x, y: homeTarget.y },
+          duration: 4,
+        });
+      } else if (slot.locationId) {
         const target = resolveActorLocationTarget(slot.locationId, id);
         if (target) actions.push({ type: 'move', target: { kind: 'coords', x: target.x, y: target.y }, duration: 4 });
+      }
+      if (slot.activity === 'work_farm') {
+        actions.push({ type: 'use_skill', skillId: 'farm_till_day', duration: 1 });
       }
       if (actions.length) npc.queueActions(actions, gameTick);
     }

@@ -92,6 +92,7 @@ export function getGameState(scene: any) : IdleGameState {
 }
 
 export function setInitialGameSave(scene: any, save: GameSaveV1 | null, userId = 'player') : void {
+    scene.activeUserId = userId;
     scene.initialGameSave = save;
     if (save) {
       scene.initialState = {
@@ -117,8 +118,12 @@ export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = '
     if (typeof save.worldStatus.gameTick === 'number' && scene.dayCycle) {
       scene.dayCycle.gameTick = save.worldStatus.gameTick;
     }
+    scene.eventSystem?.importSaveData?.(save.worldStatus.events, save.worldStatus.unlockedNpcs);
     scene._loadWorldState(restoredState.worldState ?? null);
-    scene.loadChests(save.worldStatus.entities.chests);
+    scene.houseSaveAdapter?.loadFromGameSave(save);
+    scene.storageChestSystem?.loadFromGameSave(save);
+    scene.locationSystem?.restoreSavedLocations?.(save, userId);
+    scene.loadChests(save.worldStatus.entities.chests.filter((chest) => !chest.opened));
     scene.farmSystem?.loadFromBackend?.(save.worldStatus.entities.farmTiles);
     if (save.worldStatus.entities.creatures.length) {
       scene.restoreCreatures(save.worldStatus.entities.creatures);
@@ -127,6 +132,22 @@ export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = '
       if (npcSave.memory?.length) scene.loadNpcMemories(npcSave.name || npcSave.id, npcSave.memory);
     });
   
+}
+
+export function syncEventSaveData(scene: any, save: GameSaveV1 | null) : void {
+    if (!save) return;
+    console.log('[DEBUG-event-flow] syncEventSaveData called', {
+      sceneReady: Boolean(scene.eventSystem),
+      roomId: save.worldStatus?.roomId,
+      gameTick: save.worldStatus?.gameTick,
+      queuedEvents: save.worldStatus?.events?.queued,
+      activeEvents: save.worldStatus?.events?.active,
+      unlockedNpcs: save.worldStatus?.unlockedNpcs,
+    });
+    scene.initialGameSave = save;
+    scene.eventSystem?.importSaveData?.(save.worldStatus.events, save.worldStatus.unlockedNpcs);
+    scene.houseSaveAdapter?.loadFromGameSave(save);
+
 }
 
 export function getGameSaveData(scene: any, context: GameSaveBuildContext) : GameSaveV1 {
@@ -276,12 +297,18 @@ export function _triggerQDrop(scene: any) : void {
 }
 
 export function loadChests(scene: any, chests: GameChest[]) : void {
-    scene.renderSyncSystem.loadChests(chests);
-    chests.forEach((chest) => scene.registerChestLight(chest));
+    const unopenedChests = chests.filter((chest) => !chest.opened);
+    const nextIds = new Set(unopenedChests.map((chest) => chest.id));
+    for (const chestId of scene.chests.keys()) {
+      if (!nextIds.has(chestId)) scene.lightingSystem?.removeStaticLight(`chest:${chestId}`);
+    }
+    scene.renderSyncSystem.loadChests(unopenedChests);
+    unopenedChests.forEach((chest) => scene.registerChestLight(chest));
   
 }
 
 export function addChest(scene: any, data: GameChest) : void {
+    if (data.opened) return;
     scene.renderSyncSystem.addChest(data);
     scene.registerChestLight(data);
   
@@ -441,6 +468,7 @@ export function performFarmAction(scene: any,
         reason: result.reason,
         targetX: target.tx * 32 + 16,
         targetY: target.ty * 32 + 16,
+        worldId: getWorldIdAt(scene, target.tx * 32 + 16, target.ty * 32 + 16),
       });
     }
     return result.ok;
@@ -468,6 +496,7 @@ export function executeKnowledgeSkill(scene: any,
       reason: ok ? undefined : 'skill_target_not_found',
       x: origin.x,
       y: origin.y,
+      worldId: getWorldIdAt(scene, origin.x, origin.y),
     });
     return ok;
   
@@ -507,14 +536,107 @@ export function findWorldItem(scene: any, itemId: string) : DropItem | null {
   
 }
 
-export function claimWorldItem(scene: any, itemId: string, npcName: string, target?: { x: number; y: number }) : void {
+export function getWorldIdAt(scene: any, x: number, y: number): string {
+    return scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village';
+}
+
+export function getNpcWorldId(scene: any, npcName: string): string {
+    const npc = scene.findNpcByName?.(npcName) ?? null;
+    const sprite = npc?.sprite;
+    if (!sprite) return 'world:village';
+    return getWorldIdAt(scene, sprite.x, sprite.y);
+}
+
+function findHouseViewByRoomId(scene: any, roomId: string): any | null {
+    const views = scene.houseSaveAdapter?.getViews?.() ?? [];
+    const matching = views.find((view: any) => (
+      view.house?.roomId === roomId
+      || `room:${view.house?.id}` === roomId
+      || view.house?.id === roomId
+    ));
+    return matching ?? null;
+}
+
+function findHouseEntryByRoomId(scene: any, roomId: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null {
+    void npcName;
+    const view = findHouseViewByRoomId(scene, roomId);
+    if (!view || !String(view.house?.stage ?? '').startsWith('ready')) return null;
+    const door = view.getDoorWorldPosition?.();
+    if (!door) return null;
+    return {
+      houseId: view.house.id,
+      roomId: view.house.roomId,
+      x: door.x,
+      y: door.y,
+    };
+}
+
+export function navigateNpcToWorldPosition(
+    scene: any,
+    npcName: string,
+    target: { x: number; y: number; worldId?: string },
+    onArrive?: () => void,
+  ) : boolean {
+    const npc = scene.findNpcByName?.(npcName) ?? null;
+    if (!npc?.sprite) return false;
+    const targetWorldId = target.worldId ?? getWorldIdAt(scene, target.x, target.y);
+    const currentWorldId = getNpcWorldId(scene, npcName);
+    const finishInCurrentWorld = () => npc.navigateTo(target.x, target.y, onArrive);
+
+    if (currentWorldId === targetWorldId) {
+      finishInCurrentWorld();
+      return true;
+    }
+
+    if (currentWorldId !== 'world:village') {
+      const exit = scene.locationSystem?.getRoomExitApproachTarget?.(currentWorldId);
+      if (!exit) return false;
+      npc.navigateTo(exit.x, exit.y, () => {
+        scene.locationSystem?.exitNpcToVillage?.(npc, currentWorldId, {
+          onComplete: () => navigateNpcToWorldPosition(scene, npcName, target, onArrive),
+        });
+      });
+      return true;
+    }
+
+    if (targetWorldId !== 'world:village') {
+      const entry = findHouseEntryByRoomId(scene, targetWorldId, npcName);
+      if (entry) {
+        npc.navigateTo(entry.x, entry.y + 40, () => {
+          scene.locationSystem?.enterNpcRoom?.(npc, entry.roomId, {
+            templateId: 'two_bedroom_living_room',
+            entryPoint: { x: entry.x, y: entry.y },
+            returnTo: { x: entry.x, y: entry.y + 58 },
+            onComplete: finishInCurrentWorld,
+          });
+        });
+        return true;
+      }
+
+      scene.locationSystem?.enterNpcRoom?.(npc, targetWorldId, {
+        templateId: 'two_bedroom_living_room',
+        transition: false,
+        onComplete: finishInCurrentWorld,
+      });
+      return true;
+    }
+
+    finishInCurrentWorld();
+    return true;
+}
+
+export function claimWorldItem(scene: any, itemId: string, npcName: string, target?: { x: number; y: number; worldId?: string }) : void {
     console.log(`[GameScene] claimWorldItem: itemId=${itemId} drops=[${scene.drops.map((d: any)=>d.itemId).join(',')}]`);
-    const candidates = scene.drops.filter((d: any) => d.itemId === itemId && !d.gone);
+    const allCandidates = scene.drops.filter((d: any) => d.itemId === itemId && !d.gone);
+    const candidates = target?.worldId
+      ? allCandidates.filter((d: any) => getWorldIdAt(scene, d.worldX, d.worldY) === target.worldId)
+      : allCandidates;
+    const candidatePool = candidates.length > 0 ? candidates : allCandidates;
     const nearestTo = (point: { x: number; y: number } | null) => {
-      if (!point || candidates.length === 0) return null;
+      if (!point || candidatePool.length === 0) return null;
       let best: any = null;
       let bestDistance = Infinity;
-      for (const candidate of candidates) {
+      for (const candidate of candidatePool) {
         const dx = candidate.worldX - point.x;
         const dy = candidate.worldY - point.y;
         const distance = dx * dx + dy * dy;
@@ -528,7 +650,7 @@ export function claimWorldItem(scene: any, itemId: string, npcName: string, targ
     const npc = scene.findNpcByName?.(npcName) ?? null;
     const drop = nearestTo(target ?? null)
       ?? nearestTo(npc ? { x: npc.sprite.x, y: npc.sprite.y } : null)
-      ?? candidates[0]
+      ?? candidatePool[0]
       ?? null;
     const dropId = drop ? ((drop as any).__worldStateId as string | undefined) : undefined;
     if (!drop || !dropId) {
@@ -557,6 +679,115 @@ export function dropWorldItem(scene: any, x: number, y: number, itemId: string, 
     if (!result.ok) return;
     gameBus.emit('npc:drop_item', { npcName, itemId, qty: 1 });
   
+}
+
+function getHouseViewForNpc(scene: any, houseId?: string, npcName?: string): any | null {
+    const adapter = scene.houseSaveAdapter;
+    if (!adapter) return null;
+    if (houseId) return adapter.getView?.(houseId) ?? null;
+
+    const mind = npcName ? scene.worldStateManager?.getNpcMindState?.(npcName) : null;
+    const rememberedHouseId = mind?.meta?.homeHouseId;
+    if (rememberedHouseId) {
+      const remembered = adapter.getView?.(String(rememberedHouseId));
+      if (remembered) return remembered;
+    }
+
+    const views = adapter.getViews?.() ?? [];
+    if (npcName) {
+      const contracted = views.find((view: any) => (
+        view.house?.tenancy?.residentNpcName === npcName
+        || view.house?.tenancy?.residentNpcId === npcName
+        || (view.house?.access?.allowedNpcIds ?? []).includes(npcName)
+      ));
+      if (contracted) return contracted;
+    }
+    return views.find((view: any) => String(view.house?.stage ?? '').startsWith('ready')) ?? null;
+}
+
+function isHouseAccessibleToNpc(scene: any, view: any, npcName: string): boolean {
+    const house = view?.house;
+    if (!house) return false;
+    if (house.doorState === 'open') return true;
+    if (house.tenancy?.residentNpcName === npcName || house.tenancy?.residentNpcId === npcName) return true;
+    if ((house.access?.allowedNpcIds ?? []).includes(npcName)) return true;
+    const mind = scene.worldStateManager?.getNpcMindState?.(npcName);
+    return mind?.meta?.homeHouseId === house.id;
+}
+
+export function findHouseEntryTarget(scene: any, houseId?: string, npcName?: string) : { houseId: string; roomId: string; x: number; y: number } | null {
+    const view = getHouseViewForNpc(scene, houseId, npcName);
+    if (!view || !String(view.house?.stage ?? '').startsWith('ready')) return null;
+    const door = view.getDoorWorldPosition();
+    return {
+      houseId: view.house.id,
+      roomId: view.house.roomId,
+      x: door.x,
+      y: door.y,
+    };
+}
+
+export function enterHouseForNpc(scene: any, npcName: string, houseId: string) : boolean {
+    const npc = scene.findNpcByName?.(npcName) ?? null;
+    const view = getHouseViewForNpc(scene, houseId, npcName);
+    if (!npc || !view || !String(view.house?.stage ?? '').startsWith('ready')) return false;
+    if (!isHouseAccessibleToNpc(scene, view, npcName)) return false;
+    const door = view.getDoorWorldPosition();
+    scene.locationSystem?.enterNpcRoom?.(npc, view.house.roomId, {
+      templateId: 'two_bedroom_living_room',
+      entryPoint: door,
+      returnTo: { x: door.x, y: door.y + 42 },
+    });
+    scene.npcMemorySystem?.recordActionResult(npcName, scene.dayCycle?.gameTick ?? 0, {
+      status: 'success',
+      actionType: 'enter_house',
+      targetX: door.x,
+      targetY: door.y,
+      worldId: 'world:village',
+    });
+    return true;
+}
+
+export function rememberHomeHouseForNpc(scene: any, npcName: string, houseId: string, gameTick: number) : boolean {
+    const view = getHouseViewForNpc(scene, houseId, npcName);
+    if (!view) return false;
+    const current = scene.npcMemorySystem?.ensureNpcMindState?.(npcName, gameTick)
+      ?? scene.worldStateManager?.getNpcMindState?.(npcName);
+    scene.worldStateManager?.patchNpcMindState?.(npcName, {
+      meta: {
+        ...(current?.meta ?? {}),
+        homeHouseId: view.house.id,
+        homeRoomId: view.house.roomId,
+        homeHouseRememberedAtTick: gameTick,
+      },
+      knownLandmarks: {
+        ...(current?.knownLandmarks ?? {}),
+        [`house:${view.house.id}`]: {
+          key: `house:${view.house.id}`,
+          sourceId: view.house.id,
+          kind: 'landmark',
+          type: 'house',
+          label: view.house.tenancy?.residentNpcName === npcName ? 'my home' : 'remembered home',
+          worldId: 'world:village',
+          x: view.house.x,
+          y: view.house.y,
+          lastSeenTick: gameTick,
+          meta: {
+            houseId: view.house.id,
+            roomId: view.house.roomId,
+            doorState: view.house.doorState,
+          },
+        },
+      },
+    });
+    scene.npcMemorySystem?.recordActionResult?.(npcName, gameTick, {
+      status: 'success',
+      actionType: 'remember_home_house',
+      targetX: view.house.x,
+      targetY: view.house.y,
+      worldId: 'world:village',
+    });
+    return true;
 }
 
 export function executeCommand(scene: any, input: string) : string {

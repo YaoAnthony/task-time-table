@@ -32,16 +32,20 @@ export interface ItemDef {
    *  'consumable' — press F/E to use
    *  'other'      — material / stackable resource
    */
-  itemType:     'tool' | 'placeable' | 'consumable' | 'other';
+  itemType:     'tool' | 'placeable' | 'house_blueprint' | 'storage_chest' | 'key' | 'consumable' | 'other';
   /** For itemType='placeable': which entity class to spawn. */
   placeEntity?: 'bed' | 'nest';
 }
 
 export const ALL_ITEM_DEFS: ItemDef[] = [
+  { itemId: 'storage_chest_basic', label: 'Storage Chest', iconX: -1, iconY: -1, tint: 0xb77a42, itemType: 'storage_chest' },
+  { itemId: 'house_blueprint_greenhouse', label: '温室蓝图', iconX: -1, iconY: -1, tint: 0x70b76c, itemType: 'house_blueprint' },
+  { itemId: 'house_key', label: '房屋钥匙', iconX: -1, iconY: -1, tint: 0xf4c542, itemType: 'key' },
   // Tools (from 'tools' texture — Basic tools and materials.png)
   { itemId: 'watering_can', label: '水壶',     iconX:  0, iconY:  0, itemType: 'tool' },
   { itemId: 'axe',          label: '斧头',     iconX: 16, iconY:  0, itemType: 'tool' },
-  { itemId: 'scythe',       label: '镰刀',     iconX: 32, iconY:  0, itemType: 'tool' },
+  { itemId: 'scythe',       label: '锄头',     iconX: 32, iconY:  0, itemType: 'tool' },
+  { itemId: 'shovel',       label: '铲子',     iconX: 48, iconY:  0, itemType: 'tool' },
   // Farm seeds & crops (from 'basic-plants': col 0 = seed bag, col 5 = harvested)
   { itemId: 'wheat_seed',   label: '小麦种子',  iconX:  0, iconY:  0, textureKey: 'basic-plants', itemType: 'consumable' },
   { itemId: 'tomato_seed',  label: '番茄种子',  iconX:  0, iconY: 16, textureKey: 'basic-plants', itemType: 'consumable' },
@@ -119,7 +123,9 @@ export const ALL_ITEM_DEFS: ItemDef[] = [
 ];
 
 /** Just the starter tools placed on the house shelf. */
-export const TOOL_ITEM_DEFS: ItemDef[] = ALL_ITEM_DEFS.slice(0, 3);
+export const TOOL_ITEM_DEFS: ItemDef[] = ['watering_can', 'axe', 'scythe']
+  .map((itemId) => ALL_ITEM_DEFS.find((def) => def.itemId === itemId))
+  .filter((def): def is ItemDef => Boolean(def));
 
 /** O(1) lookup by itemId. */
 export const ITEM_DEF_MAP = new Map<string, ItemDef>(

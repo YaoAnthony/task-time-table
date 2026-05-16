@@ -24,6 +24,10 @@ import eggNestUrl     from '../../../../../assets/Sprout-Lands/Characters/Egg_An
 import appleRipeUrl      from '../../../../../assets/Sprout-Lands/items/apple/apple_ripe.png';
 // @ts-ignore
 import raspberryRipeUrl  from '../../../../../assets/Sprout-Lands/items/raspberry/raspberry_ripe.png';
+// @ts-ignore
+import greenhouseCloseUrl from '../../../../../assets/house/green-house/close.png';
+// @ts-ignore
+import houseKeyUrl from '../../../../../assets/icon/key.png';
 
 // ── Sheet type ────────────────────────────────────────────────────────────────
 type Sheet = 'tools' | 'plants' | 'furniture' | 'egg-nest';
@@ -34,6 +38,7 @@ const SPRITE_MAP: Record<string, { sheet: Sheet; x: number; y: number }> = {
   watering_can:          { sheet: 'tools',     x:  0, y:  0 },
   axe:                   { sheet: 'tools',     x: 16, y:  0 },
   scythe:                { sheet: 'tools',     x: 32, y:  0 },
+  shovel:                { sheet: 'tools',     x: 48, y:  0 },
 
   // ── Plants (Basic_Plants.png, 16px cells) ──────────────────────────────────
   wheat_seed:            { sheet: 'plants',    x:  0, y:  0 },
@@ -89,6 +94,8 @@ const SPRITE_MAP: Record<string, { sheet: Sheet; x: number; y: number }> = {
 const STANDALONE_IMG: Record<string, string> = {
   fruit:     appleRipeUrl,
   raspberry: raspberryRipeUrl,
+  house_blueprint_greenhouse: greenhouseCloseUrl,
+  house_key: houseKeyUrl,
 };
 
 // ── Tint fallback map (for items with iconX < 0, e.g. log / stone / egg) ──────

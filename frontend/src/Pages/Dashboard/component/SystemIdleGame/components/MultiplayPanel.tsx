@@ -37,7 +37,7 @@ const MultiplayPanel: React.FC<MultiplayPanelProps> = ({
     : '#888';
 
   return (
-    <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 200, fontFamily: '"Courier New", monospace' }}>
+    <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 200, fontFamily: '"Courier New", monospace' }}>
       {/* Toggle button */}
       <button
         onClick={onToggle}

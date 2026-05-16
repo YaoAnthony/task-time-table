@@ -31,6 +31,13 @@ export const VILLAGE_LAYOUT = {
     collisionBlocks: [
       { offsetX: 0, offsetY: -78, width: 188, height: 92 },
     ],
+    arrivalRoute: {
+      entry: { x: -180, y: 648 },
+      stop: { x: 760, y: 648 },
+      npcExit: { x: 928, y: 648 },
+      busScale: 0.18,
+      direction: 'left_to_right' as const,
+    },
   },
   playerSpawn: {
     x: 240,

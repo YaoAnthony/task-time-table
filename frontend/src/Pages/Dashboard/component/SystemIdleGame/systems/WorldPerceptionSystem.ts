@@ -19,6 +19,7 @@ export interface PerceptionVisibleTile {
   row: number;
   x: number;
   y: number;
+  worldId?: string;
   terrain: string;
   surface: string;
   moisture: string;
@@ -30,6 +31,7 @@ export interface PerceivedObject {
   type: WorldObjectKind | 'berry_bush';
   x: number;
   y: number;
+  worldId?: string;
   distance: number;
   source: PerceptionSource;
   cellX?: number;
@@ -45,6 +47,7 @@ export interface PerceivedCrop {
   cropId: string;
   x: number;
   y: number;
+  worldId?: string;
   tx: number;
   ty: number;
   distance: number;
@@ -58,6 +61,7 @@ export interface PerceivedDrop {
   itemId: string;
   x: number;
   y: number;
+  worldId?: string;
   distance: number;
   source: PerceptionSource;
   meta?: Record<string, unknown>;
@@ -68,6 +72,7 @@ export interface PerceivedEntity {
   type: WorldEntityKind;
   x: number;
   y: number;
+  worldId?: string;
   distance: number;
   source: PerceptionSource;
   facing?: Direction;
@@ -82,6 +87,7 @@ export interface PerceivedLandmark {
   label: string;
   x: number;
   y: number;
+  worldId?: string;
   distance: number;
   source: PerceptionSource;
 }
@@ -94,7 +100,7 @@ export interface PerceptionNearest {
   crop?: PerceivedCrop;
 }
 
-export type PerceivedWater = Pick<PerceptionVisibleTile, 'col' | 'row' | 'x' | 'y' | 'distance'>;
+export type PerceivedWater = Pick<PerceptionVisibleTile, 'col' | 'row' | 'x' | 'y' | 'worldId' | 'distance'>;
 
 export interface PerceptionSummary {
   tileCount: number;
@@ -111,6 +117,7 @@ export interface PerceptionResult {
     kind?: WorldEntityKind;
     x: number;
     y: number;
+    worldId?: string;
     facing?: Direction;
   };
   visibleTiles: PerceptionVisibleTile[];
@@ -159,10 +166,12 @@ export interface PerceptionSystemOptions {
   spatialIndex?: SpatialIndex;
   getLegacyObjects?: () => LegacyPerceptionObject[];
   getLegacyLandmarks?: () => LegacyPerceptionLandmark[];
+  getWorldIdAt?: (x: number, y: number) => string;
 }
 
 const DEFAULT_VISION_RANGE = 350;
 const DEFAULT_TILE_RANGE = 4;
+const DEFAULT_WORLD_ID = 'world:village';
 
 function measureDistance(x1: number, y1: number, x2: number, y2: number): number {
   return Math.hypot(x1 - x2, y1 - y2);
@@ -181,6 +190,7 @@ export class PerceptionSystem {
   private readonly spatialIndex?: SpatialIndex;
   private readonly getLegacyObjects: () => LegacyPerceptionObject[];
   private readonly getLegacyLandmarks: () => LegacyPerceptionLandmark[];
+  private readonly getWorldIdAt: (x: number, y: number) => string;
 
   constructor(options: PerceptionSystemOptions) {
     this.worldStateManager = options.worldStateManager;
@@ -188,6 +198,7 @@ export class PerceptionSystem {
     this.spatialIndex = options.spatialIndex;
     this.getLegacyObjects = options.getLegacyObjects ?? (() => []);
     this.getLegacyLandmarks = options.getLegacyLandmarks ?? (() => []);
+    this.getWorldIdAt = options.getWorldIdAt ?? (() => DEFAULT_WORLD_ID);
   }
 
   perceiveEntity(
@@ -242,6 +253,7 @@ export class PerceptionSystem {
         kind: input.entityKind,
         x: input.x,
         y: input.y,
+        worldId: this.getWorldIdAt(input.x, input.y),
         facing: input.facing,
       },
       visibleTiles,
@@ -351,6 +363,7 @@ export class PerceptionSystem {
           row,
           x: world.cx,
           y: world.cy,
+          worldId: this.getWorldIdAt(world.cx, world.cy),
           terrain: cell.terrain,
           surface: cell.surface,
           moisture: cell.moisture,
@@ -385,6 +398,7 @@ export class PerceptionSystem {
         label: location.label,
         x: location.worldX,
         y: location.worldY,
+        worldId: this.getWorldIdAt(location.worldX, location.worldY),
         distance,
         source: 'derived',
       });
@@ -397,6 +411,7 @@ export class PerceptionSystem {
       if (distance > input.radius) return;
       landmarks.push({
         ...landmark,
+        worldId: this.getWorldIdAt(landmark.x, landmark.y),
         distance,
         source: 'legacy_adapter',
       });
@@ -438,6 +453,7 @@ export class PerceptionSystem {
       row: waterTile.row,
       x: waterTile.x,
       y: waterTile.y,
+      worldId: waterTile.worldId,
       distance: waterTile.distance,
     };
   }
@@ -448,6 +464,7 @@ export class PerceptionSystem {
       type: objectState.kind,
       x: objectState.x,
       y: objectState.y,
+      worldId: this.getWorldIdAt(objectState.x, objectState.y),
       cellX: objectState.cellX,
       cellY: objectState.cellY,
       distance: measureDistance(originX, originY, objectState.x, objectState.y),
@@ -465,6 +482,7 @@ export class PerceptionSystem {
       type: legacyObject.type,
       x: legacyObject.x,
       y: legacyObject.y,
+      worldId: this.getWorldIdAt(legacyObject.x, legacyObject.y),
       distance: measureDistance(originX, originY, legacyObject.x, legacyObject.y),
       state: legacyObject.state,
       interactable: legacyObject.interactable,
@@ -480,6 +498,7 @@ export class PerceptionSystem {
       type: entityState.kind,
       x: entityState.x,
       y: entityState.y,
+      worldId: this.getWorldIdAt(entityState.x, entityState.y),
       distance: measureDistance(originX, originY, entityState.x, entityState.y),
       facing: entityState.facing,
       displayName: entityState.displayName,
@@ -495,6 +514,7 @@ export class PerceptionSystem {
       itemId: dropState.itemId,
       x: dropState.x,
       y: dropState.y,
+      worldId: this.getWorldIdAt(dropState.x, dropState.y),
       distance: measureDistance(originX, originY, dropState.x, dropState.y),
       meta: dropState.meta,
       source: 'world_state',
@@ -508,6 +528,7 @@ export class PerceptionSystem {
       cropId: cropState.cropId,
       x: world.cx,
       y: world.cy,
+      worldId: this.getWorldIdAt(world.cx, world.cy),
       tx: cropState.tx,
       ty: cropState.ty,
       distance: measureDistance(originX, originY, world.cx, world.cy),

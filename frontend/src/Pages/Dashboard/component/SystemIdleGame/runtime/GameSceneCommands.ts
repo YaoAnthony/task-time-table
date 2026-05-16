@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { getNpcDefinitionById } from '../shared/GameNpcCatalog';
+import { gameBus } from '../shared/EventBus';
 
 export function setAgentBrainEnabled(scene: any, enabled: boolean) : void {
     scene.npcDirectorSystem?.setEnabled(enabled);
@@ -154,6 +156,41 @@ export function _registerCommands(scene: any) : void {
         }
         return 'Usage: /agent brain stop | /agent brain start | /agent brain status';
       },
+    );
+
+    scene.commands.register(
+      'event',
+      'debug events: /event npc_arrival <npcId>',
+      (args: string[]) => {
+        const mode = args[0]?.toLowerCase();
+        if (mode === 'npc_arrival') {
+          const npcId = args[1];
+          if (!npcId) return 'Usage: /event npc_arrival <npcId>';
+          if (!getNpcDefinitionById(npcId)) return `Unknown NPC id: ${npcId}`;
+          const event = scene.eventSystem?.enqueueNpcArrival(npcId, scene.dayCycle.gameTick + 1, scene.dayCycle.gameTick);
+          return event ? `Queued NPC arrival for ${npcId}` : `${npcId} is already unlocked or already on the way`;
+        }
+        return 'Usage: /event npc_arrival <npcId>';
+      },
+    );
+
+    scene.commands.register(
+      'saving',
+      'save management: /saving delete',
+      (args: string[]) => {
+        const mode = args[0]?.toLowerCase();
+        if (mode !== 'delete') return 'Usage: /saving delete';
+        gameBus.emit('game:save_delete_requested', {
+          roomId: scene.initialGameSave?.worldStatus?.roomId ?? null,
+        });
+        return 'Deleting this world save. The game will reload into a fresh world...';
+      },
+    );
+
+    scene.commands.register(
+      'tp',
+      'teleport: /tp 001 | /tp village',
+      (args: string[]) => scene.locationSystem?.teleport(args[0]) ?? 'Location system is not ready',
     );
 
     // /help

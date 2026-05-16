@@ -25,8 +25,10 @@ export interface AgentVisibleObject {
   kind: string;
   x: number;
   y: number;
+  worldId?: string;
   distance: number;
   state?: string;
+  meta?: Record<string, unknown>;
   placeId?: string;
   affordances: string[];
 }
@@ -34,6 +36,7 @@ export interface AgentVisibleObject {
 export interface AgentAffordance {
   id: string;
   action: string;
+  worldId?: string;
   targetId?: string;
   targetPlaceId?: string;
   x?: number;
@@ -52,6 +55,7 @@ export interface AgentWorldContext {
   position: {
     x: number;
     y: number;
+    worldId?: string;
     cellX: number;
     cellY: number;
     facing?: Direction;
@@ -72,6 +76,7 @@ export interface AgentWorldContext {
   recentFailures: Array<{
     action: string;
     reason?: string;
+    targetWorldId?: string;
     targetX?: number;
     targetY?: number;
     tick: number;
@@ -79,6 +84,7 @@ export interface AgentWorldContext {
 }
 
 const DEFAULT_CONTEXT_RADIUS = 420;
+const DEFAULT_WORLD_ID = 'world:village';
 
 function distance(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by);
@@ -105,6 +111,7 @@ export class AgentWorldModel {
     private readonly worldGrid: StateBackedWorldGrid,
     private readonly actorActionService: ActorActionService,
     private readonly worldMapService = new WorldMapService(worldStateManager, worldGrid),
+    private readonly getWorldIdAt: (x: number, y: number) => string = () => DEFAULT_WORLD_ID,
   ) {}
 
   buildContext(actorId: string, mind?: NpcMindState | null, radius = DEFAULT_CONTEXT_RADIUS): AgentWorldContext | null {
@@ -131,6 +138,7 @@ export class AgentWorldModel {
       position: {
         x: Math.round(entity.x),
         y: Math.round(entity.y),
+        worldId: this.getWorldIdAt(entity.x, entity.y),
         cellX: cell.col,
         cellY: cell.row,
         facing: entity.facing,
@@ -180,8 +188,10 @@ export class AgentWorldModel {
       kind: objectItem.kind,
       x: Math.round(objectItem.x),
       y: Math.round(objectItem.y),
+      worldId: this.getWorldIdAt(objectItem.x, objectItem.y),
       distance: Math.round(d),
       state: objectItem.state,
+      meta: objectItem.meta,
       placeId: currentPlace.id,
       affordances: this.objectAffordances(objectItem),
     };
@@ -193,6 +203,7 @@ export class AgentWorldModel {
       kind: `drop:${drop.itemId}`,
       x: Math.round(drop.x),
       y: Math.round(drop.y),
+      worldId: this.getWorldIdAt(drop.x, drop.y),
       distance: Math.round(distance(entity.x, entity.y, drop.x, drop.y)),
       placeId: currentPlace.id,
       affordances: ['pickup_item'],
@@ -205,6 +216,7 @@ export class AgentWorldModel {
       kind: other.kind,
       x: Math.round(other.x),
       y: Math.round(other.y),
+      worldId: this.getWorldIdAt(other.x, other.y),
       distance: Math.round(distance(entity.x, entity.y, other.x, other.y)),
       state: other.state,
       placeId: currentPlace.id,
@@ -213,6 +225,20 @@ export class AgentWorldModel {
   }
 
   private objectAffordances(objectItem: ObjectState): string[] {
+    if (objectItem.kind === 'house') {
+      const metaAffordances = Array.isArray(objectItem.meta?.affordances)
+        ? objectItem.meta.affordances.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+      return metaAffordances.length ? metaAffordances : ['inspect_house'];
+    }
+    if (objectItem.kind === 'room') return ['inspect_room'];
+    if (objectItem.kind === 'room_exit') return ['exit_room'];
+    if (objectItem.kind === 'furniture') {
+      const metaAffordances = Array.isArray(objectItem.meta?.affordances)
+        ? objectItem.meta.affordances.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+      return metaAffordances.length ? metaAffordances : ['inspect_furniture'];
+    }
     if (objectItem.kind === 'bed') return ['sleep'];
     if (objectItem.kind === 'tree' && objectItem.state !== 'chopped') return ['chop_tree'];
     if (objectItem.kind === 'farm_tile') {
@@ -243,6 +269,7 @@ export class AgentWorldModel {
         targetPlaceId: place.id,
         x: place.x,
         y: place.y,
+        worldId: this.getWorldIdAt(place.x, place.y),
         feasible: place.reachable,
         reason: place.reachable ? undefined : 'target cell is not walkable',
         estimatedCost: place.distance,
@@ -257,6 +284,7 @@ export class AgentWorldModel {
           targetId: objectItem.id,
           x: objectItem.x,
           y: objectItem.y,
+          worldId: objectItem.worldId,
           feasible: true,
           estimatedCost: objectItem.distance,
         });
@@ -268,6 +296,7 @@ export class AgentWorldModel {
           targetId: objectItem.id,
           x: objectItem.x,
           y: objectItem.y,
+          worldId: objectItem.worldId,
           feasible: objectItem.distance <= radius,
           estimatedCost: objectItem.distance,
         });
@@ -280,8 +309,22 @@ export class AgentWorldModel {
           targetPlaceId: currentPlace.id,
           x: objectItem.x,
           y: objectItem.y,
+          worldId: objectItem.worldId,
           feasible: objectItem.distance <= 160,
           reason: objectItem.distance <= 160 ? undefined : 'bed is visible but not nearby',
+          estimatedCost: objectItem.distance,
+        });
+      }
+      for (const affordance of ['inspect_house', 'open_house', 'enter_house', 'offer_contract', 'sign_contract', 'assign_resident', 'collect_rent', 'inspect_room', 'exit_room', 'inspect_furniture']) {
+        if (!objectItem.affordances.includes(affordance)) continue;
+        actions.push({
+          id: `${affordance}:${objectItem.id}`,
+          action: affordance,
+          targetId: objectItem.id,
+          x: objectItem.x,
+          y: objectItem.y,
+          worldId: objectItem.worldId,
+          feasible: objectItem.distance <= radius,
           estimatedCost: objectItem.distance,
         });
       }
@@ -323,6 +366,7 @@ export class AgentWorldModel {
       targetPlaceId: 'farm',
       x: Math.round(target.x),
       y: Math.round(target.y),
+      worldId: this.getWorldIdAt(target.x, target.y),
       tx: target.tx,
       ty: target.ty,
       feasible: true,
@@ -339,6 +383,7 @@ export class AgentWorldModel {
       .map((record) => ({
         action: record.type,
         reason: typeof record.meta?.reason === 'string' ? record.meta.reason : undefined,
+        targetWorldId: typeof record.meta?.targetWorldId === 'string' ? record.meta.targetWorldId : record.worldId,
         targetX: typeof record.meta?.targetX === 'number' ? record.meta.targetX : undefined,
         targetY: typeof record.meta?.targetY === 'number' ? record.meta.targetY : undefined,
         tick: record.lastSeenTick,
@@ -352,6 +397,9 @@ export class AgentWorldModel {
   ): NonNullable<AgentWorldContext['activeGoal']>['status'] {
     if (failures.length > 0 && mind.currentIntent.kind === 'recover') return 'blocked';
     if (typeof mind.currentIntent.targetX === 'number' && typeof mind.currentIntent.targetY === 'number') {
+      if (mind.currentIntent.targetWorldId && mind.currentIntent.targetWorldId !== this.getWorldIdAt(entity.x, entity.y)) {
+        return 'traveling';
+      }
       const d = distance(entity.x, entity.y, mind.currentIntent.targetX, mind.currentIntent.targetY);
       if (d <= 44) return 'executing';
       return 'traveling';

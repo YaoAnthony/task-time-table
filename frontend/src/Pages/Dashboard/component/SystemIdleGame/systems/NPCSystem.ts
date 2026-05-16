@@ -61,6 +61,10 @@ export class NPCSystem {
   private directorSystem!: NpcDirectorSystem;
   private gossipSystem!: NpcGossipSystem;
   private agentWorldContextSyncSystem!: NpcAgentWorldContextSyncSystem;
+  private pathfinder!: Pathfinder;
+  private player!: Player;
+  private worldContext!: WorldContext;
+  private actionExecutor!: ActionExecutor;
   private readonly runner = new IdleGameSystemRunner();
   private unsubscribeNavigationFailed?: () => void;
 
@@ -70,6 +74,10 @@ export class NPCSystem {
     this.extraNpcs = options.extraNpcs;
     this.worldStateManager = options.worldStateManager;
     this.dayCycle = options.dayCycle;
+    this.pathfinder = options.pathfinder;
+    this.player = options.player;
+    this.worldContext = options.worldContext;
+    this.actionExecutor = options.actionExecutor;
 
     this.configureActors(options);
     this.memorySystem = new NpcMemorySystem(options.worldStateManager);
@@ -96,6 +104,7 @@ export class NPCSystem {
       dayCycle: options.dayCycle,
       npcMemorySystem: this.memorySystem,
       getNpcRegistrations: () => this.getRegistrations(),
+      resolveNpcHome: (npcId) => (options.scene as any).findHouseEntryTarget?.(undefined, npcId) ?? null,
     });
 
     this.needsSystem = new NpcNeedsSystem({
@@ -172,6 +181,14 @@ export class NPCSystem {
     return this.primaryNpc ? [this.primaryNpc, ...this.extraNpcs] : [...this.extraNpcs];
   }
 
+  addNpc(npc: Npc): void {
+    if (this.findByName(npc.name)) return;
+    this.extraNpcs.push(npc);
+    this.configureActor(npc);
+    this.memorySystem?.ensureNpcMindState(npc.name, this.dayCycle?.gameTick ?? 0);
+    this.syncWorldContextsNow();
+  }
+
   findByName(name: string): Npc | null {
     if (this.primaryNpc?.name === name) return this.primaryNpc;
     return this.extraNpcs.find((npc) => npc.name === name) ?? null;
@@ -236,10 +253,15 @@ export class NPCSystem {
     options.actionExecutor.setWorld(options.worldContext);
 
     for (const npc of this.all()) {
-      npc.setPathfinder(options.pathfinder);
-      npc.setPlayerRef(options.player.sprite);
-      npc.setWorldContext(options.worldContext);
+      this.configureActor(npc);
     }
+  }
+
+  private configureActor(npc: Npc): void {
+    npc.setPathfinder(this.pathfinder);
+    npc.setPlayerRef(this.player.sprite);
+    npc.setWorldContext(this.worldContext);
+    this.actionExecutor.setWorld(this.worldContext);
   }
 
   private bindNavigationFailures(): void {
@@ -251,6 +273,7 @@ export class NPCSystem {
         reason: event.reason,
         x: event.x,
         y: event.y,
+        worldId: event.targetWorldId ?? event.worldId,
         targetX: event.targetX,
         targetY: event.targetY,
       });

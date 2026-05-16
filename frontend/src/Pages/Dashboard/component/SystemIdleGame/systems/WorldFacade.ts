@@ -56,6 +56,15 @@ export class WorldFacade {
       heldItemId: player.heldItemId,
       currentTool: player.currentTool,
     });
+    console.log('[DEBUG-event-flow] WorldFacade.triggerPrimaryInteraction resolved', {
+      player: {
+        x: player.sprite.x,
+        y: player.sprite.y,
+        heldItemId: player.heldItemId,
+        currentTool: player.currentTool,
+      },
+      command,
+    });
     this.executeInteractionCommand(command);
   }
 
@@ -80,6 +89,21 @@ export class WorldFacade {
           x: command.targetWorld.x,
           y: command.targetWorld.y,
           placeEntity: command.placeEntity,
+        });
+        return;
+      case 'PLACE_HOUSE':
+        this.options.dispatchWorldAction({
+          type: 'PLACE_HOUSE',
+          actorId: command.playerId,
+          definitionId: command.definitionId,
+          blueprintItemId: command.blueprintItemId,
+        });
+        return;
+      case 'PLACE_STORAGE_CHEST':
+        this.options.dispatchWorldAction({
+          type: 'PLACE_STORAGE_CHEST',
+          actorId: command.playerId,
+          itemId: command.itemId,
         });
         return;
       case 'HARVEST_CROP':

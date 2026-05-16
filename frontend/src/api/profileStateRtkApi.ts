@@ -20,6 +20,8 @@ import type { NpcMemoryEntry, NpcChatResponse } from '../Pages/Dashboard/compone
 import type { GameInventoryItem, FarmTile, CreatureState } from '../Redux/Features/gameSlice';
 import { setGameInventory, setFarmTiles, upsertFarmTile } from '../Redux/Features/gameSlice';
 import type { GameSaveV1 } from '../Pages/Dashboard/component/SystemIdleGame/persistence/save/GameSaveTypes';
+import type { HouseContractSave, HouseInstanceSave } from '../Pages/Dashboard/component/SystemIdleGame/housing/HouseTypes';
+import type { StorageChestSave, StorageChestSlotItem } from '../Pages/Dashboard/component/SystemIdleGame/storage/StorageChestTypes';
 
 const { backendUrl } = getEnv();
 
@@ -81,8 +83,44 @@ export type GameNpcShopItem = {
     description: string;
     price: number;
     owned: boolean;
+    pendingArrival?: boolean;
     ownedByDefault?: boolean;
 };
+
+export type GameHouseShopItem = {
+    id: string;
+    name: string;
+    nameZh: string;
+    blueprintItemId: string;
+    price: number;
+    rentPerDay: number;
+    ownedBlueprintQuantity?: number;
+};
+
+export type GameShopItem = {
+    shopItemId: string;
+    category: 'npc' | 'house' | 'storage' | 'tool';
+    id: string;
+    itemId?: string;
+    name?: string;
+    nameZh?: string;
+    title?: string;
+    role?: string;
+    description?: string;
+    price: number;
+    owned?: boolean;
+    pendingArrival?: boolean;
+    ownedByDefault?: boolean;
+    blueprintItemId?: string;
+    rentPerDay?: number;
+    capacity?: number;
+    ownedQuantity?: number;
+    ownedBlueprintQuantity?: number;
+};
+
+export type StorageChestTransferRef =
+    | { container: 'player'; item: StorageChestSlotItem }
+    | { container: 'chest'; index: number };
 
 export const profileStateRtkApi = createApi({
     reducerPath: 'profileStateRtkApi',
@@ -255,11 +293,41 @@ export const profileStateRtkApi = createApi({
             },
         }),
 
+        deleteGameSave: builder.mutation<
+            { success: boolean; gameSave: GameSaveV1; wallet: { coins: number }; inventory: InventoryItem[] },
+            { roomId?: string | null } | void
+        >({
+            query: (arg) => ({
+                url: '/profile/game/save',
+                method: 'DELETE',
+                body: arg?.roomId ? { roomId: arg.roomId } : undefined,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) {
+                        dispatch(setProfile({
+                            ...(currentProfile as any),
+                            gameSave: data.gameSave,
+                            gameInventory: [],
+                            gameChests: [],
+                            npcMemories: {},
+                        } as any));
+                    }
+                    dispatch(setGameInventory([]));
+                    dispatch(setWalletCoins(data.wallet.coins));
+                    dispatch(setInventory(data.inventory));
+                } catch (_) {}
+            },
+        }),
+
         getGameNpcShop: builder.query<
             {
                 success: boolean;
                 wallet: { coins: number };
                 unlockedNpcs: string[];
+                pendingNpcArrivals?: string[];
                 npcs: GameNpcShopItem[];
                 gameSave: GameSaveV1;
             },
@@ -286,9 +354,12 @@ export const profileStateRtkApi = createApi({
             {
                 success: boolean;
                 alreadyOwned?: boolean;
+                pendingArrival?: boolean;
+                event?: unknown;
                 npc: GameNpcShopItem;
                 wallet: { coins: number };
                 unlockedNpcs: string[];
+                pendingNpcArrivals?: string[];
                 gameSave: GameSaveV1;
             },
             { npcId: string; roomId?: string | null }
@@ -310,6 +381,252 @@ export const profileStateRtkApi = createApi({
                             gameSave: data.gameSave,
                         }));
                     }
+                } catch (_) {}
+            },
+        }),
+
+        getGameHouseShop: builder.query<
+            { success: boolean; wallet: { coins: number }; items: GameHouseShopItem[] },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/house-shop?roomId=${encodeURIComponent(roomId)}` : '/profile/game/house-shop',
+            async onQueryStarted(_, { dispatch, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                } catch (_) {}
+            },
+        }),
+
+        purchaseGameHouse: builder.mutation<
+            { success: boolean; wallet: { coins: number }; gameInventory: GameInventoryItem[]; gameSave: GameSaveV1 },
+            { houseDefinitionId: string; quantity?: number; roomId?: string | null }
+        >({
+            query: (body) => ({
+                url: '/profile/game/house-shop/purchase',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, wallet: data.wallet, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        getGameShop: builder.query<
+            {
+                success: boolean;
+                wallet: { coins: number };
+                items: GameShopItem[];
+                unlockedNpcs: string[];
+                pendingNpcArrivals: string[];
+                gameSave: GameSaveV1;
+            },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/shop?roomId=${encodeURIComponent(roomId)}` : '/profile/game/shop',
+            async onQueryStarted(_, { dispatch, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                } catch (_) {}
+            },
+        }),
+
+        purchaseGameShopItem: builder.mutation<
+            {
+                success: boolean;
+                purchase: unknown;
+                wallet: { coins: number };
+                gameInventory: GameInventoryItem[];
+                items: GameShopItem[];
+                unlockedNpcs: string[];
+                pendingNpcArrivals: string[];
+                gameSave: GameSaveV1;
+            },
+            { shopItemId: string; quantity?: number; roomId?: string | null }
+        >({
+            query: (body) => ({
+                url: '/profile/game/shop/purchase',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setWalletCoins(data.wallet.coins));
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, wallet: data.wallet, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        getGameHouses: builder.query<
+            { success: boolean; houses: HouseInstanceSave[]; gameSave: GameSaveV1 },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/houses?roomId=${encodeURIComponent(roomId)}` : '/profile/game/houses',
+        }),
+
+        placeGameHouse: builder.mutation<
+            { success: boolean; house: HouseInstanceSave; houses: HouseInstanceSave[]; gameInventory: GameInventoryItem[]; gameSave: GameSaveV1 },
+            {
+                roomId?: string | null;
+                blueprintItemId: string;
+                definitionId: string;
+                x: number;
+                y: number;
+                placementProof: { requestedAtTick: number; footprint: { x: number; y: number; w: number; h: number } };
+            }
+        >({
+            query: (body) => ({
+                url: '/profile/game/houses/place',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        completeHouseConstruction: builder.mutation<
+            { success: boolean; house: HouseInstanceSave; houses: HouseInstanceSave[]; gameInventory: GameInventoryItem[]; gameSave: GameSaveV1 },
+            { houseId: string; gameTick: number; roomId?: string | null }
+        >({
+            query: ({ houseId, ...body }) => ({
+                url: `/profile/game/houses/${encodeURIComponent(houseId)}/construction/complete`,
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        openGameHouse: builder.mutation<
+            { success: boolean; house: HouseInstanceSave; houses: HouseInstanceSave[]; gameSave: GameSaveV1 },
+            { houseId: string; roomId?: string | null }
+        >({
+            query: ({ houseId, ...body }) => ({
+                url: `/profile/game/houses/${encodeURIComponent(houseId)}/open`,
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        getGameHouseContracts: builder.query<
+            { success: boolean; contracts: HouseContractSave[]; houses: HouseInstanceSave[]; gameSave: GameSaveV1 },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/house-contracts?roomId=${encodeURIComponent(roomId)}` : '/profile/game/house-contracts',
+        }),
+
+        createGameHouseContract: builder.mutation<
+            { success: boolean; contract: HouseContractSave; house: HouseInstanceSave; contracts: HouseContractSave[]; houses: HouseInstanceSave[]; gameSave: GameSaveV1 },
+            { houseId: string; npcId: string; npcName: string; rentPerDay?: number; gameTick?: number; roomId?: string | null }
+        >({
+            query: (body) => ({
+                url: '/profile/game/house-contracts',
+                method: 'POST',
+                body,
+            }),
+        }),
+
+        signGameHouseContract: builder.mutation<
+            { success: boolean; contract: HouseContractSave; house: HouseInstanceSave; contracts: HouseContractSave[]; houses: HouseInstanceSave[]; gameSave: GameSaveV1 },
+            { contractId: string; gameTick?: number; roomId?: string | null }
+        >({
+            query: ({ contractId, ...body }) => ({
+                url: `/profile/game/house-contracts/${encodeURIComponent(contractId)}/sign`,
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        getStorageChests: builder.query<
+            { success: boolean; storageChests: StorageChestSave[]; gameSave: GameSaveV1 },
+            string | void
+        >({
+            query: (roomId) => roomId ? `/profile/game/storage-chests?roomId=${encodeURIComponent(roomId)}` : '/profile/game/storage-chests',
+        }),
+
+        placeStorageChest: builder.mutation<
+            { success: boolean; storageChest: StorageChestSave; storageChests: StorageChestSave[]; gameInventory: GameInventoryItem[]; gameSave: GameSaveV1 },
+            {
+                roomId?: string | null;
+                itemId: string;
+                x: number;
+                y: number;
+                placementProof: { requestedAtTick: number; footprint: { x: number; y: number; w: number; h: number } };
+            }
+        >({
+            query: (body) => ({
+                url: '/profile/game/storage-chests/place',
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
+                } catch (_) {}
+            },
+        }),
+
+        transferStorageChestItem: builder.mutation<
+            { success: boolean; storageChest: StorageChestSave; storageChests: StorageChestSave[]; gameInventory: GameInventoryItem[]; gameSave: GameSaveV1 },
+            {
+                chestId: string;
+                roomId?: string | null;
+                from: StorageChestTransferRef;
+                to: StorageChestTransferRef | { container: 'player' };
+                quantity?: number;
+                gameTick?: number;
+            }
+        >({
+            query: ({ chestId, ...body }) => ({
+                url: `/profile/game/storage-chests/${encodeURIComponent(chestId)}/transfer`,
+                method: 'POST',
+                body,
+            }),
+            async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
+                try {
+                    const { data } = await queryFulfilled;
+                    dispatch(setGameInventory(data.gameInventory));
+                    const currentProfile = (getState() as RootState).profile.profile;
+                    if (currentProfile) dispatch(setProfile({ ...currentProfile, gameSave: data.gameSave }));
                 } catch (_) {}
             },
         }),
@@ -378,18 +695,19 @@ export const profileStateRtkApi = createApi({
         }),
 
         /** Fetch all unopened treasure chests for the current user. */
-        getGameChests: builder.query<{ chests: GameChest[] }, void>({
-            query: () => '/profile/game/chests',
+        getGameChests: builder.query<{ chests: GameChest[] }, string | void>({
+            query: (roomId) => roomId ? `/profile/game/chests?roomId=${encodeURIComponent(roomId)}` : '/profile/game/chests',
         }),
 
         /** Open a chest: backend applies rewards and returns updated wallet + inventory. */
         openChest: builder.mutation<
             { success: boolean; rewards: GameChest['rewards']; wallet: { coins: number }; inventory: InventoryItem[] },
-            { chestId: string }
+            { chestId: string; roomId?: string | null; localChest?: GameChest | null }
         >({
-            query: ({ chestId }) => ({
+            query: ({ chestId, roomId, localChest }) => ({
                 url:    `/profile/game/chests/${chestId}/open`,
                 method: 'POST',
+                body:   roomId || localChest ? { roomId, localChest } : undefined,
             }),
         }),
 
@@ -561,8 +879,23 @@ export const {
     useSaveIdleGameMutation,
     useLazyGetGameSaveQuery,
     useSaveGameSaveMutation,
+    useDeleteGameSaveMutation,
     useGetGameNpcShopQuery,
     usePurchaseGameNpcMutation,
+    useGetGameHouseShopQuery,
+    usePurchaseGameHouseMutation,
+    useGetGameShopQuery,
+    usePurchaseGameShopItemMutation,
+    useLazyGetGameHousesQuery,
+    usePlaceGameHouseMutation,
+    useCompleteHouseConstructionMutation,
+    useOpenGameHouseMutation,
+    useGetGameHouseContractsQuery,
+    useCreateGameHouseContractMutation,
+    useSignGameHouseContractMutation,
+    useGetStorageChestsQuery,
+    usePlaceStorageChestMutation,
+    useTransferStorageChestItemMutation,
     useNpcChatMutation,
     useNpcDispatchReturnMutation,
     useLazyGetNpcMemoriesQuery,

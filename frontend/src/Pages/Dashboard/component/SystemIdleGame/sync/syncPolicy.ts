@@ -140,6 +140,16 @@ export const WORLD_ACTION_SYNC_POLICIES: Record<WorldAction['type'], WorldAction
     category: 'local_only',
     note: 'Placed objects remain local until a shared placement authority is introduced.',
   },
+  PLACE_HOUSE: {
+    actionType: 'PLACE_HOUSE',
+    category: 'server_confirm',
+    note: 'House placement consumes a blueprint and must be confirmed by backend gameSave.',
+  },
+  PLACE_STORAGE_CHEST: {
+    actionType: 'PLACE_STORAGE_CHEST',
+    category: 'server_confirm',
+    note: 'Storage chest placement consumes an item and must be confirmed by backend gameSave.',
+  },
   REMOVE_OBJECT: {
     actionType: 'REMOVE_OBJECT',
     category: 'local_only',
@@ -237,4 +247,3 @@ export function getWorldSyncPolicy(domain: SyncDomain): SyncPolicyEntry {
 export function getWorldActionSyncPolicy(action: Pick<WorldAction, 'type'>): WorldActionSyncPolicy {
   return WORLD_ACTION_SYNC_POLICIES[action.type];
 }
-

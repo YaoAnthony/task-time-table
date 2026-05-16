@@ -24,7 +24,7 @@ import type {
   NpcMindState,
 } from '../SystemIdleGame/shared/worldStateTypes';
 
-type TabId = 'overview' | 'memory' | 'skill' | 'debug';
+type TabId = 'overview' | 'memory' | 'persona' | 'work' | 'navigation' | 'debug';
 
 const STARTER_NPC_NAME = GAME_NPC_CATALOG.find((npc) => npc.id === STARTER_NPC_ID)?.name ?? '老李';
 
@@ -56,16 +56,18 @@ const roleWork: Record<string, string[]> = {
   rancher: ['照顾鸡', '捡蛋', '喂水'],
 };
 
-const roleKnowledgeAllowList: Record<string, (skill: NpcKnowledgeSkill) => boolean> = {
-  farmer: (skill) => skill.id.startsWith('farm_') || skill.id === 'go_to_farm',
-  rancher: (skill) => skill.id === 'go_to_farm',
+const roleWorkSkillAllowList: Record<string, (skill: NpcKnowledgeSkill) => boolean> = {
   starter: () => true,
+  farmer: (skill) => skill.id.startsWith('farm_'),
+  rancher: (skill) => skill.id === 'farm_water_day' || skill.id === 'farm_harvest_day',
 };
 
 const tabs: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'memory', label: 'Memory' },
-  { id: 'skill', label: 'Skill' },
+  { id: 'persona', label: '设定' },
+  { id: 'work', label: 'Work Skill' },
+  { id: 'navigation', label: 'Navigation' },
   { id: 'debug', label: 'Debug' },
 ];
 
@@ -306,6 +308,49 @@ function SkillFiles({ skill }: { skill: NpcPersonaSkill }) {
   );
 }
 
+function isNavigationSkill(skill: NpcKnowledgeSkill): boolean {
+  return skill.steps.length > 0 && skill.steps.every((step) => step.kind === 'move_to');
+}
+
+function KnowledgeSkillList({
+  skills,
+  emptyText,
+  showSteps = true,
+}: {
+  skills: NpcKnowledgeSkill[];
+  emptyText: string;
+  showSteps?: boolean;
+}) {
+  if (skills.length === 0) return <Empty text={emptyText} />;
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {skills.map((skill) => (
+        <div key={skill.id} style={{ ...subtlePanelStyle, padding: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+            <strong>{skill.label}</strong>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
+              <Chip>{skill.id}</Chip>
+              <Chip>{skill.requiredTime ?? 'any'}</Chip>
+            </div>
+          </div>
+          <div style={{ marginTop: 6, color: 'var(--px-muted)', lineHeight: 1.45 }}>
+            {skill.description}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+            {skill.triggers.map((trigger) => <Chip key={trigger}>{trigger}</Chip>)}
+          </div>
+          {showSteps ? (
+            <div style={{ marginTop: 8 }}>
+              <JsonBlock value={skill.steps} maxHeight={150} />
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MemoryList({ memories }: { memories: NpcMemoryRecord[] }) {
   if (memories.length === 0) return <Empty text="这个 NPC 还没有结构化记忆。" />;
 
@@ -419,8 +464,11 @@ const NPCData: React.FC = () => {
   const personaSkill = npcSkillResult.data?.skill ?? null;
   const schedule = getDefaultNpcSchedule(selectedName);
   const allKnowledgeSkills = getNpcKnowledgeSkills();
-  const knowledgeFilter = selectedDefinition ? roleKnowledgeAllowList[selectedDefinition.role] : null;
-  const relevantKnowledgeSkills = knowledgeFilter ? allKnowledgeSkills.filter(knowledgeFilter) : [];
+  const workSkillFilter = selectedDefinition ? roleWorkSkillAllowList[selectedDefinition.role] : null;
+  const navigationSkills = allKnowledgeSkills.filter(isNavigationSkill);
+  const workSkills = allKnowledgeSkills
+    .filter((skill) => !isNavigationSkill(skill))
+    .filter((skill) => workSkillFilter?.(skill) ?? false);
   const activePlace = agentWorld?.currentPlace?.name ?? agentWorld?.currentPlace?.id ?? '未知';
   const currentIntent = mind?.currentIntent?.kind ?? 'idle';
   const currentActivity = mind?.schedule?.currentActivity ?? null;
@@ -693,16 +741,16 @@ const NPCData: React.FC = () => {
             </div>
           ) : null}
 
-          {activeTab === 'skill' ? (
+          {activeTab === 'persona' ? (
             <div style={{ display: 'grid', gap: 14 }}>
               <Section
-                title="Persona Skill"
+                title="设定"
                 action={personaSkill ? <Chip>{personaSkill.metadata.version ?? 'v1'}</Chip> : undefined}
               >
                 {npcSkillResult.isFetching ? (
-                  <Empty text="正在读取 persona skill..." />
+                  <Empty text="正在读取 NPC 设定..." />
                 ) : !personaSkill ? (
-                  <Empty text="后端没有返回这个 NPC 的 persona skill。" />
+                  <Empty text="后端没有返回这个 NPC 的设定文件。" />
                 ) : (
                   <div style={{ display: 'grid', gap: 12 }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -714,26 +762,25 @@ const NPCData: React.FC = () => {
                   </div>
                 )}
               </Section>
-              <Section title="Work Skills">
-                {relevantKnowledgeSkills.length === 0 ? (
-                  <Empty text="这个职业暂时没有接入可展示的工作 skill。" />
-                ) : (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {relevantKnowledgeSkills.map((skill) => (
-                      <div key={skill.id} style={{ ...subtlePanelStyle, padding: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                          <strong>{skill.label}</strong>
-                          <Chip>{skill.id}</Chip>
-                        </div>
-                        <div style={{ marginTop: 6, color: 'var(--px-muted)', lineHeight: 1.45 }}>
-                          {skill.description}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
             </div>
+          ) : null}
+
+          {activeTab === 'work' ? (
+            <Section title="Work Skill" action={<Chip>{workSkills.length}</Chip>}>
+              <KnowledgeSkillList
+                skills={workSkills}
+                emptyText="这个职业暂时没有接入可执行的工作 skill。"
+              />
+            </Section>
+          ) : null}
+
+          {activeTab === 'navigation' ? (
+            <Section title="Navigation" action={<Chip>{navigationSkills.length}</Chip>}>
+              <KnowledgeSkillList
+                skills={navigationSkills}
+                emptyText="暂时没有接入导航 skill。"
+              />
+            </Section>
           ) : null}
 
           {activeTab === 'debug' ? (

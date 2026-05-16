@@ -64,12 +64,16 @@ export interface EntityState {
 export type WorldObjectKind =
   | 'tree'
   | 'chest'
+  | 'storage_chest'
   | 'bed'
   | 'nest'
   | 'farm_tile'
   | 'bush'
   | 'rock'
   | 'house'
+  | 'room'
+  | 'room_exit'
+  | 'furniture'
   | 'decoration';
 
 export interface ObjectState {
@@ -186,6 +190,7 @@ export interface NpcMemoryRecord {
   kind: NpcMemoryKind;
   type: string;
   label?: string;
+  worldId?: string;
   x: number;
   y: number;
   lastSeenTick: number;
@@ -208,6 +213,7 @@ export interface NpcIntentState {
   targetKey?: string;
   targetId?: string;
   targetType?: string;
+  targetWorldId?: string;
   targetX?: number;
   targetY?: number;
   reason?: string;

@@ -15,6 +15,9 @@ import type { GameSettingsState, CreatureState, FarmTile } from '../../../../../
 import type { GameChest } from '../../../../../Types/Profile';
 import type { DropState } from '../shared/worldStateTypes';
 import type { GameSaveV1, RuntimeInventorySnapshot } from '../persistence/save/GameSaveTypes';
+import type { GameEventSaveState } from '../event/EventTypes';
+import type { HouseContractSave, HouseInstanceSave } from '../housing/HouseTypes';
+import type { StorageChestSave } from '../storage/StorageChestTypes';
 import { buildGameSaveFromRuntime, buildNpcSaves } from '../persistence/save/GameSaveMapper';
 import {
   normalizeGameWorldState,
@@ -39,7 +42,13 @@ export interface SavingSystemOptions {
   getFarmTiles?: () => FarmTile[];
   getChests?: () => GameChest[];
   getCreatureStates?: () => CreatureState[];
+  getHouses?: () => HouseInstanceSave[];
+  getHouseContracts?: () => HouseContractSave[];
+  getStorageChests?: () => StorageChestSave[];
   getNpcMemories?: () => Record<string, NpcMemoryEntry[]>;
+  getEventState?: () => GameEventSaveState | null | undefined;
+  getUnlockedNpcIds?: () => string[];
+  getWorldIdAt?: (x: number, y: number) => string;
 }
 
 export interface GameSaveBuildContext {
@@ -96,7 +105,9 @@ export class SavingSystem {
       minds: worldState.npcMinds,
       memories: this.options.getNpcMemories?.() ?? {},
       inventories: context.npcInventories ?? {},
+      getWorldId: (entity) => this.options.getWorldIdAt?.(entity.x, entity.y) ?? 'world:village',
     });
+    const playerWorldId = this.options.getWorldIdAt?.(playerState.x, playerState.y) ?? 'world:village';
 
     return buildGameSaveFromRuntime({
       previousSave: context.previousSave,
@@ -104,6 +115,7 @@ export class SavingSystem {
       userId: context.userId,
       username: context.username,
       player: {
+        worldId: playerWorldId,
         x: playerState.x,
         y: playerState.y,
         facing,
@@ -116,7 +128,12 @@ export class SavingSystem {
       chests: this.options.getChests?.() ?? [],
       worldItems: Object.values(worldState.drops).filter((drop): drop is DropState => Boolean(drop && !drop.claimed)),
       creatures: this.options.getCreatureStates?.() ?? [],
+      houses: this.options.getHouses?.() ?? context.previousSave?.worldStatus?.entities?.houses ?? [],
+      houseContracts: this.options.getHouseContracts?.() ?? context.previousSave?.worldStatus?.entities?.houseContracts ?? [],
+      storageChests: this.options.getStorageChests?.() ?? context.previousSave?.worldStatus?.entities?.storageChests ?? [],
       npcs,
+      events: this.options.getEventState?.() ?? context.previousSave?.worldStatus?.events,
+      unlockedNpcs: this.options.getUnlockedNpcIds?.() ?? context.previousSave?.worldStatus?.unlockedNpcs,
     });
   }
 

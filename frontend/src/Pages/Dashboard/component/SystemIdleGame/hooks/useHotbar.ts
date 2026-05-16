@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSelector }     from 'react-redux';
 import type { RefObject }  from 'react';
 import type { RootState }  from '../../../../../Redux/store';
+import type { SlotItem }   from '../../../../../Redux/Features/gameSlice';
 import type { GameScene }  from '../GameScene';
 import type { ToolType }   from '../types';
 
@@ -18,6 +19,13 @@ const ITEM_TO_TOOL: Record<string, ToolType> = {
   axe:          'axe',
   scythe:       'scythe',
 };
+
+function syncHeldSlotItem(scene: GameScene | null, slotItem: SlotItem | null | undefined, tool: ToolType): void {
+  scene?.setPlayerTool(tool);
+  if (!scene?.player) return;
+  (scene.player as any).heldItemId = slotItem?.itemId || undefined;
+  (scene.player as any).heldSlotItem = slotItem ?? null;
+}
 
 export function useHotbar(sceneRef: RefObject<GameScene | null>) {
   const hotbarSlots    = useSelector((s: RootState) => s.game.hotbarSlots);
@@ -31,24 +39,20 @@ export function useHotbar(sceneRef: RefObject<GameScene | null>) {
   /** 用户切换槽位（Hotbar 组件点击/键盘数字键）。 */
   const handleSlotChange = useCallback((slot: number) => {
     setSelectedSlot(slot);
-    const itemId = hotbarSlotsRef.current[slot]?.itemId ?? '';
+    const slotItem = hotbarSlotsRef.current[slot] ?? null;
+    const itemId = slotItem?.itemId ?? '';
     const tool: ToolType = ITEM_TO_TOOL[itemId] ?? 'empty';
-    sceneRef.current?.setPlayerTool(tool);
-    if (sceneRef.current?.player) {
-      (sceneRef.current.player as any).heldItemId = itemId || undefined;
-    }
+    syncHeldSlotItem(sceneRef.current, slotItem, tool);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // hotbarSlots 内容改变时（拖拽更新）重新同步当前槽位的工具
   useEffect(() => {
     if (!sceneRef.current) return;
-    const itemId = hotbarSlots[selectedSlotRef.current]?.itemId ?? '';
+    const slotItem = hotbarSlots[selectedSlotRef.current] ?? null;
+    const itemId = slotItem?.itemId ?? '';
     const tool: ToolType = ITEM_TO_TOOL[itemId] ?? 'empty';
-    sceneRef.current.setPlayerTool(tool);
-    if (sceneRef.current.player) {
-      (sceneRef.current.player as any).heldItemId = itemId || undefined;
-    }
+    syncHeldSlotItem(sceneRef.current, slotItem, tool);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hotbarSlots]);
 

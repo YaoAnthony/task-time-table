@@ -5,7 +5,7 @@ export type NpcKnowledgeStep =
       kind: 'move_to';
       target:
         | { kind: 'named'; place: string }
-        | { kind: 'coords'; x: number; y: number };
+        | { kind: 'coords'; x: number; y: number; worldId?: string };
       note?: string;
     }
   | {
@@ -49,7 +49,7 @@ export const NPC_KNOWLEDGE_SKILLS: NpcKnowledgeSkill[] = [
   {
     id: 'farm_till_day',
     label: 'Till soil',
-    description: 'During daytime, move to the farm and till the nearest empty farm cell with a scythe.',
+    description: 'During daytime, move to the farm and till the nearest empty farm cell with a hoe.',
     triggers: ['till', 'plow', 'prepare soil'],
     requiredTime: 'day',
     steps: [
@@ -101,9 +101,9 @@ export function findNpcKnowledgeSkill(skillId: string | undefined): NpcKnowledge
   return NPC_KNOWLEDGE_SKILLS.find((skill) => skill.id === skillId) ?? null;
 }
 
-export function resolveKnowledgeMoveTarget(step: NpcKnowledgeStep, actorId = 'actor'): { x: number; y: number } | null {
+export function resolveKnowledgeMoveTarget(step: NpcKnowledgeStep, actorId = 'actor'): { x: number; y: number; worldId?: string } | null {
   if (step.kind !== 'move_to') return null;
-  if (step.target.kind === 'coords') return { x: step.target.x, y: step.target.y };
+  if (step.target.kind === 'coords') return { x: step.target.x, y: step.target.y, worldId: step.target.worldId };
   return resolveActorLocationTarget(step.target.place, actorId);
 }
 

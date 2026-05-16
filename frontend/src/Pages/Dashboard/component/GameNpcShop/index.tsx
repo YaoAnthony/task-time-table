@@ -32,6 +32,28 @@ const panelStyle: React.CSSProperties = {
   boxShadow: '0 4px 0 rgba(0,0,0,0.35)',
 };
 
+function getNpcStatus(npc: GameNpcShopItem) {
+  if (npc.owned) {
+    return {
+      label: '已加入',
+      button: '已拥有',
+      disabled: true,
+    };
+  }
+  if (npc.pendingArrival) {
+    return {
+      label: '巴士在路上',
+      button: '等待到站',
+      disabled: true,
+    };
+  }
+  return {
+    label: `${npc.price} 金币`,
+    button: '招募',
+    disabled: false,
+  };
+}
+
 function NpcCard({
   npc,
   coins,
@@ -44,7 +66,9 @@ function NpcCard({
   onPurchase: (npc: GameNpcShopItem) => void;
 }) {
   const accent = roleAccent[npc.role] ?? '#c89f45';
-  const canBuy = !npc.owned && coins >= npc.price;
+  const status = getNpcStatus(npc);
+  const canBuy = !status.disabled && coins >= npc.price;
+  const disabled = status.disabled || purchasing || !canBuy;
 
   return (
     <article
@@ -53,8 +77,8 @@ function NpcCard({
         padding: 16,
         display: 'grid',
         gap: 12,
-        minHeight: 210,
-        borderColor: npc.owned ? accent : 'var(--px-border)',
+        minHeight: 220,
+        borderColor: npc.owned || npc.pendingArrival ? accent : 'var(--px-border)',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
@@ -76,7 +100,7 @@ function NpcCard({
             whiteSpace: 'nowrap',
           }}
         >
-          {npc.owned ? '已加入' : `${npc.price} 金币`}
+          {status.label}
         </span>
       </div>
 
@@ -86,24 +110,24 @@ function NpcCard({
 
       <button
         type="button"
-        disabled={npc.owned || purchasing || !canBuy}
+        disabled={disabled}
         onClick={() => onPurchase(npc)}
         style={{
           alignSelf: 'end',
           minHeight: 38,
           border: `2px solid ${npc.owned ? 'var(--px-border)' : accent}`,
           borderRadius: 4,
-          background: npc.owned
+          background: npc.owned || npc.pendingArrival
             ? 'var(--px-surface2)'
             : canBuy
               ? 'rgba(255,215,0,0.12)'
               : 'rgba(0,0,0,0.08)',
-          color: npc.owned ? 'var(--px-muted)' : canBuy ? accent : 'var(--px-muted)',
+          color: npc.owned || npc.pendingArrival ? 'var(--px-muted)' : canBuy ? accent : 'var(--px-muted)',
           fontWeight: 800,
-          cursor: npc.owned || purchasing || !canBuy ? 'not-allowed' : 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
-        {npc.owned ? '已拥有' : canBuy ? '招募' : '金币不足'}
+        {canBuy || status.disabled ? status.button : '金币不足'}
       </button>
     </article>
   );
@@ -118,11 +142,17 @@ const GameNpcShop: React.FC = () => {
 
   const handlePurchase = async (npc: GameNpcShopItem) => {
     try {
-      await purchaseGameNpc({
+      const result = await purchaseGameNpc({
         npcId: npc.id,
         roomId: data?.gameSave?.worldStatus?.roomId,
       }).unwrap();
-      message.success(`${npc.name} 已加入村子`);
+      if (result.pendingArrival) {
+        message.success(`${npc.name} 已经上车，回游戏等巴士到站。`);
+      } else if (result.alreadyOwned) {
+        message.info(`${npc.name} 已经在村子里。`);
+      } else {
+        message.success(`${npc.name} 已加入村子。`);
+      }
       refetch();
     } catch (error) {
       const err = error as { data?: { message?: string } };
@@ -144,7 +174,7 @@ const GameNpcShop: React.FC = () => {
           <div>
             <h1 style={{ margin: 0, fontSize: 24, color: 'var(--px-gold)', letterSpacing: 0 }}>NPC 商店</h1>
             <p style={{ margin: '7px 0 0', color: 'var(--px-muted)', fontSize: 13 }}>
-              用同一套金币招募村民。购买后回到挂机培养，村民会从存档名单生成。
+              用金币招募村民。购买后会排入车站事件，回到挂机培养后等巴士到站。
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

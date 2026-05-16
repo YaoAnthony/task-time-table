@@ -5,9 +5,14 @@ import type { NpcMemoryEntry } from '../../types';
 import type { EntityState, NpcMindState, WorldState } from '../../shared/worldStateTypes';
 import type { GameSaveV1, GameSaveSettings, NpcSave, PlayerSave, RuntimeInventorySnapshot } from './GameSaveTypes';
 import { NPC_CATALOG_VERSION, normalizeUnlockedNpcIds } from '../../shared/GameNpcCatalog';
+import { normalizeEventSaveState } from '../../event/EventState';
+import type { GameEventSaveState } from '../../event/EventTypes';
+import type { HouseContractSave, HouseInstanceSave } from '../../housing/HouseTypes';
+import type { StorageChestSave } from '../../storage/StorageChestTypes';
 
 const DEFAULT_ROOM_ID = 'solo';
 const DEFAULT_USER_ID = 'player';
+const DEFAULT_WORLD_ID = 'world:village';
 
 export function normalizeGameSaveSettings(settings?: Partial<GameSettingsState & { shadowEnabled?: boolean }>): GameSaveSettings {
   return {
@@ -33,6 +38,40 @@ function normalizeInventory(input?: Partial<RuntimeInventorySnapshot>): RuntimeI
   };
 }
 
+function normalizeWorldId(input: unknown): string {
+  const value = typeof input === 'string' ? input.trim() : '';
+  return value || DEFAULT_WORLD_ID;
+}
+
+function normalizePlayerSave(player: PlayerSave, fallbackName: string): PlayerSave {
+  return {
+    ...player,
+    name: player.name || fallbackName || 'player',
+    position: {
+      worldId: normalizeWorldId(player.position?.worldId),
+      x: typeof player.position?.x === 'number' ? player.position.x : 400,
+      y: typeof player.position?.y === 'number' ? player.position.y : 1000,
+      facing: player.position?.facing ?? 'down',
+    },
+    inventory: normalizeInventory(player.inventory),
+  };
+}
+
+function normalizeNpcSave(npc: NpcSave): NpcSave {
+  return {
+    ...npc,
+    position: {
+      worldId: normalizeWorldId(npc.position?.worldId),
+      x: typeof npc.position?.x === 'number' ? npc.position.x : 0,
+      y: typeof npc.position?.y === 'number' ? npc.position.y : 0,
+      facing: npc.position?.facing,
+    },
+    inventory: npc.inventory ?? {},
+    memory: Array.isArray(npc.memory) ? npc.memory : [],
+    mind: npc.mind ?? null,
+  };
+}
+
 function createDefaultPlayer(
   userId: string,
   username: string,
@@ -42,7 +81,7 @@ function createDefaultPlayer(
   return {
     id: userId,
     name: username || 'player',
-    position: { x: 400, y: 1000, facing: 'down' },
+    position: { worldId: DEFAULT_WORLD_ID, x: 400, y: 1000, facing: 'down' },
     inventory: normalizeInventory(inventory),
     permissionLevel,
     sleeping: false,
@@ -77,6 +116,13 @@ export function normalizeGameSave(
       userId === roomId ? 'op' : 'guest',
     );
   }
+  Object.keys(players).forEach((id) => {
+    players[id] = normalizePlayerSave(players[id] as PlayerSave, id === userId ? username : 'player');
+  });
+
+  const npcs = Object.fromEntries(
+    Object.entries(input?.worldStatus?.npcs ?? {}).map(([id, npc]) => [id, normalizeNpcSave(npc as NpcSave)]),
+  ) as Record<string, NpcSave>;
 
   return {
     schemaVersion: 1,
@@ -89,13 +135,17 @@ export function normalizeGameSave(
       entities: {
         worldState: entities?.worldState ?? createInitialWorldState(0, 0, { tick: gameTick }),
         farmTiles: Array.isArray(entities?.farmTiles) ? entities.farmTiles : [],
-        chests: Array.isArray(entities?.chests) ? entities.chests : [],
+        chests: Array.isArray(entities?.chests) ? entities.chests.filter((chest) => !chest.opened) : [],
         worldItems: Array.isArray(entities?.worldItems) ? entities.worldItems : [],
         creatures: Array.isArray(entities?.creatures) ? entities.creatures : [],
+        houses: Array.isArray(entities?.houses) ? entities.houses : [],
+        houseContracts: Array.isArray(entities?.houseContracts) ? entities.houseContracts : [],
+        storageChests: Array.isArray(entities?.storageChests) ? entities.storageChests : [],
       },
       npcCatalogVersion: NPC_CATALOG_VERSION,
       unlockedNpcs: normalizeUnlockedNpcIds(input?.worldStatus?.unlockedNpcs),
-      npcs: input?.worldStatus?.npcs ?? {},
+      npcs,
+      events: normalizeEventSaveState(input?.worldStatus?.events),
     },
     players,
   };
@@ -123,6 +173,7 @@ export function buildNpcSaves(input: {
   minds: Record<string, NpcMindState>;
   memories: Record<string, NpcMemoryEntry[]>;
   inventories: Record<string, Record<string, number>>;
+  getWorldId?: (entity: EntityState) => string;
 }): Record<string, NpcSave> {
   const ids = new Set([
     ...Object.keys(input.entities).filter((id) => input.entities[id]?.kind === 'npc'),
@@ -137,6 +188,7 @@ export function buildNpcSaves(input: {
       id,
       name: entity?.displayName || id,
       position: {
+        worldId: entity ? input.getWorldId?.(entity) ?? DEFAULT_WORLD_ID : DEFAULT_WORLD_ID,
         x: entity?.x ?? 0,
         y: entity?.y ?? 0,
         facing: entity?.facing,
@@ -154,7 +206,7 @@ export function buildGameSaveFromRuntime(input: {
   roomId?: string | null;
   userId?: string | null;
   username?: string | null;
-  player: { x: number; y: number; facing: FacingDirection };
+  player: { worldId: string; x: number; y: number; facing: FacingDirection };
   gameTick: number;
   settings: Partial<GameSettingsState & { shadowEnabled?: boolean }>;
   inventory: RuntimeInventorySnapshot;
@@ -163,7 +215,12 @@ export function buildGameSaveFromRuntime(input: {
   chests: GameSaveV1['worldStatus']['entities']['chests'];
   worldItems: GameSaveV1['worldStatus']['entities']['worldItems'];
   creatures: GameSaveV1['worldStatus']['entities']['creatures'];
+  houses?: HouseInstanceSave[];
+  houseContracts?: HouseContractSave[];
+  storageChests?: StorageChestSave[];
   npcs: Record<string, NpcSave>;
+  events?: GameEventSaveState;
+  unlockedNpcs?: string[];
 }): GameSaveV1 {
   const normalized = normalizeGameSave(input.previousSave, {
     roomId: input.roomId,
@@ -190,13 +247,17 @@ export function buildGameSaveFromRuntime(input: {
     entities: {
       worldState: input.worldState,
       farmTiles: input.farmTiles,
-      chests: input.chests,
+      chests: input.chests.filter((chest) => !chest.opened),
       worldItems: input.worldItems,
       creatures: input.creatures,
+      houses: input.houses ?? normalized.worldStatus.entities.houses,
+      houseContracts: input.houseContracts ?? normalized.worldStatus.entities.houseContracts,
+      storageChests: input.storageChests ?? normalized.worldStatus.entities.storageChests,
     },
     npcCatalogVersion: NPC_CATALOG_VERSION,
-    unlockedNpcs: normalizeUnlockedNpcIds(normalized.worldStatus.unlockedNpcs),
+    unlockedNpcs: normalizeUnlockedNpcIds(input.unlockedNpcs ?? normalized.worldStatus.unlockedNpcs),
     npcs: input.npcs,
+    events: normalizeEventSaveState(input.events ?? normalized.worldStatus.events),
   };
   normalized.saveVersion += 1;
   normalized.updatedAt = new Date().toISOString();

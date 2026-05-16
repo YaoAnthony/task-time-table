@@ -65,6 +65,7 @@ const TOOL_SPRITE: Record<string, { x: number; y: number }> = {
     watering_can: { x: 0,  y: 0 },
     axe:          { x: 16, y: 0 },
     scythe:       { x: 32, y: 0 },
+    shovel:       { x: 48, y: 0 },
 };
 const ITEM_EMOJI: Record<string, string> = {
     egg:         '🥚',

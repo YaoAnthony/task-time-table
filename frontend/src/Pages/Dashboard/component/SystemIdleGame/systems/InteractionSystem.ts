@@ -25,6 +25,17 @@ export type InteractionCommand =
       targetWorld: { x: number; y: number };
     }
   | {
+      type: 'PLACE_HOUSE';
+      playerId: string;
+      definitionId: string;
+      blueprintItemId: string;
+    }
+  | {
+      type: 'PLACE_STORAGE_CHEST';
+      playerId: string;
+      itemId: string;
+    }
+  | {
       type: 'HARVEST_CROP';
       playerId: string;
       cropId: string;
@@ -77,6 +88,12 @@ export class InteractionSystem {
     const targetCell = this.getFacingCell(originCell.col, originCell.row, facing);
     const nearbyCells = this.collectNearbyCells(originCell, targetCell);
 
+    const houseCommand = this.resolvePlaceHouse(input.playerId, input.heldItemId);
+    if (houseCommand) return houseCommand;
+
+    const storageChestCommand = this.resolvePlaceStorageChest(input.playerId, input.heldItemId);
+    if (storageChestCommand) return storageChestCommand;
+
     const placeCommand = this.resolvePlaceObject(input.playerId, input.heldItemId, targetCell);
     if (placeCommand) return placeCommand;
 
@@ -93,6 +110,35 @@ export class InteractionSystem {
     if (entityCommand) return entityCommand;
 
     return { type: 'NONE', playerId: input.playerId };
+  }
+
+  private resolvePlaceHouse(
+    playerId: string,
+    heldItemId: string | undefined,
+  ): InteractionCommand | null {
+    if (!heldItemId) return null;
+    const def = ITEM_DEF_MAP.get(heldItemId);
+    if (!def || def.itemType !== 'house_blueprint') return null;
+    return {
+      type: 'PLACE_HOUSE',
+      playerId,
+      definitionId: 'greenhouse',
+      blueprintItemId: heldItemId,
+    };
+  }
+
+  private resolvePlaceStorageChest(
+    playerId: string,
+    heldItemId: string | undefined,
+  ): InteractionCommand | null {
+    if (!heldItemId) return null;
+    const def = ITEM_DEF_MAP.get(heldItemId);
+    if (!def || def.itemType !== 'storage_chest') return null;
+    return {
+      type: 'PLACE_STORAGE_CHEST',
+      playerId,
+      itemId: heldItemId,
+    };
   }
 
   private resolvePlaceObject(
@@ -303,6 +349,7 @@ export class InteractionSystem {
       case 'tree':
         return TREE_INTERACT_RADIUS;
       case 'chest':
+      case 'storage_chest':
         return CHEST_INTERACT_RADIUS;
       case 'nest':
         return NEST_INTERACT_RADIUS;

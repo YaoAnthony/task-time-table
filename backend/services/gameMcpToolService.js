@@ -1,7 +1,8 @@
 const ITEM_LABELS = {
     watering_can: '水壶',
     axe: '斧头',
-    scythe: '镰刀',
+    scythe: '锄头',
+    shovel: '铲子',
     wheat_seed: '小麦种子',
     tomato_seed: '番茄种子',
     wheat: '小麦',
@@ -13,6 +14,8 @@ const ITEM_LABELS = {
     berry: '浆果',
     apple: '苹果',
     egg: '鸡蛋',
+    house_blueprint_greenhouse: '温室蓝图',
+    house_key: '房屋钥匙',
 };
 
 const ITEM_ALIASES = {
@@ -21,6 +24,8 @@ const ITEM_ALIASES = {
     '锄': 'scythe',
     '镰刀': 'scythe',
     scythe: 'scythe',
+    shovel: 'shovel',
+    '铲子': 'shovel',
     axe: 'axe',
     '斧头': 'axe',
     '斧子': 'axe',
@@ -84,6 +89,20 @@ function currentContext(ctx) {
     return asObject(ctx.perceptionContext);
 }
 
+const DEFAULT_WORLD_ID = 'world:village';
+
+function currentWorldId(ctx) {
+    const context = currentContext(ctx);
+    return context.self?.worldId
+        || context.agentWorld?.position?.worldId
+        || context.currentPlace?.id
+        || DEFAULT_WORLD_ID;
+}
+
+function worldIdForPoint(ctx, x, y, fallback) {
+    return fallback || currentWorldId(ctx) || DEFAULT_WORLD_ID;
+}
+
 function visibleDrops(ctx) {
     const context = currentContext(ctx);
     const direct = asArray(context.visibleDrops);
@@ -94,6 +113,7 @@ function visibleDrops(ctx) {
             itemId: String(entry.kind).slice('drop:'.length),
             x: entry.x,
             y: entry.y,
+            worldId: entry.worldId,
             distance: entry.distance,
             source: 'agentWorld',
         }));
@@ -104,6 +124,7 @@ function visibleDrops(ctx) {
             const key = drop.id || `${drop.itemId}:${drop.x}:${drop.y}`;
             if (seen.has(key)) return false;
             seen.add(key);
+            drop.worldId = worldIdForPoint(ctx, drop.x, drop.y, drop.worldId);
             return true;
         })
         .sort((a, b) => Number(a.distance || 0) - Number(b.distance || 0));
@@ -119,13 +140,19 @@ function visibleObjects(ctx) {
             type: entry.kind,
             x: entry.x,
             y: entry.y,
+            worldId: entry.worldId,
             distance: entry.distance,
             state: entry.state,
+            meta: entry.meta,
             affordances: entry.affordances,
             source: 'agentWorld',
         }));
     return [...direct, ...agentObjects]
         .filter(Boolean)
+        .map((objectItem) => ({
+            ...objectItem,
+            worldId: worldIdForPoint(ctx, objectItem.x, objectItem.y, objectItem.worldId),
+        }))
         .sort((a, b) => Number(a.distance || 0) - Number(b.distance || 0));
 }
 
@@ -136,6 +163,16 @@ function findDrop(ctx, itemId) {
     return drops.find((drop) => normalizeItemId(drop.itemId) === normalizedItemId) || null;
 }
 
+function visibleHouses(ctx) {
+    return visibleObjects(ctx).filter((objectItem) => (objectItem.type || objectItem.kind) === 'house');
+}
+
+function findHouse(ctx, houseId) {
+    const houses = visibleHouses(ctx);
+    if (!houseId) return houses[0] || null;
+    return houses.find((entry) => entry.id === houseId || entry.meta?.roomId === houseId) || null;
+}
+
 function summarizeEnvironment(ctx) {
     const context = currentContext(ctx);
     const drops = visibleDrops(ctx).slice(0, 10).map((drop) => ({
@@ -144,6 +181,7 @@ function summarizeEnvironment(ctx) {
         label: itemLabel(drop.itemId),
         x: Math.round(Number(drop.x || 0)),
         y: Math.round(Number(drop.y || 0)),
+        worldId: drop.worldId || currentWorldId(ctx),
         distance: Math.round(Number(drop.distance || 0)),
     }));
     const objects = visibleObjects(ctx).slice(0, 12).map((objectItem) => ({
@@ -151,8 +189,10 @@ function summarizeEnvironment(ctx) {
         type: objectItem.type || objectItem.kind,
         x: Math.round(Number(objectItem.x || 0)),
         y: Math.round(Number(objectItem.y || 0)),
+        worldId: objectItem.worldId || currentWorldId(ctx),
         distance: Math.round(Number(objectItem.distance || 0)),
         state: objectItem.state,
+        meta: objectItem.meta,
         affordances: objectItem.affordances,
     }));
     return {
@@ -165,6 +205,7 @@ function summarizeEnvironment(ctx) {
         visibleEntities: asArray(context.visibleEntities).slice(0, 8),
         visibleCrops: asArray(context.visibleCrops).slice(0, 8),
         landmarks: asArray(context.landmarks).slice(0, 8),
+        currentWorldId: currentWorldId(ctx),
         currentPlace: context.agentWorld?.currentPlace || null,
         nearbyPlaces: asArray(context.agentWorld?.nearbyPlaces).slice(0, 6),
         availableActions: asArray(context.agentWorld?.availableActions).slice(0, 12),
@@ -191,7 +232,7 @@ const tools = [
         type: 'function',
         function: {
             name: 'observe_environment',
-            description: 'Observe the NPC current nearby world state: drops, beds, chests, nests, trees, NPCs, landmarks, and current place.',
+            description: 'Observe the NPC current nearby world state: drops, beds, chests, nests, trees, houses/contracts, NPCs, landmarks, and current place.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -258,7 +299,7 @@ const tools = [
         type: 'function',
         function: {
             name: 'move_to',
-            description: 'Plan a frontend movement action to player, a named place, or coordinates.',
+            description: 'Plan a frontend movement action to player, a named place, or coordinates. Coordinate targets may include worldId such as world:village or room:<houseId>.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -270,6 +311,7 @@ const tools = [
                             place: { type: 'string' },
                             x: { type: 'number' },
                             y: { type: 'number' },
+                            worldId: { type: 'string' },
                         },
                         required: ['kind'],
                     },
@@ -287,6 +329,45 @@ const tools = [
                 type: 'object',
                 properties: {
                     placeId: { type: 'string' },
+                },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'inspect_house',
+            description: 'Inspect a visible house, including stage, door, owner, resident, contract status, rent, roomId, and affordances.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    houseId: { type: 'string' },
+                },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'enter_house',
+            description: 'Plan a frontend action for this NPC to walk to a visible house door and enter its room instance. Use when the player asks the NPC to go into a house, go home, enter their house, or sleep in their house.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    houseId: { type: 'string', description: 'Visible house id. Omit to use the nearest visible house.' },
+                },
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'remember_home_house',
+            description: 'Remember a visible house as this NPC home. Use when the player says this is your house/home or assigns this house to the NPC.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    houseId: { type: 'string', description: 'Visible house id. Omit to use the nearest visible house.' },
                 },
             },
         },
@@ -328,10 +409,14 @@ function callGameMcpTool(name, args, ctx) {
         case 'observe_environment': {
             const data = summarizeEnvironment(ctx);
             const drops = data.visibleDrops.map((drop) => `${drop.label}/${drop.itemId}`).join(', ') || 'none';
-            const objects = data.visibleObjects.map((objectItem) => objectItem.type).join(', ') || 'none';
+            const objects = data.visibleObjects.map((objectItem) => (
+                objectItem.meta?.summary
+                    ? `${objectItem.type}:${objectItem.meta.summary}`
+                    : objectItem.type
+            )).join(', ') || 'none';
             return makeToolResult({
                 data,
-                memoryText: `MCP observe_environment: saw drops [${drops}] and objects [${objects}].`,
+                memoryText: `MCP observe_environment: in ${data.currentWorldId || currentWorldId(ctx)} saw drops [${drops}] and objects [${objects}].`,
             });
         }
         case 'check_inventory': {
@@ -360,7 +445,7 @@ function callGameMcpTool(name, args, ctx) {
                     visibleDrops: visibleDrops(ctx).slice(0, 10),
                 },
                 memoryText: drop
-                    ? `MCP find_world_item: found ${itemLabel(drop.itemId)}(${drop.itemId}) at (${Math.round(drop.x)},${Math.round(drop.y)}).`
+                    ? `MCP find_world_item: found ${itemLabel(drop.itemId)}(${drop.itemId}) in ${drop.worldId || currentWorldId(ctx)} at (${Math.round(drop.x)},${Math.round(drop.y)}).`
                     : `MCP find_world_item: did not find ${itemId || 'any visible item'}.`,
             });
         }
@@ -384,12 +469,17 @@ function callGameMcpTool(name, args, ctx) {
             const action = {
                 type: 'pickup_item',
                 itemId,
-                target: { kind: 'coords', x: Number(drop.x || 0), y: Number(drop.y || 0) },
+                target: {
+                    kind: 'coords',
+                    x: Number(drop.x || 0),
+                    y: Number(drop.y || 0),
+                    worldId: drop.worldId || currentWorldId(ctx),
+                },
             };
             return makeToolResult({
                 data: { itemId, requestedItemId: parsedArgs.itemId || null, drop: clone(drop), planned: true },
                 action,
-                memoryText: `MCP pickup_item: planned pickup of ${itemLabel(itemId)}(${itemId}) at (${Math.round(drop.x)},${Math.round(drop.y)}).`,
+                memoryText: `MCP pickup_item: planned pickup of ${itemLabel(itemId)}(${itemId}) in ${drop.worldId || currentWorldId(ctx)} at (${Math.round(drop.x)},${Math.round(drop.y)}).`,
             });
         }
         case 'drop_item': {
@@ -411,11 +501,17 @@ function callGameMcpTool(name, args, ctx) {
         }
         case 'move_to': {
             const target = asObject(parsedArgs.target);
-            const action = { type: 'move', target };
+            const normalizedTarget = target.kind === 'coords'
+                ? {
+                    ...target,
+                    worldId: target.worldId || currentWorldId(ctx),
+                }
+                : target;
+            const action = { type: 'move', target: normalizedTarget };
             return makeToolResult({
-                data: { target, planned: true },
+                data: { target: normalizedTarget, planned: true },
                 action,
-                memoryText: `MCP move_to: planned move to ${compactJson(target, 400)}.`,
+                memoryText: `MCP move_to: planned move to ${compactJson(normalizedTarget, 400)}.`,
             });
         }
         case 'inspect_place': {
@@ -432,6 +528,64 @@ function callGameMcpTool(name, args, ctx) {
                     visibleDrops: visibleDrops(ctx).slice(0, 16),
                 },
                 memoryText: `MCP inspect_place: inspected ${placeId || 'current nearby place'}.`,
+            });
+        }
+        case 'inspect_house': {
+            const houses = visibleHouses(ctx);
+            const house = findHouse(ctx, parsedArgs.houseId);
+            return makeToolResult({
+                ok: Boolean(house),
+                data: {
+                    requestedHouseId: parsedArgs.houseId || null,
+                    house: house ? clone(house) : null,
+                    visibleHouses: houses,
+                },
+                memoryText: house
+                    ? `MCP inspect_house: inspected ${house.id} (${house.meta?.summary || house.state || 'house'}).`
+                    : 'MCP inspect_house: no visible house was available.',
+            });
+        }
+        case 'enter_house': {
+            const house = findHouse(ctx, parsedArgs.houseId);
+            const roomId = house?.meta?.roomId || null;
+            const action = house ? {
+                type: 'enter_house',
+                houseId: house.id,
+                roomId,
+            } : null;
+            return makeToolResult({
+                ok: Boolean(house),
+                data: {
+                    requestedHouseId: parsedArgs.houseId || null,
+                    house: house ? clone(house) : null,
+                    visibleHouses: visibleHouses(ctx),
+                    planned: Boolean(action),
+                },
+                action,
+                memoryText: house
+                    ? `MCP enter_house: planned entering ${house.id} (${house.meta?.summary || roomId || 'house'}).`
+                    : 'MCP enter_house: no visible house was available.',
+            });
+        }
+        case 'remember_home_house': {
+            const house = findHouse(ctx, parsedArgs.houseId);
+            const roomId = house?.meta?.roomId || null;
+            const action = house ? {
+                type: 'remember_home_house',
+                houseId: house.id,
+                roomId,
+            } : null;
+            return makeToolResult({
+                ok: Boolean(house),
+                data: {
+                    requestedHouseId: parsedArgs.houseId || null,
+                    house: house ? clone(house) : null,
+                    planned: Boolean(action),
+                },
+                action,
+                memoryText: house
+                    ? `MCP remember_home_house: planned remembering ${house.id} (${house.meta?.summary || roomId || 'house'}) as home.`
+                    : 'MCP remember_home_house: no visible house was available.',
             });
         }
         case 'use_skill': {

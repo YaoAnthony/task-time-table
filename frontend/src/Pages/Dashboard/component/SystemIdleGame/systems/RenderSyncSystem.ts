@@ -62,9 +62,9 @@ export class RenderSyncSystem {
       displayName: npc.name,
       meta: { interactable: false },
     });
-    extraNpcs.forEach((entry, index) => {
+    extraNpcs.forEach((entry) => {
       this.worldStateManager.registerEntity({
-        id: `npc-extra-${index}`,
+        id: entry.name,
         kind: 'npc',
         x: entry.sprite.x,
         y: entry.sprite.y,
@@ -112,9 +112,9 @@ export class RenderSyncSystem {
       y: npc.sprite.y,
     });
 
-    extraNpcs.forEach((entry, index) => {
+    extraNpcs.forEach((entry) => {
       this.worldStateManager.syncEntity({
-        id: `npc-extra-${index}`,
+        id: entry.name,
         x: entry.sprite.x,
         y: entry.sprite.y,
       });
@@ -166,10 +166,16 @@ export class RenderSyncSystem {
   }
 
   loadChests(chests: GameChest[]): void {
-    chests.forEach((chest) => this.addChest(chest));
+    const unopenedChests = chests.filter((chest) => !chest.opened);
+    const nextIds = new Set(unopenedChests.map((chest) => chest.id));
+    for (const chestId of [...this.chests.keys()]) {
+      if (!nextIds.has(chestId)) this.removeChest(chestId);
+    }
+    unopenedChests.forEach((chest) => this.addChest(chest));
   }
 
   addChest(data: GameChest): void {
+    if (data.opened) return;
     if (this.chests.has(data.id)) return;
     const chest = new Chest(this.scene, data.x, data.y, data.id, data.rewards);
     this.chests.set(data.id, chest);

@@ -7,6 +7,8 @@ import { TreeStateSystem } from './TreeStateSystem';
 export type WorldAction =
   | { type: 'MOVE_ENTITY'; entityId: string; x: number; y: number }
   | { type: 'PLACE_OBJECT'; actorId: string; itemId: string; x: number; y: number; placeEntity?: 'bed' | 'nest' }
+  | { type: 'PLACE_HOUSE'; actorId: string; definitionId: string; blueprintItemId: string }
+  | { type: 'PLACE_STORAGE_CHEST'; actorId: string; itemId: string }
   | { type: 'REMOVE_OBJECT'; actorId?: string; objectId: string; objectKind?: WorldObjectKind }
   | { type: 'PICKUP_DROP'; actorId: string; dropId: string; itemId: string }
   | { type: 'DROP_ITEM'; actorId: string; itemId: string; x: number; y: number }
@@ -37,6 +39,8 @@ export interface WorldActionDispatcher {
 
 interface WorldActionEffects {
   onPlaceObject?: (action: Extract<WorldAction, { type: 'PLACE_OBJECT' }>) => WorldActionResult;
+  onPlaceHouse?: (action: Extract<WorldAction, { type: 'PLACE_HOUSE' }>) => WorldActionResult;
+  onPlaceStorageChest?: (action: Extract<WorldAction, { type: 'PLACE_STORAGE_CHEST' }>) => WorldActionResult;
   onRemoveObject?: (action: Extract<WorldAction, { type: 'REMOVE_OBJECT' }>) => WorldActionResult;
   onPickupDrop?: (action: Extract<WorldAction, { type: 'PICKUP_DROP' }>) => WorldActionResult;
   onDropItem?: (action: Extract<WorldAction, { type: 'DROP_ITEM' }>) => WorldActionResult;
@@ -74,6 +78,12 @@ export class WorldActionSystem implements WorldActionDispatcher {
       case 'PLACE_OBJECT':
         return this.effects.onPlaceObject?.(action)
           ?? { ok: false, action, reason: 'PLACE_OBJECT effect adapter missing' };
+      case 'PLACE_HOUSE':
+        return this.effects.onPlaceHouse?.(action)
+          ?? { ok: false, action, reason: 'PLACE_HOUSE effect adapter missing' };
+      case 'PLACE_STORAGE_CHEST':
+        return this.effects.onPlaceStorageChest?.(action)
+          ?? { ok: false, action, reason: 'PLACE_STORAGE_CHEST effect adapter missing' };
       case 'REMOVE_OBJECT':
         if (action.objectKind === 'nest') {
           this.nestStateSystem.applyRemoveNest(action.objectId);

@@ -7,7 +7,7 @@
 
 import Phaser from 'phaser';
 import type { Interactable } from '../types';
-import type { ChestRewardItem } from '../../../../../Types/Profile';
+import type { ChestRewardItem, GameChest } from '../../../../../Types/Profile';
 import { CHEST_INTERACT_RADIUS } from '../constants';
 import { gameBus } from '../shared/EventBus';
 
@@ -17,6 +17,7 @@ export class Chest implements Interactable {
   isOpen = false;
 
   private readonly rewards: { coins: number; items: ChestRewardItem[] };
+  private rewardEmitted = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -52,20 +53,50 @@ export class Chest implements Interactable {
   }
 
   interact(): void {
+    console.log('[DEBUG-event-flow] Chest.interact', {
+      chestId: this.id,
+      isOpen: this.isOpen,
+      position: { x: this.sprite.x, y: this.sprite.y },
+    });
     if (this.isOpen) return;
     this.open();
   }
 
   // ── Open ───────────────────────────────────────────────────────────────────
   open(): void {
+    console.log('[DEBUG-event-flow] Chest.open', {
+      chestId: this.id,
+      isOpen: this.isOpen,
+      animExists: this.sprite.scene.anims.exists('chest-open'),
+      rewards: this.rewards,
+    });
     if (this.isOpen) return;
     this.isOpen = true;
 
-    // Play opening animation; on complete, notify React to show reward UI
+    if (!this.sprite.scene.anims.exists('chest-open')) {
+      this.sprite.setFrame(5);
+      this.emitReward();
+      return;
+    }
+
     this.sprite.play('chest-open');
-    this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      gameBus.emit('chest:interact', { chestId: this.id, rewards: this.rewards });
-    });
+    this.sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => this.emitReward());
+    this.sprite.scene.time.delayedCall(800, () => this.emitReward());
+  }
+
+  private emitReward(): void {
+    if (this.rewardEmitted) return;
+    this.rewardEmitted = true;
+    const chest: GameChest = {
+      id: this.id,
+      x: this.sprite.x,
+      y: this.sprite.y,
+      rewards: this.rewards,
+      opened: false,
+      createdAt: 0,
+    };
+    console.log('[DEBUG-event-flow] Chest.emitReward chest:interact', { chest });
+    gameBus.emit('chest:interact', { chestId: this.id, rewards: this.rewards, chest });
   }
 
   /**

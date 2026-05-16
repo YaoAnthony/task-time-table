@@ -172,6 +172,7 @@ export class DialogueSystem {
     return this.getNpcRegistrations()
       .filter(({ id, npc }) => (
         id !== excludeId
+        && npc.isAlive()
         && !npc.isOnDispatch()
         && !npc.isAwaitingConfirm()
       ))
@@ -208,6 +209,7 @@ export class DialogueSystem {
       this.replyCooldowns.set(listener.id, now);
       listener.npc.setThinking(true);
       this.scene.time.delayedCall(delay, () => {
+        if (!this.isSceneUsable() || !listener.npc.isAlive()) return;
         if (!this.canReply(listener, this.scene.time?.now ?? Date.now(), false, true)) {
           listener.npc.setThinking(false);
           return;
@@ -219,6 +221,7 @@ export class DialogueSystem {
   }
 
   private canReply(listener: HeardNpc, now: number, enforceCooldown = true, allowOwnThinking = false): boolean {
+    if (!listener.npc.isAlive()) return false;
     if (listener.npc.isOnDispatch()) return false;
     if (listener.npc.isAwaitingConfirm()) return false;
     if (listener.npc.isThinking() && !allowOwnThinking) return false;
@@ -230,6 +233,7 @@ export class DialogueSystem {
   }
 
   private canReplyToPlayer(listener: HeardNpc, now: number, urgentQuestion: boolean): boolean {
+    if (!listener.npc.isAlive()) return false;
     if (listener.npc.isOnDispatch()) return false;
     if (listener.npc.isAwaitingConfirm()) return false;
     if (listener.npc.hasPlannedActions()) return false;
@@ -248,5 +252,10 @@ export class DialogueSystem {
       return `${options.speakerLabel}，${picked}`;
     }
     return picked;
+  }
+
+  private isSceneUsable(): boolean {
+    const sys = this.scene?.sys as unknown as { settings?: { status?: number | string } } | undefined;
+    return Boolean(sys?.settings && sys.settings.status !== Phaser.Scenes.DESTROYED);
   }
 }

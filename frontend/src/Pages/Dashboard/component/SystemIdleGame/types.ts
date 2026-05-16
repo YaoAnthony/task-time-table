@@ -46,7 +46,7 @@ export const HOTBAR_DEFS: HotbarSlotDef[] = [
   { tool: 'empty',  label: '空手',  iconX: -1, iconY: -1 },
   { tool: 'water',  label: '水壶',  iconX:  0, iconY:  0 },  // tool icon 1 = water
   { tool: 'axe',    label: '斧头',  iconX: 16, iconY:  0 },  // tool icon 2 = axe
-  { tool: 'scythe', label: '镰刀',  iconX: 32, iconY:  0 },  // tool icon 3 = scythe
+  { tool: 'scythe', label: '锄头',  iconX: 32, iconY:  0 },  // tool icon 3 = hoe
   { tool: 'empty', label: '',       iconX: -1, iconY: -1 },
   { tool: 'empty', label: '',       iconX: -1, iconY: -1 },
   { tool: 'empty', label: '',       iconX: -1, iconY: -1 },
@@ -77,7 +77,7 @@ export interface NpcMemoryEntry {
  * so the LLM only outputs semantic targets, not raw pixel coordinates.
  */
 export type ActionTarget =
-  | { kind: 'coords';   x: number; y: number }
+  | { kind: 'coords';   x: number; y: number; worldId?: string }
   | { kind: 'named';    place: 'room' | 'door' | 'pond' | string }
   | { kind: 'entity';   ref: 'player' | 'npc' }
   | { kind: 'relative'; dx: number; dy: number };
@@ -91,6 +91,8 @@ export type NpcActionType =
   | 'chop_tree'                           // navigate to tree and chop it
   | 'use_skill'                           // execute durable NPC knowledge skill
   | 'talk_with'                           // stand beside another NPC and face them while talking
+  | 'enter_house'                         // walk to a house door, then move into its room instance
+  | 'remember_home_house'                 // remember a house as this NPC's home
   | 'till_tile' | 'water_tile' | 'plant_crop' | 'harvest_crop'
   | 'ask_confirm'                         // ask player yes/no before proceeding
   | 'follow_player'                       // NPC follows the player continuously
@@ -105,6 +107,8 @@ export interface NpcAction {
   tool?:     string;       // future: 'watering_can' etc.
   emote?:    string;       // future: 'wave' | 'bow' etc.
   itemId?:   string;       // for 'pickup_item' / 'drop_item'
+  houseId?:  string;       // for 'enter_house' / 'remember_home_house'
+  roomId?:   string;       // room:<houseId> target, if already known
   question?: string;       // for 'ask_confirm'
   skillId?:  string;       // for 'use_skill'
   targetNpcName?: string;  // for 'talk_with'

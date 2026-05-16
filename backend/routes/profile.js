@@ -25,6 +25,7 @@ const { runNpcMcpAgent } = require('../services/npcMcpAgentService');
 const {
     loadOrCreateGameSave,
     persistGameSave,
+    resetGameSaveForUser,
     getNpcMemory,
     setNpcMemory,
     getChests,
@@ -34,9 +35,12 @@ const {
     listNpcDefinitions,
     getNpcDefinitionById,
     normalizeUnlockedNpcIds,
-    createDefaultNpcSave,
     toShopItem,
 } = require('../shared/gameNpcCatalog');
+const {
+    getPendingNpcArrivalIds,
+    enqueueNpcArrivalEvent,
+} = require('../shared/gameEventService');
 
 const paypal = require('@paypal/checkout-server-sdk');
 // const { createPayPalClient, paypal } = require('./paypal');
@@ -661,17 +665,35 @@ async function saveGameSaveRoute(req, res) {
 
 router.put('/game/save', authenticateToken, saveGameSaveRoute);
 router.post('/game/save', authenticateToken, saveGameSaveRoute);
+router.delete('/game/save', authenticateToken, async (req, res) => {
+    try {
+        const requestedRoomId = req.body?.roomId || req.query.roomId;
+        const result = await resetGameSaveForUser(req.user.id, requestedRoomId);
+        if (result.error) return res.status(result.status || 400).json({ message: result.error });
+        return res.json({
+            success: true,
+            gameSave: result.gameSave,
+            wallet: result.profile.wallet || { coins: 0 },
+            inventory: result.profile.inventory || [],
+        });
+    } catch (err) {
+        console.error('Delete game save error:', err);
+        return res.status(500).json({ message: 'Failed to delete game save', error: err.message });
+    }
+});
 
 router.get('/game/npc-shop', authenticateToken, async (req, res) => {
     try {
         const state = await loadOrCreateGameSave(req.user.id, req.query.roomId);
         if (state.error) return res.status(state.status || 400).json({ message: state.error });
         const unlocked = normalizeUnlockedNpcIds(state.gameSave.worldStatus?.unlockedNpcs);
+        const pending = getPendingNpcArrivalIds(state.gameSave);
         return res.json({
             success: true,
             wallet: state.profile.wallet || { coins: 0 },
             unlockedNpcs: unlocked,
-            npcs: listNpcDefinitions().map((definition) => toShopItem(definition, unlocked)),
+            pendingNpcArrivals: pending,
+            npcs: listNpcDefinitions().map((definition) => toShopItem(definition, unlocked, pending)),
             gameSave: state.gameSave,
         });
     } catch (err) {
@@ -690,12 +712,26 @@ router.post('/game/npc-shop/purchase', authenticateToken, async (req, res) => {
         if (state.error) return res.status(state.status || 400).json({ message: state.error });
 
         const unlocked = normalizeUnlockedNpcIds(state.gameSave.worldStatus?.unlockedNpcs);
+        const pending = getPendingNpcArrivalIds(state.gameSave);
         if (unlocked.includes(definition.id)) {
             return res.json({
                 success: true,
                 alreadyOwned: true,
-                npc: toShopItem(definition, unlocked),
+                npc: toShopItem(definition, unlocked, pending),
                 wallet: state.profile.wallet || { coins: 0 },
+                unlockedNpcs: unlocked,
+                pendingNpcArrivals: pending,
+                gameSave: state.gameSave,
+            });
+        }
+        if (pending.includes(definition.id)) {
+            return res.json({
+                success: true,
+                pendingArrival: true,
+                npc: toShopItem(definition, unlocked, pending),
+                wallet: state.profile.wallet || { coins: 0 },
+                unlockedNpcs: unlocked,
+                pendingNpcArrivals: pending,
                 gameSave: state.gameSave,
             });
         }
@@ -710,12 +746,11 @@ router.post('/game/npc-shop/purchase', authenticateToken, async (req, res) => {
             ...(state.profile.wallet || {}),
             coins: coins - price,
         };
-        unlocked.push(definition.id);
-        state.gameSave.worldStatus.unlockedNpcs = normalizeUnlockedNpcIds(unlocked);
-        state.gameSave.worldStatus.npcs = state.gameSave.worldStatus.npcs || {};
-        if (!state.gameSave.worldStatus.npcs[definition.name]) {
-            state.gameSave.worldStatus.npcs[definition.name] = createDefaultNpcSave(definition);
-        }
+        const arrivalEvent = enqueueNpcArrivalEvent(
+            state.gameSave,
+            definition,
+            state.gameSave.worldStatus?.gameTick ?? 0,
+        );
 
         const gameSave = await persistGameSave({
             profile: state.profile,
@@ -726,12 +761,16 @@ router.post('/game/npc-shop/purchase', authenticateToken, async (req, res) => {
             roomId: state.roomId,
         });
         const nextUnlocked = normalizeUnlockedNpcIds(gameSave.worldStatus?.unlockedNpcs);
+        const nextPending = getPendingNpcArrivalIds(gameSave);
 
         return res.json({
             success: true,
-            npc: toShopItem(definition, nextUnlocked),
+            pendingArrival: true,
+            event: arrivalEvent,
+            npc: toShopItem(definition, nextUnlocked, nextPending),
             wallet: state.profile.wallet,
             unlockedNpcs: nextUnlocked,
+            pendingNpcArrivals: nextPending,
             gameSave,
         });
     } catch (err) {
@@ -848,7 +887,8 @@ function scoreMemory(entry, queryKeywords, currentTick) {
 const ITEM_NAMES_ZH = {
     axe:          '斧头',
     watering_can: '水壶',
-    scythe:       '镰刀',
+    scythe:       '锄头',
+    shovel:       '铲子',
     egg:          '鸡蛋',
     fruit:        '果实',
     animal_feed:  '饲料',
@@ -868,8 +908,13 @@ Agent knowledge / skill actions:
 - {"type":"use_skill","skillId":"farm_till_day"} tills soil in daytime.
 - {"type":"use_skill","skillId":"farm_water_day"} waters prepared/planted crops in daytime.
 - {"type":"talk_with","targetNpcName":"王村长","duration":14} makes the NPC walk to that NPC, stand beside them, face them, and stay in a conversation lock.
+- {"type":"remember_home_house","houseId":"..."} remembers a visible/known house as this NPC's home.
+- {"type":"enter_house","houseId":"..."} makes the NPC walk to the house door and enter that house room instance.
+- Coordinate targets may include "worldId"; keep it when a tool or memory provides it so room coordinates are not confused with village coordinates.
 - {"type":"till_tile"} / {"type":"plant_crop","itemId":"wheat_seed"} / {"type":"water_tile"} / {"type":"harvest_crop"} are direct farm actions near the NPC.
 Prefer talk_with for requests like "talk with 王村长", "go chat with 张雪峰", "和老李聊聊".
+Prefer remember_home_house when the player says this is your house/home.
+Prefer enter_house when the player asks the NPC to go inside, go home, enter a house, or sleep in their house.
 Prefer use_skill for player requests like go to the room, farm, till soil, sow seeds, water crops, or harvest crops.`;
 
 function describeActions(actions) {
@@ -887,7 +932,7 @@ function describeActions(actions) {
             else if (t.kind === 'named' && t.place)
                 descriptions.push(`我去了${t.place}`);
             else if (t.kind === 'coords')
-                descriptions.push(`我移动到了(${t.x}, ${t.y})附近`);
+                descriptions.push(`我移动到了${t.worldId || 'world:village'} (${t.x}, ${t.y})附近`);
         } else if (action.type === 'water') {
             descriptions.push('我去给植物浇水了');
         } else if (action.type === 'eat') {
@@ -906,6 +951,10 @@ function describeActions(actions) {
             descriptions.push(`I used knowledge skill ${action.skillId || 'unknown'}.`);
         } else if (action.type === 'talk_with') {
             descriptions.push(`I walked over to talk with ${action.targetNpcName || 'another NPC'} and stayed facing them.`);
+        } else if (action.type === 'remember_home_house') {
+            descriptions.push(`I remembered house ${action.houseId || 'nearby'} as my home.`);
+        } else if (action.type === 'enter_house') {
+            descriptions.push(`I entered house ${action.houseId || 'nearby'} and moved into its room.`);
         } else if (action.type === 'till_tile') {
             descriptions.push('I tilled a farm tile.');
         } else if (action.type === 'plant_crop') {
@@ -1381,7 +1430,7 @@ router.post('/npc/dispatch-return', authenticateToken, async (req, res) => {
         // Build a description of what the NPC took with them
         const itemNameZhLocal = (id) => ({
             apple: '苹果', berry: '浆果', axe: '斧头', log: '木头',
-            stone: '石头', watering_can: '水壶', scythe: '镰刀',
+            stone: '石头', watering_can: '水壶', scythe: '锄头', shovel: '铲子',
         }[id] ?? id);
 
         const carriedStr = Object.keys(carriedItems).length > 0
@@ -1532,12 +1581,28 @@ router.post('/game/chests/:chestId/open', authenticateToken, async (req, res) =>
         if (state.error) return res.status(state.status || 400).json({ message: state.error });
 
         const chests = getChests(state.gameSave);
-        const chest = chests.find(c => c.id === chestId);
+        let chest = chests.find(c => c.id === chestId);
+        const localChest = req.body?.localChest;
+        if (!chest && localChest && localChest.id === chestId && localChest.rewards) {
+            chest = {
+                id: String(localChest.id),
+                x: Number(localChest.x || 0),
+                y: Number(localChest.y || 0),
+                rewards: {
+                    coins: Math.max(0, Number(localChest.rewards?.coins || 0)),
+                    items: Array.isArray(localChest.rewards?.items) ? localChest.rewards.items : [],
+                },
+                opened: false,
+                createdAt: Number(localChest.createdAt || state.gameSave.worldStatus?.gameTick || 0),
+            };
+            chests.push(chest);
+        }
         if (!chest)        return res.status(404).json({ message: 'Chest not found' });
         if (chest.opened)  return res.status(400).json({ message: 'Chest already opened' });
 
         // Apply rewards
         const coins = Number(chest.rewards?.coins || 0);
+        if (!state.profile.wallet) state.profile.wallet = { coins: 0 };
         if (coins > 0) state.profile.wallet.coins = (state.profile.wallet.coins || 0) + coins;
 
         for (const item of chest.rewards?.items || []) {
@@ -1643,8 +1708,14 @@ notice: "${notice}"
 const gameInventoryRouter = require('./modules/game.inventoryRoutes');
 const gameFarmRouter      = require('./modules/game.farmRoutes');
 const gameCreatureRouter  = require('./modules/game.creatureRoutes');
+const gameHouseRouter     = require('./modules/game.houseRoutes');
+const gameStorageChestRouter = require('./modules/game.storageChestRoutes');
+const gameShopRouter      = require('./modules/game.shopRoutes');
 router.use('/game/inventory', gameInventoryRouter);
 router.use('/game/farm',      gameFarmRouter);
 router.use('/game/creatures', gameCreatureRouter);
+router.use('/game',           gameHouseRouter);
+router.use('/game',           gameStorageChestRouter);
+router.use('/game',           gameShopRouter);
 
 module.exports = router;

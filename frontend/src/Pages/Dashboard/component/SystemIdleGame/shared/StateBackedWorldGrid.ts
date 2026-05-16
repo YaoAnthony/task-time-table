@@ -304,6 +304,7 @@ export class StateBackedWorldGrid extends WorldGrid {
       case 'tree':
         return ObjectType.TREE;
       case 'chest':
+      case 'storage_chest':
         return ObjectType.CHEST;
       case 'bed':
         return ObjectType.BED;

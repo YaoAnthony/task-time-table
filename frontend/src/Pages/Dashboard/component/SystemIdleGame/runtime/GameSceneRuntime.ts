@@ -8,7 +8,7 @@ import { CommandSystem }       from '../systems/CommandSystem';
 import { Player }              from '../entities/Player';
 import { Npc }                 from '../entities/Npc';
 import { Chest }               from '../entities/Chest';
-import type { NpcMindState } from '../shared/worldStateTypes';
+import type { NpcMindState, WorldObjectKind } from '../shared/worldStateTypes';
 import { RaspberryBush }       from '../entities/RaspberryBush';
 import { House }               from '../entities/House';
 import { ChickenView }         from '../entities/ChickenView';
@@ -47,20 +47,34 @@ import type { WorldSyncSource }  from '../sync/syncPolicy';
 import { WorldFacade } from '../systems/WorldFacade';
 import type { CreatureState } from '../../../../../Redux/Features/gameSlice';
 import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
+import { EventSystem } from '../event/EventSystem';
+import { EventActionExecutor } from '../event/EventActionExecutor';
+import { VehicleSystem } from '../event/VehicleSystem';
+import { CutsceneDirector } from '../event/CutsceneDirector';
+import { RoomLocationSystem } from '../locations/RoomLocationSystem';
+import {
+  HouseSaveAdapter,
+  HousePlacementSystem,
+  HouseConstructionSystem,
+  HouseInteractionSystem,
+  HouseContractSystem,
+} from '../housing';
+import { StorageChestSystem } from '../storage';
 
 import { preloadGameSceneAssets } from './GameScenePreload';
 import { createGameScene } from './GameSceneBootstrap';
 import { updateGameScene } from './GameSceneUpdateLoop';
 import { registerDefaultLighting, getDynamicLightConfigs, registerBedLight, registerNestLight, refreshNestLights, registerChestLight, registerTreeOccluder } from './GameSceneLighting';
 import { removeWorldItemsByIds, spawnToolPickups, _spawnBeds, placeEntityAt, _loadWorldState, createChickens, updateChickens, updateNests, spawnInitialTrees, spawnInitialBushes, spawnDecorations } from './GameSceneWorldObjects';
-import { triggerInteract, getNearestNpcName, triggerAction, tryChopNearbyBed, tryChopNearestTree, setPlayerTool, getGameState, setInitialGameSave, loadGameSaveData, getGameSaveData, getGameTick, getDayCycleTick, setNpcThinking, addPlayerMessageToNpc, getNpcFamiliarity, getNpcChatCount, npcReply, playerSpeak, getNpcMemory, getNpcMindState, setNpcAuthProvider, setNpcInventoryProvider, loadNpcMemories, executeNpcActions, getPlayerPosition, pauseInput, resumeInput, registerInteractable, unregisterInteractable, triggerFInteract, _triggerQDrop, loadChests, addChest, panToChest, getCreatureStates, restoreCreatures, removeChest, spawnWorldItemDirect, spawnWorldItem, getPlayerWorldPos, dropPlayerItem, makeNpcSay, getPerceptionReport, getPerceptionContext, confirmNpcAction, chopTreeById, findFarmTarget, performFarmAction, executeKnowledgeSkill, findNearestTree, findWorldItem, claimWorldItem, dropWorldItem, executeCommand } from './GameScenePublicApi';
+import { triggerInteract, getNearestNpcName, triggerAction, tryChopNearbyBed, tryChopNearestTree, setPlayerTool, getGameState, setInitialGameSave, loadGameSaveData, syncEventSaveData, getGameSaveData, getGameTick, getDayCycleTick, setNpcThinking, addPlayerMessageToNpc, getNpcFamiliarity, getNpcChatCount, npcReply, playerSpeak, getNpcMemory, getNpcMindState, setNpcAuthProvider, setNpcInventoryProvider, loadNpcMemories, executeNpcActions, getPlayerPosition, pauseInput, resumeInput, registerInteractable, unregisterInteractable, triggerFInteract, _triggerQDrop, loadChests, addChest, panToChest, getCreatureStates, restoreCreatures, removeChest, spawnWorldItemDirect, spawnWorldItem, getPlayerWorldPos, dropPlayerItem, makeNpcSay, getPerceptionReport, getPerceptionContext, confirmNpcAction, chopTreeById, findFarmTarget, performFarmAction, executeKnowledgeSkill, findNearestTree, findWorldItem, claimWorldItem, dropWorldItem, getWorldIdAt, getNpcWorldId, navigateNpcToWorldPosition, findHouseEntryTarget, enterHouseForNpc, rememberHomeHouseForNpc, executeCommand } from './GameScenePublicApi';
 import { spawnRemotePlayer, removeRemotePlayer, applyRemoteEvent, applyRemoteFarmEvent, buildWorldSnapshot, getWorldSnapshot, setGameTick, applyWorldSnapshotData, applyWorldSnapshot } from './GameSceneMultiplayerBridge';
 import { setAgentBrainEnabled, setPhysicsDebug, _registerCommands } from './GameSceneCommands';
-import { nextChickenId, nextNestId, getNpcRegistrations, getActiveNpcIdSet, ensureAllNpcMindStates, findNpcByName, findConversationSpotForNpc, allNpcs, findNearestNpc, spawnChickenAt, registerCoreWorldEntities, syncWorldStateMeta, syncDynamicEntityStates, syncNpcAgentWorldContexts, registerWorldObject, ensureRuntimeObjectId, getRuntimeObjectId, registerBedObject, unregisterRuntimeObject, registerDropState, unregisterDropState, syncPlayerInteractionState, findDropByStateId, findDropByItemAndPosition, findInteractableObjectByStateId, dispatchWorldAction, applyPlaceObjectAction, applyPickupDropAction, applyDropItemAction, applyRemoveObjectAction } from './GameSceneWorldStateBridge';
+import { nextChickenId, nextNestId, getNpcRegistrations, getActiveNpcIdSet, ensureAllNpcMindStates, findNpcByName, findConversationSpotForNpc, allNpcs, findNearestNpc, spawnChickenAt, registerCoreWorldEntities, syncWorldStateMeta, syncDynamicEntityStates, syncNpcAgentWorldContexts, registerWorldObject, ensureRuntimeObjectId, getRuntimeObjectId, registerBedObject, unregisterRuntimeObject, registerDropState, unregisterDropState, syncPlayerInteractionState, findDropByStateId, findDropByItemAndPosition, findInteractableObjectByStateId, dispatchWorldAction, applyPlaceObjectAction, applyPickupDropAction, applyDropItemAction, applyRemoveObjectAction, applyPlaceHouseAction, applyPlaceStorageChestAction } from './GameSceneWorldStateBridge';
 
 export class GameSceneRuntime extends Phaser.Scene {
   initialState: Partial<IdleGameState> = {};
   initialGameSave: GameSaveV1 | null = null;
+  protected activeUserId = 'player';
 
   player!:    Player;
   protected npc!:       Npc;
@@ -111,6 +125,17 @@ export class GameSceneRuntime extends Phaser.Scene {
   protected agentWorldModel!: AgentWorldModel;
   protected npcMemorySystem!: NpcMemorySystem;
   protected npcDirectorSystem!: NpcDirectorSystem;
+  protected eventSystem!: EventSystem;
+  protected eventActionExecutor!: EventActionExecutor;
+  protected vehicleSystem!: VehicleSystem;
+  protected cutsceneDirector!: CutsceneDirector;
+  protected locationSystem!: RoomLocationSystem;
+  protected houseSaveAdapter!: HouseSaveAdapter;
+  protected housePlacementSystem!: HousePlacementSystem;
+  protected houseConstructionSystem!: HouseConstructionSystem;
+  protected houseInteractionSystem!: HouseInteractionSystem;
+  protected houseContractSystem!: HouseContractSystem;
+  protected storageChestSystem!: StorageChestSystem;
   worldGrid!: StateBackedWorldGrid;
   worldStateManager!: WorldStateManager;
   protected physicsDebugEnabled = false;
@@ -199,7 +224,7 @@ export class GameSceneRuntime extends Phaser.Scene {
 
   protected registerWorldObject(
     id: string,
-    kind: 'tree' | 'chest' | 'bed' | 'nest',
+    kind: WorldObjectKind,
     x: number,
     y: number,
     opts?: { blocking?: boolean; interactable?: boolean; state?: string; meta?: Record<string, unknown> },
@@ -265,6 +290,14 @@ export class GameSceneRuntime extends Phaser.Scene {
 
   protected applyRemoveObjectAction(action: Extract<WorldAction, { type: 'REMOVE_OBJECT' }>): WorldActionResult {
     return applyRemoveObjectAction(this, action);
+  }
+
+  protected applyPlaceHouseAction(action: Extract<WorldAction, { type: 'PLACE_HOUSE' }>): WorldActionResult {
+    return applyPlaceHouseAction(this, action);
+  }
+
+  protected applyPlaceStorageChestAction(action: Extract<WorldAction, { type: 'PLACE_STORAGE_CHEST' }>): WorldActionResult {
+    return applyPlaceStorageChestAction(this, action);
   }
 
 
@@ -391,6 +424,10 @@ export class GameSceneRuntime extends Phaser.Scene {
     return loadGameSaveData(this, save, userId);
   }
 
+  syncEventSaveData(save: GameSaveV1 | null): void {
+    return syncEventSaveData(this, save);
+  }
+
   getGameSaveData(context: GameSaveBuildContext): GameSaveV1 {
     return getGameSaveData(this, context);
   }
@@ -482,6 +519,14 @@ export class GameSceneRuntime extends Phaser.Scene {
 
   loadChests(chests: GameChest[]): void {
     return loadChests(this, chests);
+  }
+
+  loadHouseGameSaveData(gameSave: GameSaveV1): void {
+    this.houseSaveAdapter?.loadFromGameSave(gameSave);
+  }
+
+  loadStorageChestGameSaveData(gameSave: GameSaveV1): void {
+    this.storageChestSystem?.loadFromGameSave(gameSave);
   }
 
   addChest(data: GameChest): void {
@@ -636,12 +681,36 @@ export class GameSceneRuntime extends Phaser.Scene {
     return findWorldItem(this, itemId);
   }
 
-  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number }): void {
+  claimWorldItem(itemId: string, npcName: string, target?: { x: number; y: number; worldId?: string }): void {
     return claimWorldItem(this, itemId, npcName, target);
   }
 
   dropWorldItem(x: number, y: number, itemId: string, npcName: string): void {
     return dropWorldItem(this, x, y, itemId, npcName);
+  }
+
+  getWorldIdAt(x: number, y: number): string {
+    return getWorldIdAt(this, x, y);
+  }
+
+  getNpcWorldId(npcName: string): string {
+    return getNpcWorldId(this, npcName);
+  }
+
+  navigateNpcToWorldPosition(npcName: string, target: { x: number; y: number; worldId?: string }, onArrive?: () => void): boolean {
+    return navigateNpcToWorldPosition(this, npcName, target, onArrive);
+  }
+
+  findHouseEntryTarget(houseId?: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null {
+    return findHouseEntryTarget(this, houseId, npcName);
+  }
+
+  enterHouseForNpc(npcName: string, houseId: string): boolean {
+    return enterHouseForNpc(this, npcName, houseId);
+  }
+
+  rememberHomeHouseForNpc(npcName: string, houseId: string, gameTick: number): boolean {
+    return rememberHomeHouseForNpc(this, npcName, houseId, gameTick);
   }
 
 

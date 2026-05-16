@@ -2,7 +2,7 @@ import type { Direction } from '../../types';
 import { T } from '../../world/utils';
 import { VILLAGE_LAYOUT } from '../../world/layouts/villageLayout';
 import { WORLD_LOCATIONS } from '../../shared/WorldLocations';
-import type { EntityState } from '../../shared/worldStateTypes';
+import type { EntityState, ObjectState } from '../../shared/worldStateTypes';
 import type { StateBackedWorldGrid } from '../../shared/StateBackedWorldGrid';
 import type { WorldStateManager } from '../../shared/WorldStateManager';
 
@@ -114,6 +114,7 @@ export class WorldMapService {
     }
 
     seeds.push(...this.layoutPlaces());
+    seeds.push(...this.roomPlacesFromState());
     const farmFromState = this.farmPlaceFromState();
     if (farmFromState) seeds.push(farmFromState);
 
@@ -260,6 +261,46 @@ export class WorldMapService {
       bounds: { x1: minX, y1: minY, x2: maxX, y2: maxY },
       radius: Math.max(180, Math.hypot(maxX - minX, maxY - minY) / 2),
       tags: ['work_area', 'farm', 'generated'],
+      source: 'world_state',
+    };
+  }
+
+  private roomPlacesFromState(): PlaceSeed[] {
+    return Object.values(this.worldStateManager.getReadonlySnapshot().objects)
+      .filter((objectItem) => objectItem.kind === 'room')
+      .map((objectItem) => this.roomPlaceFromObject(objectItem))
+      .filter((place): place is PlaceSeed => Boolean(place));
+  }
+
+  private roomPlaceFromObject(objectItem: ObjectState): PlaceSeed | null {
+    const rawBounds = objectItem.meta?.bounds;
+    const bounds = (
+      rawBounds
+      && typeof rawBounds === 'object'
+      && typeof (rawBounds as { x1?: unknown }).x1 === 'number'
+      && typeof (rawBounds as { y1?: unknown }).y1 === 'number'
+      && typeof (rawBounds as { x2?: unknown }).x2 === 'number'
+      && typeof (rawBounds as { y2?: unknown }).y2 === 'number'
+    )
+      ? rawBounds as { x1: number; y1: number; x2: number; y2: number }
+      : undefined;
+    const label = typeof objectItem.meta?.label === 'string' ? objectItem.meta.label : objectItem.id;
+    const roomId = typeof objectItem.meta?.roomId === 'string' ? objectItem.meta.roomId : objectItem.id;
+    const houseId = typeof objectItem.meta?.houseId === 'string' ? objectItem.meta.houseId : undefined;
+
+    return {
+      id: roomId,
+      name: label,
+      type: 'room',
+      x: objectItem.x,
+      y: objectItem.y,
+      bounds,
+      radius: bounds ? Math.max(160, Math.hypot(bounds.x2 - bounds.x1, bounds.y2 - bounds.y1) / 2) : 180,
+      tags: [
+        ...locationTags('room'),
+        'interior',
+        houseId ? 'owned_house_room' : 'room_instance',
+      ],
       source: 'world_state',
     };
   }
