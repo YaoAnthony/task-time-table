@@ -39,6 +39,7 @@ export interface NpcThinkSystemOptions {
   agentWorldModel?: AgentWorldModel;
   getNpcRegistrations: () => NpcRegistration[];
   getChatOpen?: () => boolean;
+  isNpcLocked?: (npcId: string) => boolean;
   thinkIntervalSeconds?: number;
 }
 
@@ -57,6 +58,7 @@ export class NpcThinkSystem {
   private readonly agentWorldModel?: AgentWorldModel;
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly getChatOpen: () => boolean;
+  private readonly isNpcLocked: (npcId: string) => boolean;
   private readonly thinkIntervalSeconds: number;
   private readonly cooldowns = new Map<string, number>();
 
@@ -68,6 +70,7 @@ export class NpcThinkSystem {
     this.agentWorldModel = options.agentWorldModel;
     this.getNpcRegistrations = options.getNpcRegistrations;
     this.getChatOpen = options.getChatOpen ?? (() => false);
+    this.isNpcLocked = options.isNpcLocked ?? (() => false);
     this.thinkIntervalSeconds = options.thinkIntervalSeconds ?? NPC_AUTONOMOUS_THINK_INTERVAL;
   }
 
@@ -98,6 +101,7 @@ export class NpcThinkSystem {
 
     const { npc } = registration;
     const currentMind = this.memorySystem.ensureNpcMindState(npcId, gameTick);
+    if (this.isNpcLocked(npcId)) return;
     if (!this.canThink(npc, currentMind, gameTick)) return;
 
     const perception = this.perceptionSystem.perceiveEntity(npcId);
@@ -231,6 +235,36 @@ export class NpcThinkSystem {
 
     const rememberedLandmark = this.pickExploreLandmark(memory, gameTick);
     if (rememberedLandmark && !this.hasRecentFailureForTarget(memory, rememberedLandmark.x, rememberedLandmark.y, gameTick, rememberedLandmark.worldId)) {
+      const routeAction = typeof rememberedLandmark.meta?.routeAction === 'string' ? rememberedLandmark.meta.routeAction : null;
+      const houseId = typeof rememberedLandmark.meta?.houseId === 'string'
+        ? rememberedLandmark.meta.houseId
+        : rememberedLandmark.sourceId;
+      const roomId = typeof rememberedLandmark.meta?.roomId === 'string' ? rememberedLandmark.meta.roomId : undefined;
+      if ((routeAction === 'enter_house' || rememberedLandmark.type === 'house') && houseId) {
+        const destinationWorldId = typeof rememberedLandmark.meta?.destinationWorldId === 'string'
+          ? rememberedLandmark.meta.destinationWorldId
+          : roomId;
+        return {
+          intent: {
+            kind: 'move_to_landmark',
+            reason: 'known_home_route',
+            targetKey: rememberedLandmark.key,
+            targetId: houseId,
+            targetType: 'house',
+            targetWorldId: destinationWorldId ?? rememberedLandmark.worldId,
+            targetX: rememberedLandmark.x,
+            targetY: rememberedLandmark.y,
+          },
+          actions: [
+            {
+              type: 'enter_house',
+              houseId,
+              roomId,
+              target: { kind: 'coords', x: rememberedLandmark.x, y: rememberedLandmark.y, worldId: rememberedLandmark.worldId },
+            },
+          ],
+        };
+      }
       return {
         intent: {
           kind: 'move_to_landmark',

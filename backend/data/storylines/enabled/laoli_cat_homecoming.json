@@ -1,0 +1,369 @@
+{
+  "id": "laoli_cat_homecoming",
+  "title": "老李的猫",
+  "status": "enabled",
+  "version": 7,
+  "summary": "老李拥有自己的房子后，离开一段时间把猫接回新家。",
+  "tags": [
+    "mainline",
+    "laoli",
+    "pet"
+  ],
+  "updatedAt": "2026-05-17T13:35:00.000Z",
+  "schemaVersion": 1,
+  "startState": "locked",
+  "states": [
+    "locked",
+    "eligible",
+    "offered",
+    "accepted",
+    "laoli_away",
+    "returning",
+    "completed"
+  ],
+  "triggers": [
+    {
+      "id": "laoli_house_ready",
+      "fromState": "locked",
+      "when": [
+        {
+          "skill": "condition.has_house_resident",
+          "args": {
+            "npcId": "laoli"
+          }
+        },
+        {
+          "skill": "condition.pet_not_exists",
+          "args": {
+            "petId": "laoli_cat"
+          }
+        }
+      ],
+      "then": [
+        {
+          "skill": "action.set_quest_state",
+          "args": {
+            "questId": "laoli_cat_homecoming",
+            "state": "eligible"
+          }
+        },
+        {
+          "skill": "action.add_npc_memory",
+          "args": {
+            "npcId": "laoli",
+            "text": "我终于有了自己的房子，也许可以把猫接过来了。",
+            "importance": 7
+          }
+        }
+      ]
+    }
+  ],
+  "events": {
+    "offer_to_player": [
+      {
+        "skill": "dialogue.approach_choice",
+        "args": {
+          "npcId": "laoli",
+          "prompt": "我想回去把猫接过来。你愿意帮我看着点新家吗？",
+          "choices": [
+            {
+              "id": "accept",
+              "label": "我帮你看着",
+              "reply": "谢谢你，我这就去车站。",
+              "nextEvent": "accepted_departure",
+              "effects": [
+                {
+                  "skill": "action.set_quest_state",
+                  "args": {
+                    "questId": "laoli_cat_homecoming",
+                    "state": "accepted"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "decline",
+              "label": "今天不太方便",
+              "reply": "没关系，我晚点再来问你。",
+              "effects": [
+                {
+                  "skill": "action.set_quest_state",
+                  "args": {
+                    "questId": "laoli_cat_homecoming",
+                    "state": "eligible"
+                  }
+                }
+              ]
+            }
+          ],
+          "timeoutChoiceId": "decline",
+          "cameraDurationMs": 650,
+          "promptDurationMs": 2600,
+          "timeoutMs": 8000
+        }
+      }
+    ],
+    "accepted_departure": [
+      {
+        "skill": "director.begin_event",
+        "args": {
+          "eventId": "accepted_departure",
+          "phase": "preparing_to_leave",
+          "participants": [
+            "player",
+            "laoli"
+          ],
+          "locks": [
+            "laoli"
+          ],
+          "reason": "laoli prepares to leave the village to fetch his cat"
+        }
+      },
+      {
+        "skill": "action.set_quest_state",
+        "args": {
+          "questId": "laoli_cat_homecoming",
+          "state": "laoli_away",
+          "dueInTicks": 500
+        }
+      },
+      {
+        "skill": "action.ensure_npc_in_world",
+        "args": {
+          "npcId": "laoli",
+          "worldId": "world:village",
+          "timeoutMs": 12000
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "accepted_departure",
+          "phase": "waiting_for_player_in_village"
+        }
+      },
+      {
+        "skill": "sequence.wait_for_player_world",
+        "args": {
+          "worldId": "world:village",
+          "timeoutMs": 30000,
+          "pollMs": 250
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "accepted_departure",
+          "phase": "bus_departure"
+        }
+      },
+      {
+        "skill": "camera.pan_to",
+        "args": {
+          "target": "bus_station",
+          "durationMs": 900
+        }
+      },
+      {
+        "skill": "vehicle.spawn_bus",
+        "args": {
+          "vehicleId": "laoli_departure_bus"
+        }
+      },
+      {
+        "skill": "vehicle.move_bus_to_station",
+        "args": {
+          "vehicleId": "laoli_departure_bus",
+          "durationMs": 3200
+        }
+      },
+      {
+        "skill": "vehicle.open_bus_door",
+        "args": {
+          "vehicleId": "laoli_departure_bus"
+        }
+      },
+      {
+        "skill": "vehicle.pick_up_passengers",
+        "args": {
+          "vehicleId": "laoli_departure_bus",
+          "passengers": [
+            "laoli"
+          ],
+          "target": "bus_exit",
+          "timeoutMs": 12000,
+          "boardDelayMs": 700,
+          "direction": "left",
+          "durationMs": 5200
+        }
+      },
+      {
+        "skill": "director.end_event",
+        "args": {
+          "eventId": "accepted_departure"
+        }
+      }
+    ],
+    "return_with_cat": [
+      {
+        "skill": "director.begin_event",
+        "args": {
+          "eventId": "return_with_cat",
+          "phase": "bus_returning",
+          "participants": [
+            "player",
+            "laoli",
+            "laoli_cat"
+          ],
+          "locks": [
+            "laoli"
+          ],
+          "reason": "laoli returns with his cat"
+        }
+      },
+      {
+        "skill": "action.set_quest_state",
+        "args": {
+          "questId": "laoli_cat_homecoming",
+          "state": "returning"
+        }
+      },
+      {
+        "skill": "camera.pan_to",
+        "args": {
+          "target": "bus_station",
+          "durationMs": 900
+        }
+      },
+      {
+        "skill": "vehicle.spawn_bus",
+        "args": {
+          "vehicleId": "laoli_return_bus"
+        }
+      },
+      {
+        "skill": "vehicle.move_bus_to_station",
+        "args": {
+          "vehicleId": "laoli_return_bus",
+          "durationMs": 3200
+        }
+      },
+      {
+        "skill": "vehicle.open_bus_door",
+        "args": {
+          "vehicleId": "laoli_return_bus"
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "return_with_cat",
+          "phase": "cat_arrival"
+        }
+      },
+      {
+        "skill": "vehicle.drop_off_passengers",
+        "args": {
+          "vehicleId": "laoli_return_bus",
+          "passengers": [
+            "laoli"
+          ],
+          "target": "bus_exit",
+          "staggerMs": 850,
+          "spacing": 42,
+          "offsetY": 28
+        }
+      },
+      {
+        "skill": "action.npc_say",
+        "args": {
+          "npcId": "laoli",
+          "text": "咪咪，下车吧。我们到新家了。",
+          "durationMs": 2600
+        }
+      },
+      {
+        "skill": "camera.pan_to",
+        "args": {
+          "target": "laoli",
+          "durationMs": 700
+        }
+      },
+      {
+        "skill": "action.spawn_pet",
+        "args": {
+          "petId": "laoli_cat",
+          "ownerNpcId": "laoli",
+          "entityId": "pet_laoli_cat",
+          "spawnNearNpcId": "laoli",
+          "placement": "beside_owner",
+          "arrivalPose": "stand_together"
+        }
+      },
+      {
+        "skill": "action.set_pet_home",
+        "args": {
+          "petId": "laoli_cat",
+          "homeOfNpcId": "laoli"
+        }
+      },
+      {
+        "skill": "action.add_pet_memory",
+        "args": {
+          "petId": "laoli_cat",
+          "text": "跟着老李一起从大巴下车，站在他身边来到新家。",
+          "importance": 8
+        }
+      },
+      {
+        "skill": "action.add_npc_memory",
+        "args": {
+          "npcId": "laoli",
+          "text": "我和猫一起下了大巴，它站在我身边，我们一起回到了新家。",
+          "importance": 9
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "return_with_cat",
+          "phase": "aftermath"
+        }
+      },
+      {
+        "skill": "action.set_quest_state",
+        "args": {
+          "questId": "laoli_cat_homecoming",
+          "state": "completed"
+        }
+      },
+      {
+        "skill": "vehicle.close_bus_door",
+        "args": {
+          "vehicleId": "laoli_return_bus"
+        }
+      },
+      {
+        "skill": "vehicle.move_bus_offscreen",
+        "args": {
+          "vehicleId": "laoli_return_bus",
+          "direction": "left",
+          "durationMs": 5200
+        }
+      },
+      {
+        "skill": "vehicle.despawn_bus",
+        "args": {
+          "vehicleId": "laoli_return_bus"
+        }
+      },
+      {
+        "skill": "director.end_event",
+        "args": {
+          "eventId": "return_with_cat"
+        }
+      }
+    ]
+  },
+  "compiledAt": "2026-05-17T13:35:00.000Z"
+}

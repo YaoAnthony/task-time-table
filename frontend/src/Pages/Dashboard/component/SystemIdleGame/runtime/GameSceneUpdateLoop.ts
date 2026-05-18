@@ -4,14 +4,22 @@ import { gameBus } from '../shared/EventBus';
 export function updateGameScene(scene: any, time: number, delta: number): void {
     const dt = delta / 1000;
 
-    // Day/Night cycle update (advances time, repaints overlay)
-    scene.dayCycle.update(dt);
-    scene.syncWorldStateMeta();
-    scene.eventSystem?.update(scene.dayCycle.gameTick);
-
-    // Farm: update crop visuals every frame
-    scene.farmSystem?.update(scene.dayCycle.gameTick);
-    scene.houseConstructionSystem?.update(scene.dayCycle.gameTick);
+    if (scene.idleRuntime) {
+      scene.idleRuntime.updateSimulation({
+        dtSeconds: dt,
+        gameTick: scene.dayCycle?.gameTick ?? 0,
+        timeMs: time,
+        deltaMs: delta,
+      });
+    } else {
+      // Fallback for tests or partial scene bootstraps.
+      scene.dayCycle?.update(dt);
+      scene.syncWorldStateMeta?.();
+      scene.eventSystem?.update(scene.dayCycle?.gameTick ?? 0);
+      scene.storylineRuntimeSystem?.update(scene.dayCycle?.gameTick ?? 0);
+      scene.farmSystem?.update(scene.dayCycle?.gameTick ?? 0);
+      scene.houseConstructionSystem?.update(scene.dayCycle?.gameTick ?? 0);
+    }
 
     // Emit time string to React HUD (max once per real second)
     if (time - scene._lastTimeEmit > 1000) {
@@ -69,8 +77,14 @@ export function updateGameScene(scene: any, time: number, delta: number): void {
 
     // NPC + chickens
     scene.npcSystem?.updateActors(dt, scene.dayCycle.gameTick);
+    scene.housePlacementSystem?.update();
+    scene.updatePets?.(dt, scene.dayCycle.gameTick, time, delta);
     scene.houseInteractionSystem?.update(time);
     scene.locationSystem?.update(time);
+    if (scene.player?.sprite) {
+      scene.audioSystem?.updateListenerPosition(scene.player.sprite.x, scene.player.sprite.y);
+    }
+    scene.musicDirector?.update(time);
     scene.pathDebugSystem?.update(scene.allNpcs());
     scene.treeStateSystem?.update(time);
     scene.objectSystem?.update(time, delta);

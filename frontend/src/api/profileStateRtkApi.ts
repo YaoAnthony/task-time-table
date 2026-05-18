@@ -25,6 +25,21 @@ import type { StorageChestSave, StorageChestSlotItem } from '../Pages/Dashboard/
 
 const { backendUrl } = getEnv();
 
+export type RuntimeStorylinePackage = {
+    id: string;
+    title: string;
+    status: string;
+    version: number;
+    summary: string;
+    tags: string[];
+    updatedAt: string;
+    schemaVersion: number;
+    startState: string;
+    states: string[];
+    triggers: unknown[];
+    events: Record<string, unknown[]>;
+};
+
 const rawBaseQuery = fetchBaseQuery({
     baseUrl: backendUrl,
     credentials: 'include',
@@ -99,7 +114,7 @@ export type GameHouseShopItem = {
 
 export type GameShopItem = {
     shopItemId: string;
-    category: 'npc' | 'house' | 'storage' | 'tool';
+    category: 'npc' | 'house' | 'storage' | 'tool' | 'pet';
     id: string;
     itemId?: string;
     name?: string;
@@ -116,6 +131,9 @@ export type GameShopItem = {
     capacity?: number;
     ownedQuantity?: number;
     ownedBlueprintQuantity?: number;
+    petId?: string;
+    ownerNpcId?: string;
+    canSpeak?: boolean;
 };
 
 export type StorageChestTransferRef =
@@ -254,7 +272,7 @@ export const profileStateRtkApi = createApi({
             },
         }),
 
-        getGameSave: builder.query<{ success: boolean; gameSave: GameSaveV1 }, string | void>({
+        getGameSave: builder.query<{ success: boolean; gameSave: GameSaveV1; storylines?: RuntimeStorylinePackage[] }, string | void>({
             query: (roomId) => roomId ? `/profile/game/save?roomId=${encodeURIComponent(roomId)}` : '/profile/game/save',
             async onQueryStarted(_, { dispatch, getState, queryFulfilled }) {
                 try {
@@ -271,7 +289,7 @@ export const profileStateRtkApi = createApi({
         }),
 
         saveGameSave: builder.mutation<
-            { success: boolean; gameSave: GameSaveV1 },
+            { success: boolean; gameSave: GameSaveV1; storylines?: RuntimeStorylinePackage[] },
             { gameSave: GameSaveV1; roomId?: string | null }
         >({
             query: ({ gameSave, roomId }) => ({

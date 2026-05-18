@@ -34,11 +34,12 @@ export interface ItemDef {
    */
   itemType:     'tool' | 'placeable' | 'house_blueprint' | 'storage_chest' | 'key' | 'consumable' | 'other';
   /** For itemType='placeable': which entity class to spawn. */
-  placeEntity?: 'bed' | 'nest';
+  placeEntity?: 'bed' | 'nest' | 'pet';
 }
 
 export const ALL_ITEM_DEFS: ItemDef[] = [
   { itemId: 'storage_chest_basic', label: 'Storage Chest', iconX: -1, iconY: -1, tint: 0xb77a42, itemType: 'storage_chest' },
+  { itemId: 'pet_laoli_cat', label: '老李的猫', iconX: -1, iconY: -1, tint: 0xd9a066, itemType: 'placeable', placeEntity: 'pet' },
   { itemId: 'house_blueprint_greenhouse', label: '温室蓝图', iconX: -1, iconY: -1, tint: 0x70b76c, itemType: 'house_blueprint' },
   { itemId: 'house_key', label: '房屋钥匙', iconX: -1, iconY: -1, tint: 0xf4c542, itemType: 'key' },
   // Tools (from 'tools' texture — Basic tools and materials.png)

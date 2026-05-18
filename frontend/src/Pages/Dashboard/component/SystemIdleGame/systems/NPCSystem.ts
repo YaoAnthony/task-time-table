@@ -32,6 +32,7 @@ export interface NPCSystemInitOptions {
   agentWorldModel: AgentWorldModel;
   getChatOpen: () => boolean;
   getPlayerPosition: () => { x: number; y: number } | null;
+  isNpcLocked?: (npcId: string) => boolean;
 }
 
 export interface NPCSystemInitResult {
@@ -97,6 +98,7 @@ export class NPCSystem {
       agentWorldModel: options.agentWorldModel,
       getNpcRegistrations: () => this.getRegistrations(),
       getChatOpen: options.getChatOpen,
+      isNpcLocked: options.isNpcLocked,
     });
 
     this.scheduleSystem = new NpcScheduleSystem({
@@ -105,6 +107,7 @@ export class NPCSystem {
       npcMemorySystem: this.memorySystem,
       getNpcRegistrations: () => this.getRegistrations(),
       resolveNpcHome: (npcId) => (options.scene as any).findHouseEntryTarget?.(undefined, npcId) ?? null,
+      isNpcLocked: options.isNpcLocked,
     });
 
     this.needsSystem = new NpcNeedsSystem({
@@ -113,6 +116,7 @@ export class NPCSystem {
       npcMemorySystem: this.memorySystem,
       getNpcRegistrations: () => this.getRegistrations(),
       getPlayerPosition: options.getPlayerPosition,
+      isNpcLocked: options.isNpcLocked,
     });
 
     this.directorSystem = new NpcDirectorSystem({

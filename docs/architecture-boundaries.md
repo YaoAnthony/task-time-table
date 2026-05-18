@@ -4,7 +4,7 @@ This project is a split frontend/backend application:
 
 - `frontend/` owns React views, client-only UI state, Phaser rendering, and browser integrations.
 - `backend/` owns authentication, authorization, persistence, payment/AI integrations, and server-side validation.
-- Shared contracts should be expressed as typed request/response shapes, not inferred from Redux slices or Mongoose documents.
+- Shared contracts should be expressed as typed request/response shapes, not inferred from Redux slices or persistence documents.
 
 ## Frontend State
 
@@ -17,7 +17,7 @@ This project is a split frontend/backend application:
 
 - Route files should stay thin: parse request, authorize, call a service, and return a response.
 - Domain rules belong in services under `backend/routes/modules/services/` or a future `backend/services/` folder.
-- Mongoose models define persistence shape only; avoid putting business workflows directly in models.
+- Persistence models define storage shape only; avoid putting business workflows directly in models.
 
 ## Realtime
 

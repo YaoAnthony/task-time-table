@@ -65,6 +65,10 @@ function createDefaultGameSave({ userId, username, roomId }) {
             settings: {
                 timeMinute: 360,
                 weather: 'clear',
+                audioEnabled: true,
+                audioVolume: 0.8,
+                musicEnabled: true,
+                musicVolume: 0.6,
                 physicsDebug: false,
                 pathLineEnabled: false,
                 sleepThreshold: 0,
@@ -194,6 +198,14 @@ function normalizeSettings(input) {
             ? Math.max(0, Math.min(1439, Math.round(input.timeMinute)))
             : 360,
         weather: input?.weather === 'rain' ? 'rain' : 'clear',
+        audioEnabled: input?.audioEnabled !== false,
+        audioVolume: typeof input?.audioVolume === 'number'
+            ? Math.max(0, Math.min(1, input.audioVolume))
+            : 0.8,
+        musicEnabled: input?.musicEnabled !== false,
+        musicVolume: typeof input?.musicVolume === 'number'
+            ? Math.max(0, Math.min(1, input.musicVolume))
+            : 0.6,
         physicsDebug: Boolean(input?.physicsDebug),
         pathLineEnabled: Boolean(input?.pathLineEnabled),
         sleepThreshold: typeof input?.sleepThreshold === 'number'

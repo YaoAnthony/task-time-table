@@ -162,6 +162,7 @@ export class NpcMemorySystem {
       x?: number;
       y?: number;
       worldId?: string;
+      meta?: Record<string, unknown>;
     },
   ): NpcMindState {
     const current = this.ensureNpcMindState(npcId, gameTick);
@@ -178,6 +179,7 @@ export class NpcMemorySystem {
         y: input.targetY ?? input.y ?? 0,
         lastSeenTick: gameTick,
         meta: {
+          ...(input.meta ?? {}),
           status: input.status,
           reason: input.reason,
           actorX: input.x,
@@ -203,6 +205,53 @@ export class NpcMemorySystem {
             updatedAtTick: gameTick,
           }
         : current.currentIntent,
+      lastThoughtTick: gameTick,
+    };
+    this.worldStateManager.registerNpcMindState(next);
+    return next;
+  }
+
+  addStorylineMemory(
+    npcId: string,
+    gameTick: number,
+    input: {
+      storylineId: string;
+      text: string;
+      importance?: number;
+      eventId?: string;
+      triggerId?: string;
+      x?: number;
+      y?: number;
+      worldId?: string;
+    },
+  ): NpcMindState {
+    const current = this.ensureNpcMindState(npcId, gameTick);
+    const key = `storyline:${input.storylineId}:${input.triggerId ?? input.eventId ?? gameTick}`;
+    const recentMemories = {
+      ...current.recentMemories,
+      [key]: {
+        key,
+        kind: 'action' as const,
+        type: 'storyline_memory',
+        label: input.text,
+        worldId: input.worldId,
+        x: input.x ?? 0,
+        y: input.y ?? 0,
+        lastSeenTick: gameTick,
+        meta: {
+          storylineId: input.storylineId,
+          eventId: input.eventId,
+          triggerId: input.triggerId,
+          text: input.text,
+          importance: input.importance ?? 6,
+        },
+      },
+    };
+    this.pruneRecords(recentMemories, gameTick);
+
+    const next: NpcMindState = {
+      ...current,
+      recentMemories,
       lastThoughtTick: gameTick,
     };
     this.worldStateManager.registerNpcMindState(next);

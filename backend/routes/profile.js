@@ -41,6 +41,7 @@ const {
     getPendingNpcArrivalIds,
     enqueueNpcArrivalEvent,
 } = require('../shared/gameEventService');
+const { listEnabledStorylinePackages } = require('../storylineCore');
 
 const paypal = require('@paypal/checkout-server-sdk');
 // const { createPayPalClient, paypal } = require('./paypal');
@@ -633,7 +634,11 @@ router.get('/game/save', authenticateToken, async (req, res) => {
     try {
         const result = await loadOrCreateGameSave(req.user.id, req.query.roomId);
         if (result.error) return res.status(result.status || 400).json({ message: result.error });
-        return res.json({ success: true, gameSave: result.gameSave });
+        return res.json({
+            success: true,
+            gameSave: result.gameSave,
+            storylines: listEnabledStorylinePackages(),
+        });
     } catch (err) {
         console.error('Load game save error:', err);
         return res.status(500).json({ message: 'Failed to load game save', error: err.message });
@@ -656,7 +661,11 @@ async function saveGameSaveRoute(req, res) {
             username: result.user?.username || result.user?.email || 'player',
             roomId: result.roomId,
         });
-        return res.json({ success: true, gameSave });
+        return res.json({
+            success: true,
+            gameSave,
+            storylines: listEnabledStorylinePackages(),
+        });
     } catch (err) {
         console.error('Save game save error:', err);
         return res.status(500).json({ message: 'Failed to save game save', error: err.message });

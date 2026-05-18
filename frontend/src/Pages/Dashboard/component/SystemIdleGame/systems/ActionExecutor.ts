@@ -53,7 +53,7 @@ export interface WorldContext {
     npcName: string,
     skillId: string,
     origin: { x: number; y: number },
-    navigate: (x: number, y: number, onArrive?: () => void) => void,
+    navigate: (x: number, y: number, worldId?: string, onArrive?: () => void) => void,
     gameTick: number,
   ): boolean;
   /** Resolve a named NPC for social actions. */
@@ -61,7 +61,14 @@ export interface WorldContext {
   /** Pick a walkable adjacent spot for one NPC to stand while talking to another. */
   findConversationSpotForNpc(sourceName: string, targetName: string): { x: number; y: number } | null;
   /** Resolve a house door target for an NPC, preferring their remembered/contracted home when possible. */
-  findHouseEntryTarget(houseId?: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null;
+  findHouseEntryTarget(houseId?: string, npcName?: string): {
+    houseId: string;
+    roomId: string;
+    x: number;
+    y: number;
+    worldId?: string;
+    entryWorldId?: string;
+  } | null;
   /** Move the NPC into the matching room instance after they reached the door. */
   enterHouseForNpc(npcName: string, houseId: string): boolean;
   /** Persist a house as the NPC's remembered home. */
@@ -80,6 +87,48 @@ type ActionExecutorFn = (
 ) => void;
 
 type ResolvedCoords = { x: number; y: number; worldId?: string };
+
+const REMEMBER_HOME_SKILL_IDS = new Set([
+  'remember_home_house',
+  'remember_home',
+  'remember_house',
+  'home_house',
+  'set_home',
+  'assign_home',
+  'learn_home',
+  'this_is_your_house',
+]);
+
+const ENTER_HOUSE_SKILL_IDS = new Set([
+  'enter_house',
+  'go_home',
+  'go_to_house',
+  'go_inside_house',
+]);
+
+function normalizeSkillId(skillId: string | undefined): string {
+  return String(skillId ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+export function normalizeNpcActionForRuntime(action: NpcAction): NpcAction {
+  if (action.type !== 'use_skill') return action;
+  const skillId = normalizeSkillId(action.skillId);
+  if (REMEMBER_HOME_SKILL_IDS.has(skillId)) {
+    return {
+      ...action,
+      type: 'remember_home_house',
+      skillId: undefined,
+    };
+  }
+  if (ENTER_HOUSE_SKILL_IDS.has(skillId)) {
+    return {
+      ...action,
+      type: 'enter_house',
+      skillId: undefined,
+    };
+  }
+  return action;
+}
 
 function withWorldId(world: WorldContext | undefined, coords: { x: number; y: number; worldId?: string }): ResolvedCoords {
   return {
@@ -169,12 +218,18 @@ const ACTION_REGISTRY: Partial<Record<string, ActionExecutorFn>> = {
   },
 
   use_skill: (action, npc, _player, gameTick, world) => {
+    const aliased = normalizeNpcActionForRuntime(action);
+    if (aliased.type !== 'use_skill') {
+      const fn = ACTION_REGISTRY[aliased.type];
+      if (fn) fn(aliased, npc, _player, gameTick, world);
+      return;
+    }
     if (!world || !action.skillId) return;
     const ok = world.executeKnowledgeSkill(
       npc.name,
       action.skillId,
       { x: npc.sprite.x, y: npc.sprite.y },
-      (x, y, onArrive) => navigateNpcTo(npc, withWorldId(world, { x, y }), world, onArrive),
+      (x, y, worldId, onArrive) => navigateNpcTo(npc, withWorldId(world, { x, y, worldId }), world, onArrive),
       gameTick,
     );
     if (!ok) npc.say('I do not know that skill yet.', gameTick);
@@ -339,7 +394,8 @@ export class ActionExecutor {
    */
   execute(npc: Npc, actions: NpcAction[], gameTick: number): void {
     if (!actions || actions.length === 0) return;
-    console.log(`[ActionExecutor] execute: npc=${npc.name} actions=`, JSON.stringify(actions));
+    const normalizedActions = actions.map(normalizeNpcActionForRuntime);
+    console.log(`[ActionExecutor] execute: npc=${npc.name} actions=`, JSON.stringify(normalizedActions));
 
     const NAVIGATION_TYPES = [
       'move',
@@ -354,18 +410,18 @@ export class ActionExecutor {
       'plant_crop',
       'harvest_crop',
     ];
-    const hasNavigation = actions.some(a => NAVIGATION_TYPES.includes(a.type));
+    const hasNavigation = normalizedActions.some(a => NAVIGATION_TYPES.includes(a.type));
 
     // Queue when multiple actions include navigation — ensures proper sequencing
-    const needsSequencing = hasNavigation && actions.length > 1;
+    const needsSequencing = hasNavigation && normalizedActions.length > 1;
 
     if (needsSequencing) {
       // Resolve all targets now; queue into NPC's plannedActions for sequential execution
-      const resolved = actions.map(a => this.resolveActionTarget(a, npc));
+      const resolved = normalizedActions.map(a => this.resolveActionTarget(a, npc));
       npc.queueActions(resolved, gameTick);
     } else {
       // Execute immediately in order (single action, or no navigation involved)
-      for (const action of actions) {
+      for (const action of normalizedActions) {
         const resolved = this.resolveActionTarget(action, npc);
         const fn = ACTION_REGISTRY[resolved.type];
         if (fn) {
@@ -415,7 +471,7 @@ export class ActionExecutor {
         ...action,
         houseId: entry.houseId,
         roomId: entry.roomId,
-        target: { kind: 'coords', x: entry.x, y: entry.y, worldId: 'world:village' },
+        target: { kind: 'coords', x: entry.x, y: entry.y, worldId: entry.entryWorldId ?? entry.worldId ?? 'world:village' },
       };
     }
     // dispatch: always head to the door

@@ -21,6 +21,15 @@ export interface ChatState {
   initialValue: string;
 }
 
+export interface StorylineChoiceState {
+  requestId: string;
+  storylineId: string;
+  eventId: string;
+  npcName: string;
+  prompt: string;
+  choices: Array<{ id: string; label: string }>;
+}
+
 export function useNpcChat(
   sceneRef: RefObject<GameScene | null>,
   chatOpenRef: RefObject<boolean>,
@@ -46,6 +55,8 @@ export function useNpcChat(
     question: string;
   } | null>(null);
 
+  const [storylineChoice, setStorylineChoice] = useState<StorylineChoiceState | null>(null);
+
   const [npcChat] = useNpcChatMutation();
   const [npcDispatchReturn] = useNpcDispatchReturnMutation();
 
@@ -69,6 +80,12 @@ export function useNpcChat(
 
       gameBus.on('npc:ask_confirm', ({ npcName, question }) => {
         setNpcConfirm({ npcName, question });
+      }),
+
+      gameBus.on('storyline:choice_requested', (payload) => {
+        chatOpenRef.current = true;
+        setStorylineChoice(payload);
+        sceneRef.current?.pauseInput();
       }),
 
       gameBus.on('dialogue:player_heard', async ({ npcName, text, shouldReply }) => {
@@ -163,6 +180,17 @@ export function useNpcChat(
     setNpcConfirm(null);
   }, [npcConfirm, sceneRef]);
 
+  const handleStorylineChoiceSelect = useCallback((choiceId: string) => {
+    if (!storylineChoice) return;
+    gameBus.emit('storyline:choice_selected', {
+      requestId: storylineChoice.requestId,
+      choiceId,
+    });
+    chatOpenRef.current = false;
+    setStorylineChoice(null);
+    sceneRef.current?.resumeInput();
+  }, [chatOpenRef, sceneRef, storylineChoice]);
+
   const handleSendMessage = useCallback(async (text: string) => {
     const { npcName } = chat;
     if (!sceneRef.current) return;
@@ -197,10 +225,12 @@ export function useNpcChat(
     chat,
     setChat,
     npcConfirm,
+    storylineChoice,
     npcInventoriesRef,
     handleSendMessage,
     handleCancelChat,
     handleNpcConfirmYes,
     handleNpcConfirmNo,
+    handleStorylineChoiceSelect,
   };
 }

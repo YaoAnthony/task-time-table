@@ -80,6 +80,18 @@ export class EventSystem {
     this.unlockedNpcIds.add(npcId);
   }
 
+  isNpcUnlocked(npcId: string): boolean {
+    return this.unlockedNpcIds.has(npcId);
+  }
+
+  hasCompletedNpcArrival(npcId: string): boolean {
+    return this.state.history.some((event) => (
+      event.definitionId === NPC_ARRIVAL_EVENT_ID
+      && event.status === 'completed'
+      && event.payload?.npcId === npcId
+    ));
+  }
+
   getUnlockedNpcIds(): string[] {
     return [...this.unlockedNpcIds];
   }
@@ -111,6 +123,10 @@ export class EventSystem {
 
   setFlag(key: string, value: unknown): void {
     this.state.flags[key] = value;
+  }
+
+  getFlag(key: string): unknown {
+    return this.state.flags[key];
   }
 
   exportSaveData(): GameEventSaveState {

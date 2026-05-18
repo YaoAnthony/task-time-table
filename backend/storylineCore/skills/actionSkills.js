@@ -1,0 +1,108 @@
+const actionSkills = [
+  {
+    id: 'action.run_event',
+    kind: 'action',
+    description: 'Start a named event sequence from the current storyline.',
+    argsSchema: { eventId: 'string' },
+  },
+  {
+    id: 'action.place_player',
+    kind: 'action',
+    description: 'Place the player at a semantic point such as bus_exit, with optional pixel offsets.',
+    argsSchema: { target: 'string|point', offsetX: 'number?', offsetY: 'number?' },
+  },
+  {
+    id: 'action.place_npc',
+    kind: 'action',
+    description: 'Place an NPC at a semantic point such as bus_exit, with optional pixel offsets.',
+    argsSchema: { npcId: 'string', target: 'string|point', offsetX: 'number?', offsetY: 'number?' },
+  },
+  {
+    id: 'action.hide_player',
+    kind: 'action',
+    description: 'Hide the player sprite before a vehicle/cutscene reveal.',
+    argsSchema: {},
+  },
+  {
+    id: 'action.show_player',
+    kind: 'action',
+    description: 'Show the player sprite after a cutscene reveal.',
+    argsSchema: {},
+  },
+  {
+    id: 'action.hide_npc',
+    kind: 'action',
+    description: 'Hide an NPC sprite before a vehicle/cutscene reveal.',
+    argsSchema: { npcId: 'string' },
+  },
+  {
+    id: 'action.show_npc',
+    kind: 'action',
+    description: 'Show an NPC sprite after a cutscene reveal.',
+    argsSchema: { npcId: 'string' },
+  },
+  {
+    id: 'action.set_quest_state',
+    kind: 'action',
+    description: 'Persist the next storyline state and optional due tick.',
+    argsSchema: { questId: 'string', state: 'string', dueInTicks: 'number?' },
+    usage: 'Use this to lock progression before or after a choice, travel sequence, or memory write.',
+    example: { questId: 'laoli_cat_homecoming', state: 'accepted', dueInTicks: 500 },
+  },
+  {
+    id: 'action.approach_player',
+    kind: 'action',
+    description: 'Move an NPC close to the player before important dialogue.',
+    argsSchema: {
+      npcId: 'string',
+      stopDistanceTiles: 'number?',
+      timeoutMs: 'number?',
+      intent: 'string?',
+    },
+    usage: 'Use before an NPC starts an important conversation so the scene feels agentic instead of like a floating textbox.',
+    example: {
+      npcId: 'laoli',
+      stopDistanceTiles: 1,
+      timeoutMs: 8000,
+      intent: 'ask_player_about_fetching_cat',
+    },
+  },
+  {
+    id: 'action.ensure_npc_in_world',
+    kind: 'action',
+    description: 'Make an NPC self-check its current location and move/transition into the requested world before continuing.',
+    argsSchema: {
+      npcId: 'string',
+      worldId: 'string',
+      target: 'string|point?',
+      offsetX: 'number?',
+      offsetY: 'number?',
+      timeoutMs: 'number?',
+    },
+    usage: 'Use before travel cutscenes. If the NPC is inside a house and worldId is world:village, the NPC walks to the room exit, transitions through the door to the village, and then optionally walks to target.',
+    example: {
+      npcId: 'laoli',
+      worldId: 'world:village',
+      target: 'bus_station',
+      timeoutMs: 10000,
+    },
+  },
+  {
+    id: 'action.npc_say',
+    kind: 'action',
+    description: 'Make an NPC say a short line during a sequence.',
+    argsSchema: { npcId: 'string', text: 'string', durationMs: 'number?' },
+    usage: 'Use for short non-branching dialogue or a reply after a choice has been made.',
+    example: { npcId: 'laoli', text: 'Thanks. I will head to the station now.', durationMs: 2400 },
+  },
+  {
+    id: 'action.player_say',
+    kind: 'action',
+    description: 'Show a short player line during a directed sequence without asking the NPC brain to improvise.',
+    argsSchema: { text: 'string', durationMs: 'number?' },
+    usage: 'Use when the authored cutscene needs the player to say a fixed line between NPC lines.',
+    example: { text: 'I will look around for a while.', durationMs: 2200 },
+  },
+];
+
+module.exports = { actionSkills };

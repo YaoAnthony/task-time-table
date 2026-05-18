@@ -1,6 +1,6 @@
 function createSystemDomainService(deps) {
     const {
-        mongoose,
+        objectIds,
         User,
         Profile,
         System,
@@ -8,7 +8,7 @@ function createSystemDomainService(deps) {
 
     const ATTRIBUTE_CATEGORIES = ['stamina', 'strength', 'wisdom', 'discipline', 'charisma', 'luck'];
 
-    const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
+    const isValidObjectId = (value) => objectIds.Types.ObjectId.isValid(value);
 
     const normalizeNodeId = (value) => String(value || '').trim();
     const normalizeItemKey = (value) => String(value || '').trim();

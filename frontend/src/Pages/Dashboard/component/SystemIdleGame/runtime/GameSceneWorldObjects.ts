@@ -3,7 +3,9 @@ import { DropItem, ITEM_DEF_MAP, TOOL_ITEM_DEFS } from '../entities/DropItem';
 import { NestView } from '../entities/NestView';
 import { RaspberryBush } from '../entities/RaspberryBush';
 import type { TreeGrowthStage } from '../shared/worldStateTypes';
+import type { WorldState } from '../shared/worldStateTypes';
 import { gameBus } from '../shared/EventBus';
+import { PetView, LAOLI_CAT_ENTITY_ID, LAOLI_CAT_ITEM_ID, LAOLI_CAT_MEMORY_SEEDS, LAOLI_CAT_PET_ID } from '../features/pets';
 import { createBusStation } from '../world/busStation';
 import type { GameWorldState } from '../types';
 import { createBush as createDecorBush } from '../world/bush';
@@ -64,7 +66,8 @@ export function placeEntityAt(scene: any, itemId: string, fx: number, fy: number
       const MIN_DIST = 28; // px entities closer than scene are considered overlapping
       const blocked =
         scene.beds.some((b: any) => Math.hypot(b.worldX - fx, b.worldY - fy) < MIN_DIST) ||
-        scene.nests.some((n: any) => !n.gone && Math.hypot(n.x - fx, n.y - fy) < MIN_DIST);
+        scene.nests.some((n: any) => !n.gone && Math.hypot(n.x - fx, n.y - fy) < MIN_DIST) ||
+        [...(scene.pets?.values?.() ?? [])].some((pet: PetView) => Math.hypot(pet.x - fx, pet.y - fy) < MIN_DIST);
       if (blocked) {
         gameBus.emit('ui:show_message', { text: 'This spot is already occupied.' });
         return false; // don't consume the item
@@ -107,6 +110,11 @@ export function placeEntityAt(scene: any, itemId: string, fx: number, fy: number
         scene.registerNestLight(nest);
         break;
       }
+      case 'pet': {
+        const pet = spawnPetFromItem(scene, itemId, fx, fy);
+        if (!pet) return false;
+        break;
+      }
       default:
         // 'placeable' furniture without a placeEntity handler yet
         gameBus.emit('ui:show_message', { text: `${def.label} cannot be placed yet` });
@@ -116,6 +124,75 @@ export function placeEntityAt(scene: any, itemId: string, fx: number, fy: number
     gameBus.emit('player:consume_item', { itemId, qty: 1 });
     return true;
   
+}
+
+export function spawnPetFromItem(scene: any, itemId: string, x: number, y: number): PetView | null {
+    if (itemId !== LAOLI_CAT_ITEM_ID) return null;
+    if (!scene.pets) scene.pets = new Map<string, PetView>();
+    if (scene.pets.has(LAOLI_CAT_ENTITY_ID)) {
+      gameBus.emit('ui:show_message', { text: '老李的猫已经在世界里了。' });
+      return null;
+    }
+    const pet = new PetView(scene, x, y, {
+      id: LAOLI_CAT_ENTITY_ID,
+      petId: LAOLI_CAT_PET_ID,
+      ownerNpcId: 'laoli',
+      displayName: '老李的猫',
+      memories: LAOLI_CAT_MEMORY_SEEDS,
+      canSpeak: false,
+    });
+    scene.pets.set(pet.id, pet);
+    scene.physics.add.collider(pet.sprite, scene.obstacles);
+    if (scene.player?.sprite) scene.physics.add.collider(scene.player.sprite, pet.sprite);
+    scene.petSystem?.registerPet(pet, {
+      itemId,
+      petId: pet.petId,
+      ownerNpcId: pet.ownerNpcId,
+      displayName: pet.displayName,
+      memories: pet.memories,
+      home: {
+        x,
+        y,
+        worldId: scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village',
+      },
+    });
+    gameBus.emit('ui:show_message', { text: '老李的猫到了世界里。' });
+    return pet;
+}
+
+export function restorePetsFromWorldState(scene: any, worldState: Partial<WorldState> | null | undefined): void {
+    const entities = worldState?.entities;
+    if (!entities) return;
+    if (!scene.pets) scene.pets = new Map<string, PetView>();
+    Object.values(entities).forEach((entity) => {
+      if (!entity || entity.kind !== 'pet' || scene.pets.has(entity.id)) return;
+      const meta = entity.meta ?? {};
+      const pet = new PetView(scene, entity.x, entity.y, {
+        id: entity.id,
+        petId: typeof meta.petId === 'string' ? meta.petId : LAOLI_CAT_PET_ID,
+        ownerNpcId: typeof meta.ownerNpcId === 'string' ? meta.ownerNpcId : 'laoli',
+        displayName: entity.displayName ?? '老李的猫',
+        memories: Array.isArray(meta.memories) ? meta.memories as typeof LAOLI_CAT_MEMORY_SEEDS : LAOLI_CAT_MEMORY_SEEDS,
+        canSpeak: false,
+      });
+      scene.pets.set(pet.id, pet);
+      scene.physics.add.collider(pet.sprite, scene.obstacles);
+      if (scene.player?.sprite) scene.physics.add.collider(scene.player.sprite, pet.sprite);
+      scene.petSystem?.registerPet(pet, {
+        itemId: typeof meta.itemId === 'string' ? meta.itemId : LAOLI_CAT_ITEM_ID,
+        petId: pet.petId,
+        ownerNpcId: pet.ownerNpcId,
+        displayName: pet.displayName,
+        memories: pet.memories,
+        behavior: typeof entity.state === 'string' ? entity.state as any : 'idle',
+        home: {
+          x: typeof meta.homeX === 'number' ? meta.homeX : pet.x,
+          y: typeof meta.homeY === 'number' ? meta.homeY : pet.y,
+          worldId: typeof meta.homeWorldId === 'string' ? meta.homeWorldId : undefined,
+          houseId: typeof meta.homeHouseId === 'string' ? meta.homeHouseId : undefined,
+        },
+      });
+    });
 }
 
 export function _loadWorldState(scene: any, ws: GameWorldState | null) : void {

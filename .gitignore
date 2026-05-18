@@ -9,3 +9,5 @@ frontend/node_modules/
 .DS_Store
 dist/
 build/
+backend/data/*.sqlite*
+backend/data/*.db*

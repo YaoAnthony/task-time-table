@@ -135,7 +135,9 @@ export function usePhaserBoot({
           .then((result) => {
             const save = result.data?.gameSave;
             if (!save) return;
+            scene.setRuntimeStorylines(result.data?.storylines ?? []);
             scene.loadGameSaveData(save, userId ?? 'player');
+            scene.evaluateRuntimeStorylinesNow?.();
 
             const playerSave = save.players[userId ?? 'player'] ?? Object.values(save.players)[0];
             const inventory = playerSave?.inventory?.gameInventory ?? [];
@@ -159,6 +161,9 @@ export function usePhaserBoot({
       parent:          container,
       backgroundColor: '#12340e',
       pixelArt:        true,
+      audio: {
+        disableWebAudio: true,
+      },
       physics: {
         default: 'arcade',
         arcade:  { gravity: { x: 0, y: 0 }, debug: false },

@@ -1,7 +1,7 @@
 import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
 import { getHouseDefinition } from './HouseCatalog';
 import { HouseInstanceView } from './HouseInstanceView';
-import { buildHouseWorldMeta } from './HouseObservationAdapter';
+import { assignHouseDisplayIds, buildHouseWorldMeta } from './HouseObservationAdapter';
 import { HouseWorldGridAdapter } from './HouseWorldGridAdapter';
 import {
   cloneHouseContractSave,
@@ -22,7 +22,7 @@ export class HouseSaveAdapter {
   }
 
   loadFromGameSave(gameSave: GameSaveV1 | null | undefined): void {
-    const houses = gameSave?.worldStatus?.entities?.houses || [];
+    const houses = assignHouseDisplayIds(gameSave?.worldStatus?.entities?.houses || []);
     this.contracts = (gameSave?.worldStatus?.entities?.houseContracts || []).map(cloneHouseContractSave);
     const nextIds = new Set(houses.map((house) => house.id));
 

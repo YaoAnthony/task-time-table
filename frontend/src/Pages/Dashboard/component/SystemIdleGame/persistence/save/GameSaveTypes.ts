@@ -14,6 +14,10 @@ import type { DropState, NpcMindState, WorldState } from '../../shared/worldStat
 export interface GameSaveSettings {
   timeMinute: number;
     weather: 'clear' | 'rain';
+    audioEnabled: boolean;
+    audioVolume: number;
+    musicEnabled: boolean;
+    musicVolume: number;
     physicsDebug: boolean;
     pathLineEnabled: boolean;
     sleepThreshold: number;
@@ -44,6 +48,8 @@ export interface NpcSave {
   name: string;
   catalogId?: string;
   role?: string;
+  stressTest?: boolean;
+  stressTestBatch?: string;
   position: {
     worldId: string;
     x: number;

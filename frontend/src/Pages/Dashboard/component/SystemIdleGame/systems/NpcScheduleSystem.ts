@@ -27,7 +27,8 @@ export interface NpcScheduleSystemOptions {
   npcMemorySystem: NpcMemorySystem;
   getNpcRegistrations: () => NpcRegistration[];
   schedules?: Record<string, ScheduleSlot[]>;
-  resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number } | null;
+  resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number; worldId?: string; entryWorldId?: string } | null;
+  isNpcLocked?: (npcId: string) => boolean;
 }
 
 const STARTER_NPC_NAME = GAME_NPC_CATALOG.find((npc) => npc.id === STARTER_NPC_ID)?.name ?? '老李';
@@ -117,7 +118,8 @@ export class NpcScheduleSystem {
   private readonly npcMemorySystem: NpcMemorySystem;
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly schedules: Record<string, ScheduleSlot[]>;
-  private readonly resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number } | null;
+  private readonly resolveNpcHome?: (npcId: string) => { houseId: string; roomId: string; x: number; y: number; worldId?: string; entryWorldId?: string } | null;
+  private readonly isNpcLocked: (npcId: string) => boolean;
   private lastSlotKeyByNpc = new Map<string, string>();
 
   constructor(opts: NpcScheduleSystemOptions) {
@@ -127,6 +129,7 @@ export class NpcScheduleSystem {
     this.getNpcRegistrations = opts.getNpcRegistrations;
     this.schedules = opts.schedules ?? DEFAULT_NPC_SCHEDULES;
     this.resolveNpcHome = opts.resolveNpcHome;
+    this.isNpcLocked = opts.isNpcLocked ?? (() => false);
   }
 
   update(_dtSeconds: number, gameTick: number): void {
@@ -134,6 +137,7 @@ export class NpcScheduleSystem {
     const registrations = this.getNpcRegistrations();
 
     for (const { id, npc } of registrations) {
+      if (this.isNpcLocked(id)) continue;
       if (npc.isOnDispatch() || npc.isAwaitingConfirm()) continue;
       if (npc.hasPlannedActions() || npc.isNavigating()) continue;
 
@@ -171,12 +175,18 @@ export class NpcScheduleSystem {
           type: 'enter_house',
           houseId: homeTarget.houseId,
           roomId: homeTarget.roomId,
-          target: { kind: 'coords', x: homeTarget.x, y: homeTarget.y },
+          target: { kind: 'coords', x: homeTarget.x, y: homeTarget.y, worldId: homeTarget.entryWorldId ?? homeTarget.worldId ?? 'world:village' },
           duration: 4,
         });
       } else if (slot.locationId) {
         const target = resolveActorLocationTarget(slot.locationId, id);
-        if (target) actions.push({ type: 'move', target: { kind: 'coords', x: target.x, y: target.y }, duration: 4 });
+        if (target) {
+          actions.push({
+            type: 'move',
+            target: { kind: 'coords', x: target.x, y: target.y, worldId: target.worldId ?? 'world:village' },
+            duration: 4,
+          });
+        }
       }
       if (slot.activity === 'work_farm') {
         actions.push({ type: 'use_skill', skillId: 'farm_till_day', duration: 1 });

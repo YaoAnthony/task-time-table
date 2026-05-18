@@ -20,7 +20,7 @@ export type InteractionCommand =
       type: 'PLACE_OBJECT';
       playerId: string;
       itemId: string;
-      placeEntity?: 'bed' | 'nest';
+      placeEntity?: 'bed' | 'nest' | 'pet';
       targetCell: { col: number; row: number };
       targetWorld: { x: number; y: number };
     }

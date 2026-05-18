@@ -50,6 +50,7 @@ const TELEPORT_COOLDOWN_MS = 1100;
 const ROOM_EXIT_Y_OFFSET = 36;
 const ROOM_ENTRY_SAFE_OFFSET = 96;
 const VILLAGE_WORLD_ID = 'world:village';
+const TP_DEBUG_COLOR = 0x33a6ff;
 
 function stableOffset(input: string): { x: number; y: number } {
   let hash = 0;
@@ -67,6 +68,7 @@ export class RoomLocationSystem {
   private readonly roomObjects: Phaser.GameObjects.GameObject[] = [];
   private readonly roomReturnPositions = new Map<string, { x: number; y: number }>();
   private readonly teleportCooldownUntil = new Map<string, number>();
+  private debugGraphics: Phaser.GameObjects.Graphics | null = null;
   private returnPosition: { x: number; y: number } | null = null;
   private nextDynamicRoomIndex = 1;
   private transitioning = false;
@@ -166,6 +168,7 @@ export class RoomLocationSystem {
   update(timeMs = this.scene.time?.now ?? 0): void {
     this.updatePlayerExit(timeMs);
     this.updateNpcExits(timeMs);
+    this.updateDebugGraphics();
   }
 
   getWorldIdAt(x: number, y: number): string {
@@ -244,7 +247,10 @@ export class RoomLocationSystem {
 
   private ensureRoom(roomId: string, templateId = 'two_bedroom_living_room'): RoomInstance {
     const room = this.getOrCreateRoom(roomId, templateId);
-    if (this.builtRoomIds.has(room.id)) return room;
+    if (this.builtRoomIds.has(room.id)) {
+      this.registerObservationObjects(room);
+      return room;
+    }
     this.builtRoomIds.add(room.id);
     this.extendWorldBounds();
     this.drawRoomShell(room);
@@ -258,7 +264,10 @@ export class RoomLocationSystem {
   private getOrCreateRoom(roomId: string, templateId = 'two_bedroom_living_room'): RoomInstance {
     const id = (roomId || '001').trim() || '001';
     const existing = this.roomInstances.get(id);
-    if (existing) return existing;
+    if (existing) {
+      existing.label = this.resolveRoomLabel(id, existing.label);
+      return existing;
+    }
 
     const slot = id === '001' ? 0 : this.nextDynamicRoomIndex++;
     const col = slot % ROOM_COLUMNS;
@@ -268,7 +277,7 @@ export class RoomLocationSystem {
     const room: RoomInstance = {
       ...BASE_ROOM,
       id,
-      label: id === '001' ? BASE_ROOM.label : `House Room ${id}`,
+      label: this.resolveRoomLabel(id, id === '001' ? BASE_ROOM.label : `Room ${id}`),
       templateId,
       x,
       y,
@@ -276,6 +285,16 @@ export class RoomLocationSystem {
     };
     this.roomInstances.set(id, room);
     return room;
+  }
+
+  private resolveRoomLabel(roomId: string, fallback: string): string {
+    if (roomId === '001') return fallback;
+    const views = this.scene.houseSaveAdapter?.getViews?.() ?? [];
+    const view = views.find((entry: any) => entry?.house?.roomId === roomId || entry?.house?.id === roomId);
+    const house = view?.house;
+    if (!house) return fallback;
+    const displayId = house.displayId || house.id;
+    return `${displayId} 室内`;
   }
 
   private prepareRoomsForSave(save: GameSaveV1): void {
@@ -638,6 +657,41 @@ export class RoomLocationSystem {
   private isNearRoomExit(x: number, y: number, room: RoomInstance): boolean {
     const exit = this.getRoomExitPoint(room);
     return Phaser.Math.Distance.Between(x, y, exit.x, exit.y) <= TELEPORT_RADIUS;
+  }
+
+  private updateDebugGraphics(): void {
+    if (!this.scene.physicsDebugEnabled) {
+      this.debugGraphics?.clear();
+      this.debugGraphics?.setVisible(false);
+      return;
+    }
+
+    const graphics = this.ensureDebugGraphics();
+    graphics.clear();
+    graphics.setVisible(true);
+    graphics.lineStyle(2, TP_DEBUG_COLOR, 0.95);
+    graphics.fillStyle(TP_DEBUG_COLOR, 0.08);
+
+    for (const room of this.roomInstances.values()) {
+      if (!this.builtRoomIds.has(room.id)) continue;
+      const exit = this.getRoomExitPoint(room);
+      const rect = new Phaser.Geom.Rectangle(
+        exit.x - TELEPORT_RADIUS,
+        exit.y - TELEPORT_RADIUS,
+        TELEPORT_RADIUS * 2,
+        TELEPORT_RADIUS * 2,
+      );
+      graphics.fillRectShape(rect);
+      graphics.strokeRectShape(rect);
+      graphics.strokeCircle(exit.x, exit.y, TELEPORT_RADIUS);
+    }
+  }
+
+  private ensureDebugGraphics(): Phaser.GameObjects.Graphics {
+    if (!this.debugGraphics) {
+      this.debugGraphics = this.scene.add.graphics().setDepth(9995);
+    }
+    return this.debugGraphics as Phaser.GameObjects.Graphics;
   }
 
   private actorKeyForNpc(npc: any): string {

@@ -47,9 +47,11 @@ function roomBounds(room: ObservableRoom): { x1: number; y1: number; x2: number;
 
 function roomBaseMeta(room: ObservableRoom): Record<string, unknown> {
   const houseId = houseIdFromRoomId(room.id);
+  const displayId = room.label.replace(/\s*室内$/, '');
   return {
     roomId: room.id,
     houseId,
+    displayId,
     templateId: room.templateId,
     isInterior: true,
     bounds: roomBounds(room),

@@ -12,7 +12,7 @@ import type {
 import type { WorldActionDispatcher, WorldActionResult } from './WorldActionSystem';
 import { defaultActionCatalog, type ActionCatalog } from '../actions/catalog/ActionCatalog';
 
-export type ActorNavigator = (x: number, y: number, onArrive?: () => void) => void;
+export type ActorNavigator = (x: number, y: number, worldId?: string, onArrive?: () => void) => void;
 
 export interface ExecuteKnowledgeSkillInput {
   actorId: string;
@@ -93,7 +93,7 @@ export class ActorActionService {
     if (!farmStep) {
       const target = firstMove ? resolveKnowledgeMoveTarget(firstMove, input.actorId) : null;
       if (!target) return false;
-      input.navigate(target.x, target.y);
+      input.navigate(target.x, target.y, target.worldId);
       return true;
     }
 
@@ -120,7 +120,7 @@ export class ActorActionService {
     if (!target) return false;
 
     const selectedTarget = target;
-    input.navigate(selectedTarget.x, selectedTarget.y, () => {
+    input.navigate(selectedTarget.x, selectedTarget.y, farmAnchor?.worldId ?? 'world:village', () => {
       const result = this.performFarmAction(input.actorId, actionToRun, selectedTarget, itemId);
       if (plantAfterTill && result.ok) {
         this.performFarmAction(input.actorId, 'plant', selectedTarget, farmStep.itemId ?? 'wheat_seed');

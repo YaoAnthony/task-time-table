@@ -34,6 +34,7 @@ export interface NpcNeedsSystemOptions {
   npcMemorySystem:   NpcMemorySystem;
   getNpcRegistrations: () => NpcRegistration[];
   getPlayerPosition: () => { x: number; y: number } | null;
+  isNpcLocked?: (npcId: string) => boolean;
 }
 
 const DEFAULT_NEEDS: NpcNeeds = {
@@ -147,6 +148,7 @@ export class NpcNeedsSystem {
   private readonly npcMemorySystem:     NpcMemorySystem;
   private readonly getNpcRegistrations: () => NpcRegistration[];
   private readonly getPlayerPosition:   () => { x: number; y: number } | null;
+  private readonly isNpcLocked:         (npcId: string) => boolean;
 
   constructor(opts: NpcNeedsSystemOptions) {
     this.worldStateManager   = opts.worldStateManager;
@@ -154,6 +156,7 @@ export class NpcNeedsSystem {
     this.npcMemorySystem     = opts.npcMemorySystem;
     this.getNpcRegistrations = opts.getNpcRegistrations;
     this.getPlayerPosition   = opts.getPlayerPosition;
+    this.isNpcLocked         = opts.isNpcLocked ?? (() => false);
   }
 
   update(_dtSeconds: number, gameTick: number): void {
@@ -161,6 +164,7 @@ export class NpcNeedsSystem {
     const minute = this.dayCycle.getCurrentMinute();
 
     for (const { id, npc } of this.getNpcRegistrations()) {
+      if (this.isNpcLocked(id)) continue;
       if (npc.isConversationLocked()) continue;
       const mind = this.npcMemorySystem.ensureNpcMindState(id, gameTick);
       const needs = mind.needs ?? defaultNeedsFor(id, minute);

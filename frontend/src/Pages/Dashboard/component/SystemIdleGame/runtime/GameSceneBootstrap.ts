@@ -42,6 +42,7 @@ import { GAME_NPC_CATALOG, getNpcDefinitionsForSave, type GameNpcDefinition } fr
 import type { WorldContext } from '../systems/ActionExecutor';
 import { EventSystem } from '../event/EventSystem';
 import { EventActionExecutor } from '../event/EventActionExecutor';
+import { StorylineRuntimeSystem } from '../event/StorylineRuntimeSystem';
 import { createEventRuntimeContext } from '../event/EventRuntimeContext';
 import { VehicleSystem } from '../event/VehicleSystem';
 import { CutsceneDirector } from '../event/CutsceneDirector';
@@ -54,6 +55,9 @@ import {
   HouseContractSystem,
 } from '../housing';
 import { StorageChestSystem } from '../storage';
+import { PetSystem } from '../features/pets';
+import { createIdleGameRuntime } from './IdleGameRuntime';
+import { AudioEventMapper, AudioSystem, MusicDirector } from '../audio';
 
 export function createGameScene(scene: any): void {
     scene.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
@@ -131,6 +135,7 @@ export function createGameScene(scene: any): void {
 
     scene.npc = spawnNpcFromDefinition(primaryNpcDefinition);
     scene.extraNpcs = extraNpcDefinitions.map(spawnNpcFromDefinition);
+    hideIntroActorsUntilArrival(scene);
     scene.registerCoreWorldEntities();
 
     // F key (general world-object interaction)
@@ -152,10 +157,51 @@ export function createGameScene(scene: any): void {
     scene.locationSystem = new RoomLocationSystem(scene);
     scene.houseSaveAdapter = new HouseSaveAdapter(scene);
     scene.housePlacementSystem = new HousePlacementSystem(scene);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.housePlacementSystem?.destroy());
     scene.houseConstructionSystem = new HouseConstructionSystem(scene);
     scene.houseInteractionSystem = new HouseInteractionSystem(scene);
     scene.houseContractSystem = new HouseContractSystem(scene);
     scene.storageChestSystem = new StorageChestSystem(scene);
+    scene.audioSystem = new AudioSystem(scene);
+    scene.audioEventMapper = new AudioEventMapper(scene.audioSystem);
+    scene.audioEventMapper.start();
+    scene.musicDirector = new MusicDirector(
+      scene.audioSystem,
+      () => scene.locationSystem?.getWorldIdAt?.(scene.player?.sprite?.x ?? 0, scene.player?.sprite?.y ?? 0) ?? 'world:village',
+      () => scene.dayCycle?.getCurrentMinute?.() ?? 360,
+      () => scene.weather?.current ?? 'clear',
+    );
+    const resumeAndRefreshAudio = (source = 'unknown') => {
+      void source;
+      scene.audioSystem?.resume();
+      scene.time.delayedCall(80, () => scene.musicDirector?.refresh(scene.time.now));
+    };
+    const resumeFromDocumentGesture = () => resumeAndRefreshAudio('document.gesture');
+    document.addEventListener('pointerdown', resumeFromDocumentGesture, { once: true, capture: true });
+    document.addEventListener('keydown', resumeFromDocumentGesture, { once: true, capture: true });
+    scene.sound.once('unlocked', () => resumeAndRefreshAudio('sound.unlocked'));
+    scene.input.once('pointerdown', () => resumeAndRefreshAudio('pointerdown'));
+    scene.input.keyboard?.once('keydown', () => resumeAndRefreshAudio('keydown'));
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.removeEventListener('pointerdown', resumeFromDocumentGesture, { capture: true });
+      document.removeEventListener('keydown', resumeFromDocumentGesture, { capture: true });
+      scene.audioEventMapper?.destroy();
+      scene.audioSystem?.destroy();
+    });
+    scene.petSystem = new PetSystem({
+      worldStateManager: scene.worldStateManager,
+      getCurrentMinute: () => scene.dayCycle?.getCurrentMinute?.() ?? 360,
+      getPlayerPosition: () => scene.player?.sprite ? { x: scene.player.sprite.x, y: scene.player.sprite.y } : null,
+      getOwnerPosition: (ownerNpcId) => {
+        if (ownerNpcId === 'laoli' && scene.npc?.sprite) {
+          return { x: scene.npc.sprite.x, y: scene.npc.sprite.y };
+        }
+        const match = scene.getNpcRegistrations?.()
+          .find(({ id, npc }: { id: string; npc: any }) => id === ownerNpcId || npc?.name === ownerNpcId);
+        return match?.npc?.sprite ? { x: match.npc.sprite.x, y: match.npc.sprite.y } : null;
+      },
+      getWorldIdAt: (x, y) => scene.locationSystem?.getWorldIdAt?.(x, y) ?? 'world:village',
+    });
     scene._registerCommands();
 
     // Houses
@@ -292,6 +338,7 @@ export function createGameScene(scene: any): void {
       getChatOpen: () => scene._chatOpen,
       getPlayerPosition: () =>
         scene.player ? { x: scene.player.sprite.x, y: scene.player.sprite.y } : null,
+      isNpcLocked: (npcId: string) => scene.storylineRuntimeSystem?.isNpcLocked?.(npcId) ?? false,
     });
     scene.npcMemorySystem = npcSystems.memorySystem;
     scene.npcDirectorSystem = npcSystems.directorSystem;
@@ -303,6 +350,14 @@ export function createGameScene(scene: any): void {
       getGameTick: () => scene.dayCycle?.gameTick ?? 0,
       pauseNpc: (npcId, gameTick, seconds, reason) =>
         scene.npcDirectorSystem?.pauseNpc(npcId, gameTick, seconds, reason),
+      onPlayerAssignedHome: (npcId, _text, gameTick) => {
+        const entry = scene.findHouseEntryTarget?.(undefined, npcId);
+        if (!entry?.houseId) return;
+        const remembered = scene.rememberHomeHouseForNpc?.(npcId, entry.houseId, gameTick);
+        if (!remembered) return;
+        gameBus.emit('ui:show_message', { text: `${npcId} 记住了这个家。` });
+        gameBus.emit('game:save_requested', { reason: `npc:${npcId}:remember_home_from_dialogue` });
+      },
     });
     scene.dialogueSystem.start();
     scene.vehicleSystem = new VehicleSystem(scene);
@@ -314,6 +369,8 @@ export function createGameScene(scene: any): void {
       scene.eventActionExecutor,
       () => scene.dayCycle?.gameTick ?? 0,
     );
+    scene.storylineRuntimeSystem = new StorylineRuntimeSystem(scene);
+    scene.storylineRuntimeSystem.setStorylines(scene.getRuntimeStorylines?.() ?? []);
 
     // NPC daily routine + internal drives
     // Schedule pushes time-of-day actions (work_farm at 08:00, lunch at 12:00, etc.)
@@ -442,15 +499,70 @@ export function createGameScene(scene: any): void {
     // Restore saved world entities (beds positions, nest states)
     // Must run AFTER _spawnBeds() and createChickens() so defaults exist first.
     scene._loadWorldState(scene.initialState.worldState ?? null);
+    scene.restorePetsFromWorldState(scene.initialGameSave?.worldStatus?.entities?.worldState);
     scene.houseSaveAdapter?.loadFromGameSave(scene.initialGameSave);
+    ensureNpcHomeLandmarksFromHousing(scene);
     scene.storageChestSystem?.loadFromGameSave(scene.initialGameSave);
     scene.locationSystem?.restoreSavedLocations?.(scene.initialGameSave, scene.activeUserId ?? 'player');
     scene.ensureAllNpcMindStates();
     scene.syncNpcAgentWorldContexts();
+    scene.idleRuntime = createIdleGameRuntime(scene);
 
     // Notify React that the scene is fully ready
     // React can now safely call loadNpcMemories() and other NPC APIs.
-    console.log('[GameScene] create() complete ?firing onGameReady');
     gameBus.emit('game:ready', {});
   
+}
+
+function hideIntroActorsUntilArrival(scene: any): void {
+  const flags = scene.initialGameSave?.worldStatus?.events?.flags ?? {};
+  const introStarted = flags['storyline:default_intro_bus_arrival:event:intro_arrival:started'] === true;
+  const introCompleted = flags['storyline:default_intro_bus_arrival:state'] === 'completed';
+  const earlyTick = Number(scene.initialState?.gameTick ?? 0) <= 60;
+  if (introStarted || introCompleted || !earlyTick) return;
+
+  hideSprite(scene.player?.sprite);
+  hideSprite(scene.npc?.sprite);
+}
+
+function hideSprite(sprite: any): void {
+  if (!sprite) return;
+  sprite.setVisible?.(false);
+  sprite.setAlpha?.(0);
+  const body = sprite.body;
+  if (body) {
+    body.enable = false;
+    body.setVelocity?.(0, 0);
+  }
+}
+
+function ensureNpcHomeLandmarksFromHousing(scene: any): void {
+  const houses = scene.houseSaveAdapter?.exportHouses?.() ?? [];
+  const gameTick = scene.dayCycle?.gameTick ?? 0;
+  let patched = false;
+
+  for (const house of houses) {
+    if (!String(house?.stage ?? '').startsWith('ready')) continue;
+    const npcName = resolveResidentNpcName(house?.tenancy);
+    if (!npcName) continue;
+
+    const mind = scene.worldStateManager?.getNpcMindState?.(npcName);
+    const landmarkKey = `house:${house.id}`;
+    if (mind?.meta?.homeHouseId === house.id && mind?.knownLandmarks?.[landmarkKey]) continue;
+
+    patched = scene.rememberHomeHouseForNpc?.(npcName, house.id, gameTick) || patched;
+  }
+
+  if (patched) {
+    gameBus.emit('game:save_requested', { reason: 'npc:home_landmark_backfill_from_housing' });
+  }
+}
+
+function resolveResidentNpcName(tenancy: any): string | null {
+  const residentNpcName = typeof tenancy?.residentNpcName === 'string' ? tenancy.residentNpcName.trim() : '';
+  if (residentNpcName) return residentNpcName;
+
+  const residentNpcId = typeof tenancy?.residentNpcId === 'string' ? tenancy.residentNpcId.trim() : '';
+  if (!residentNpcId) return null;
+  return GAME_NPC_CATALOG.find((npc) => npc.id === residentNpcId || npc.name === residentNpcId)?.name ?? residentNpcId;
 }

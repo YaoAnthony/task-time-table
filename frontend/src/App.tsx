@@ -27,6 +27,7 @@ const SystemStore = lazy(() => import('./Pages/Dashboard/component/SystemStore')
 const SystemTasks = lazy(() => import('./Pages/Dashboard/component/SystemTasks'));
 const SystemLottery = lazy(() => import('./Pages/Dashboard/component/SystemLottery'));
 const SystemIdleGame = lazy(() => import('./Pages/Dashboard/component/SystemIdleGame'));
+const StorylineEditor = lazy(() => import('./Pages/Dashboard/component/StorylineEditor'));
 const DailyQuests = lazy(() => import('./Pages/Dashboard/component/DailyQuests'));
 
 
@@ -85,6 +86,7 @@ const App = () => {
                         <Route path="npc-shop" element={<GameNpcShop />} />
                         <Route path="npc-data" element={<NPCData />} />
                         <Route path="idle-game" element={<SystemIdleGame />} />
+                        <Route path="storyline-editor" element={<StorylineEditor />} />
                         
                         {/* 系统路由 - 嵌套路由 */}
                         <Route path="system/:systemId" element={<SystemRouter />}>

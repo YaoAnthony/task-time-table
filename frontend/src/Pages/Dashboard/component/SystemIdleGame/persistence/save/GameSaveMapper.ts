@@ -20,6 +20,14 @@ export function normalizeGameSaveSettings(settings?: Partial<GameSettingsState &
       ? Math.max(0, Math.min(1439, Math.round(settings.timeMinute)))
       : 360,
     weather: settings?.weather === 'rain' ? 'rain' : 'clear',
+    audioEnabled: settings?.audioEnabled !== false,
+    audioVolume: typeof settings?.audioVolume === 'number'
+      ? Math.max(0, Math.min(1, settings.audioVolume))
+      : 0.8,
+    musicEnabled: settings?.musicEnabled !== false,
+    musicVolume: typeof settings?.musicVolume === 'number'
+      ? Math.max(0, Math.min(1, settings.musicVolume))
+      : 0.6,
     physicsDebug: Boolean(settings?.physicsDebug),
     pathLineEnabled: Boolean(settings?.pathLineEnabled),
     sleepThreshold: typeof settings?.sleepThreshold === 'number'

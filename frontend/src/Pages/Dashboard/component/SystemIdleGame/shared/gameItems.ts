@@ -3,7 +3,7 @@
 export type ItemActionType =
   | 'eat' | 'plant' | 'harvest' | 'water' | 'till'
   | 'lay_egg' | 'collect' | 'chop' | 'feed'
-  | 'place_house' | 'open_house' | 'place_storage_chest';
+  | 'place_house' | 'open_house' | 'place_storage_chest' | 'place_pet';
 
 export interface ItemCapability {
   action: ItemActionType;
@@ -11,7 +11,7 @@ export interface ItemCapability {
   requires?: Record<string, string>;
 }
 
-export type GameItemType = 'consumable' | 'tool' | 'seed' | 'crop' | 'material' | 'house_blueprint' | 'key' | 'storage';
+export type GameItemType = 'consumable' | 'tool' | 'seed' | 'crop' | 'material' | 'house_blueprint' | 'key' | 'storage' | 'pet';
 export type GameItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 export interface GameItemDefinition {
@@ -131,5 +131,12 @@ export const GAME_ITEMS: Record<string, GameItemDefinition> = {
     rarity: 'common', image: 'chest', description: 'Place it in the world to store backpack items.',
     capabilities: [{ action: 'place_storage_chest', requires: { definitionId: 'basic' } }],
     tags: ['storage', 'chest', 'building'],
+  },
+  pet_laoli_cat: {
+    id: 'pet_laoli_cat', name: "Lao Li's Cat", nameZh: '老李的猫',
+    type: 'pet', category: 'game', stackable: false, maxStack: 1,
+    rarity: 'common', image: 'player', description: '老李牵挂的小猫。现在先复用玩家动作帧，之后可以替换成猫素材。',
+    capabilities: [{ action: 'place_pet' }],
+    tags: ['pet', 'cat', 'laoli', 'mainline'],
   },
 };

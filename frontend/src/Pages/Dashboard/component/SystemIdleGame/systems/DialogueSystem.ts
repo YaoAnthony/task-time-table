@@ -13,6 +13,7 @@ interface DialogueSystemOptions {
   getPlayerPosition: () => { x: number; y: number } | null;
   getGameTick: () => number;
   pauseNpc?: (npcId: string, gameTick: number, seconds?: number, reason?: string) => void;
+  onPlayerAssignedHome?: (npcId: string, text: string, gameTick: number) => void;
   hearingRadius?: number;
   maxReplies?: number;
 }
@@ -48,6 +49,18 @@ function pickStable<T>(items: T[], seed: string): T {
   return items[hash(seed) % items.length];
 }
 
+function hasHomeAssignmentIntent(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  const compact = normalized.replace(/\s+/g, '');
+  return (
+    /(?:这是|这个是|这里是|这间是|这屋子是|这个屋子是|这房子是|这个房子是).{0,10}(?:你的|你自己的).{0,10}(?:房子|屋子|家)/.test(compact)
+    || /(?:以后|往后|今后)?.{0,8}(?:住这|住这里|住这儿|住在这|住在这里|住在这儿)/.test(compact)
+    || /\b(?:this is|here is|this place is)\s+your\s+(?:house|home)\b/.test(normalized)
+    || /\byour\s+new\s+(?:house|home)\b/.test(normalized)
+    || /\b(?:live|stay)\s+here\b/.test(normalized)
+  );
+}
+
 function isQuestion(text: string): boolean {
   return /[?？吗呢]|\bwhat\b|\bwhy\b|\bhow\b|\bwhere\b|\bwhen\b/i.test(text);
 }
@@ -65,6 +78,7 @@ export class DialogueSystem {
   private readonly getPlayerPosition: () => { x: number; y: number } | null;
   private readonly getGameTick: () => number;
   private readonly pauseNpc?: DialogueSystemOptions['pauseNpc'];
+  private readonly onPlayerAssignedHome?: DialogueSystemOptions['onPlayerAssignedHome'];
   private readonly hearingRadius: number;
   private readonly maxReplies: number;
   private readonly replyCooldowns = new Map<string, number>();
@@ -76,6 +90,7 @@ export class DialogueSystem {
     this.getPlayerPosition = options.getPlayerPosition;
     this.getGameTick = options.getGameTick;
     this.pauseNpc = options.pauseNpc;
+    this.onPlayerAssignedHome = options.onPlayerAssignedHome;
     this.hearingRadius = options.hearingRadius ?? DEFAULT_HEARING_RADIUS;
     this.maxReplies = options.maxReplies ?? DEFAULT_MAX_REPLIES;
   }
@@ -104,9 +119,16 @@ export class DialogueSystem {
     }
 
     const gameTick = this.getGameTick();
+    const homeAssignmentTarget = hasHomeAssignmentIntent(text)
+      ? listeners.find((listener) => !listener.npc.isOnDispatch() && !listener.npc.isAwaitingConfirm()) ?? listeners[0]
+      : null;
     for (const listener of listeners) {
       listener.npc.addMemory(`玩家说：“${text}”`, 'player', gameTick);
       this.pauseNpc?.(listener.id, gameTick, 5, 'heard_player_dialogue');
+    }
+
+    if (homeAssignmentTarget) {
+      this.onPlayerAssignedHome?.(homeAssignmentTarget.id, text, gameTick);
     }
 
     this.emitPlayerHeardEvents(text, listeners);

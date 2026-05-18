@@ -9,6 +9,7 @@ import {
     PlaySquareOutlined,
     DatabaseOutlined,
     TeamOutlined,
+    HighlightOutlined,
 } from '@ant-design/icons';
 
 export const inventoryTabs: { id: string; label: string }[] = [
@@ -27,6 +28,7 @@ export const sidebarItems = [
     { label: '每日任务', path: '/dashboard/daily-quests', icon: <PlaySquareOutlined /> },
     { label: '商城', path: '/dashboard/store', icon: <ShopOutlined /> },
     { label: '挂机培养', path: '/dashboard/idle-game', icon: <PlaySquareOutlined /> },
+    { label: '剧情编辑器', path: '/dashboard/storyline-editor', icon: <HighlightOutlined /> },
     { label: 'NPC 商店', path: '/dashboard/npc-shop', icon: <TeamOutlined /> },
     { label: '游戏设置', path: '/dashboard/game-settings', icon: <SlidersOutlined /> },
     { label: 'NPC data', path: '/dashboard/npc-data', icon: <DatabaseOutlined /> },

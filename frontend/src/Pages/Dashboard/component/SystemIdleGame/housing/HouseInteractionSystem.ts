@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import { gameBus } from '../shared/EventBus';
+import { CHAR_FRAME_H } from '../constants';
 
 const HOUSE_KEY_ITEM_ID = 'house_key';
 const HOUSE_TP_RADIUS = 28;
+const HOUSE_TP_HALF_WIDTH = 42;
+const HOUSE_TP_DOWN_REACH = 64;
+const HOUSE_TP_DEBUG_COLOR = 0x33a6ff;
 
 export class HouseInteractionSystem {
   private readonly scene: any;
+  private debugGraphics: Phaser.GameObjects.Graphics | null = null;
 
   constructor(scene: any) {
     this.scene = scene;
@@ -43,6 +48,7 @@ export class HouseInteractionSystem {
 
   update(timeMs = this.scene.time?.now ?? 0): void {
     const views = this.scene.houseSaveAdapter?.getViews?.() ?? [];
+    this.updateDebugGraphics(views);
     if (!views.length) return;
 
     const playerSprite = this.scene.player?.sprite;
@@ -90,9 +96,49 @@ export class HouseInteractionSystem {
       if (!house || house.doorState !== 'open' || !String(house.stage ?? '').startsWith('ready')) continue;
       const door = view.getDoorWorldPosition?.();
       if (!door) continue;
-      if (Phaser.Math.Distance.Between(x, y, door.x, door.y) <= HOUSE_TP_RADIUS) return view;
+      if (this.getHouseTeleportRect(door).contains(x, y)) return view;
     }
     return null;
+  }
+
+  private getHouseTeleportRect(door: { x: number; y: number }): Phaser.Geom.Rectangle {
+    return new Phaser.Geom.Rectangle(
+      door.x - HOUSE_TP_HALF_WIDTH,
+      door.y - CHAR_FRAME_H,
+      HOUSE_TP_HALF_WIDTH * 2,
+      CHAR_FRAME_H + HOUSE_TP_DOWN_REACH,
+    );
+  }
+
+  private updateDebugGraphics(views: any[]): void {
+    if (!this.scene.physicsDebugEnabled) {
+      this.debugGraphics?.clear();
+      this.debugGraphics?.setVisible(false);
+      return;
+    }
+    const graphics = this.ensureDebugGraphics();
+    graphics.clear();
+    graphics.setVisible(true);
+    graphics.lineStyle(2, HOUSE_TP_DEBUG_COLOR, 0.95);
+    graphics.fillStyle(HOUSE_TP_DEBUG_COLOR, 0.08);
+
+    for (const view of views) {
+      const house = view?.house;
+      if (!house || house.doorState !== 'open' || !String(house.stage ?? '').startsWith('ready')) continue;
+      const door = view.getDoorWorldPosition?.();
+      if (!door) continue;
+      const rect = this.getHouseTeleportRect(door);
+      graphics.fillRectShape(rect);
+      graphics.strokeRectShape(rect);
+      graphics.strokeCircle(door.x, door.y, HOUSE_TP_RADIUS);
+    }
+  }
+
+  private ensureDebugGraphics(): Phaser.GameObjects.Graphics {
+    if (!this.debugGraphics) {
+      this.debugGraphics = this.scene.add.graphics().setDepth(9995);
+    }
+    return this.debugGraphics as Phaser.GameObjects.Graphics;
   }
 
   private isHoldingMatchingKey(house: any): boolean {

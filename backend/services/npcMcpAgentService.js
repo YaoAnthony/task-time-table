@@ -1,4 +1,8 @@
-const { GAME_MCP_TOOLS, callGameMcpTool } = require('./gameMcpToolService');
+const {
+    GAME_MCP_TOOLS,
+    callGameMcpTool,
+    normalizeNpcActionsForRuntime,
+} = require('./gameMcpToolService');
 
 const MAX_TOOL_ROUNDS = 8;
 const HOUSE_INTENT_RE = /房子|屋子|房间|屋里|进屋|进房|进去|回家|睡觉|这是你的家|这是你的房|住这里|home|house|inside|enter|sleep/i;
@@ -119,7 +123,10 @@ MCP tool rules:
                 actions: [],
             });
             const reply = String(parsed.reply || '……').trim();
-            const actions = mergeActions(plannedActions, Array.isArray(parsed.actions) ? parsed.actions : []);
+            const actions = normalizeNpcActionsForRuntime(
+                mergeActions(plannedActions, Array.isArray(parsed.actions) ? parsed.actions : []),
+                toolContext,
+            );
             return { reply, actions, raw, toolEvents, plannedActions };
         }
 
@@ -165,7 +172,10 @@ MCP tool rules:
     });
     return {
         reply: String(parsed.reply || '……').trim(),
-        actions: mergeActions(plannedActions, Array.isArray(parsed.actions) ? parsed.actions : []),
+        actions: normalizeNpcActionsForRuntime(
+            mergeActions(plannedActions, Array.isArray(parsed.actions) ? parsed.actions : []),
+            toolContext,
+        ),
         raw,
         toolEvents,
         plannedActions,

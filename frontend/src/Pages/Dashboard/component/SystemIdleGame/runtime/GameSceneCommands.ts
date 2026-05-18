@@ -49,6 +49,16 @@ export function setPhysicsDebug(scene: any, enabled: boolean) : void {
   
 }
 
+function refreshAudioDirector(scene: any): void {
+    scene.audioSystem?.resume?.();
+    const refresh = () => scene.musicDirector?.refresh?.(scene.time?.now ?? 0);
+    if (scene.time?.delayedCall) {
+      scene.time.delayedCall(80, refresh);
+      return;
+    }
+    refresh();
+}
+
 export function _registerCommands(scene: any) : void {
     // /weather <rain|clear>
     scene.commands.register(
@@ -56,8 +66,8 @@ export function _registerCommands(scene: any) : void {
       'set weather: rain | clear',
       (args: string[]) => {
         const w = args[0]?.toLowerCase();
-        if (w === 'rain')  { scene.weather.setWeather('rain');  return 'Weather set to rain'; }
-        if (w === 'clear') { scene.weather.setWeather('clear'); return 'Weather set to clear'; }
+        if (w === 'rain')  { scene.weather.setWeather('rain');  refreshAudioDirector(scene); return 'Weather set to rain'; }
+        if (w === 'clear') { scene.weather.setWeather('clear'); refreshAudioDirector(scene); return 'Weather set to clear'; }
         return `Usage: /weather rain | /weather clear`;
       },
     );

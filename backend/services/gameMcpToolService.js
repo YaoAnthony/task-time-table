@@ -90,6 +90,33 @@ function currentContext(ctx) {
 }
 
 const DEFAULT_WORLD_ID = 'world:village';
+const REMEMBER_HOME_SKILL_ALIASES = new Set([
+    'remember_home_house',
+    'remember_home',
+    'remember_house',
+    'home_house',
+    'set_home',
+    'assign_home',
+    'learn_home',
+    'this_is_your_house',
+]);
+const ENTER_HOUSE_SKILL_ALIASES = new Set([
+    'enter_house',
+    'go_home',
+    'go_to_house',
+    'go_inside_house',
+]);
+
+function normalizeSkillId(skillId) {
+    return String(skillId || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function toolNameForSkillAlias(skillId) {
+    const normalized = normalizeSkillId(skillId);
+    if (REMEMBER_HOME_SKILL_ALIASES.has(normalized)) return 'remember_home_house';
+    if (ENTER_HOUSE_SKILL_ALIASES.has(normalized)) return 'enter_house';
+    return null;
+}
 
 function currentWorldId(ctx) {
     const context = currentContext(ctx);
@@ -167,10 +194,95 @@ function visibleHouses(ctx) {
     return visibleObjects(ctx).filter((objectItem) => (objectItem.type || objectItem.kind) === 'house');
 }
 
+function houseLabel(house) {
+    return house?.meta?.displayId || house?.meta?.label || house?.id || 'house';
+}
+
 function findHouse(ctx, houseId) {
     const houses = visibleHouses(ctx);
     if (!houseId) return houses[0] || null;
-    return houses.find((entry) => entry.id === houseId || entry.meta?.roomId === houseId) || null;
+    return houses.find((entry) => (
+        entry.id === houseId
+        || entry.meta?.displayId === houseId
+        || entry.meta?.label === houseId
+        || entry.meta?.roomId === houseId
+    )) || null;
+}
+
+function buildEnterHouseResult(ctx, houseId) {
+    const house = findHouse(ctx, houseId);
+    const roomId = house?.meta?.roomId || null;
+    const action = house ? {
+        type: 'enter_house',
+        houseId: house.id,
+        roomId,
+    } : null;
+    return makeToolResult({
+        ok: Boolean(house),
+        data: {
+            requestedHouseId: houseId || null,
+            house: house ? clone(house) : null,
+            visibleHouses: visibleHouses(ctx),
+            planned: Boolean(action),
+        },
+        action,
+        memoryText: house
+            ? `MCP enter_house: planned entering ${houseLabel(house)} (${house.meta?.summary || roomId || 'house'}).`
+            : 'MCP enter_house: no visible house was available.',
+    });
+}
+
+function buildRememberHomeHouseResult(ctx, houseId) {
+    const house = findHouse(ctx, houseId);
+    const roomId = house?.meta?.roomId || null;
+    const action = house ? {
+        type: 'remember_home_house',
+        houseId: house.id,
+        roomId,
+    } : null;
+    return makeToolResult({
+        ok: Boolean(house),
+        data: {
+            requestedHouseId: houseId || null,
+            house: house ? clone(house) : null,
+            planned: Boolean(action),
+        },
+        action,
+        memoryText: house
+            ? `MCP remember_home_house: planned remembering ${houseLabel(house)} (${house.meta?.summary || roomId || 'house'}) as home.`
+            : 'MCP remember_home_house: no visible house was available.',
+    });
+}
+
+function normalizeNpcActionForRuntime(action, ctx) {
+    const item = asObject(action);
+    if (!item.type) return null;
+    if (item.type !== 'use_skill') return item;
+
+    const toolName = toolNameForSkillAlias(item.skillId);
+    if (toolName === 'remember_home_house') {
+        return buildRememberHomeHouseResult(ctx, item.houseId).action
+            || { type: 'remember_home_house', houseId: item.houseId, roomId: item.roomId };
+    }
+    if (toolName === 'enter_house') {
+        return buildEnterHouseResult(ctx, item.houseId).action
+            || { type: 'enter_house', houseId: item.houseId, roomId: item.roomId };
+    }
+    return item;
+}
+
+function normalizeNpcActionsForRuntime(actions, ctx) {
+    const result = [];
+    const seen = new Set();
+    for (const action of asArray(actions)) {
+        const normalized = normalizeNpcActionForRuntime(action, ctx);
+        if (!normalized?.type) continue;
+        const key = JSON.stringify(normalized);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(normalized);
+    }
+    return result;
 }
 
 function summarizeEnvironment(ctx) {
@@ -412,7 +524,9 @@ function callGameMcpTool(name, args, ctx) {
             const objects = data.visibleObjects.map((objectItem) => (
                 objectItem.meta?.summary
                     ? `${objectItem.type}:${objectItem.meta.summary}`
-                    : objectItem.type
+                    : objectItem.type === 'house'
+                        ? `house:${houseLabel(objectItem)}`
+                        : objectItem.type
             )).join(', ') || 'none';
             return makeToolResult({
                 data,
@@ -541,55 +655,21 @@ function callGameMcpTool(name, args, ctx) {
                     visibleHouses: houses,
                 },
                 memoryText: house
-                    ? `MCP inspect_house: inspected ${house.id} (${house.meta?.summary || house.state || 'house'}).`
+                    ? `MCP inspect_house: inspected ${houseLabel(house)} (${house.meta?.summary || house.state || 'house'}).`
                     : 'MCP inspect_house: no visible house was available.',
             });
         }
         case 'enter_house': {
-            const house = findHouse(ctx, parsedArgs.houseId);
-            const roomId = house?.meta?.roomId || null;
-            const action = house ? {
-                type: 'enter_house',
-                houseId: house.id,
-                roomId,
-            } : null;
-            return makeToolResult({
-                ok: Boolean(house),
-                data: {
-                    requestedHouseId: parsedArgs.houseId || null,
-                    house: house ? clone(house) : null,
-                    visibleHouses: visibleHouses(ctx),
-                    planned: Boolean(action),
-                },
-                action,
-                memoryText: house
-                    ? `MCP enter_house: planned entering ${house.id} (${house.meta?.summary || roomId || 'house'}).`
-                    : 'MCP enter_house: no visible house was available.',
-            });
+            return buildEnterHouseResult(ctx, parsedArgs.houseId);
         }
         case 'remember_home_house': {
-            const house = findHouse(ctx, parsedArgs.houseId);
-            const roomId = house?.meta?.roomId || null;
-            const action = house ? {
-                type: 'remember_home_house',
-                houseId: house.id,
-                roomId,
-            } : null;
-            return makeToolResult({
-                ok: Boolean(house),
-                data: {
-                    requestedHouseId: parsedArgs.houseId || null,
-                    house: house ? clone(house) : null,
-                    planned: Boolean(action),
-                },
-                action,
-                memoryText: house
-                    ? `MCP remember_home_house: planned remembering ${house.id} (${house.meta?.summary || roomId || 'house'}) as home.`
-                    : 'MCP remember_home_house: no visible house was available.',
-            });
+            return buildRememberHomeHouseResult(ctx, parsedArgs.houseId);
         }
         case 'use_skill': {
             const skillId = parsedArgs.skillId;
+            const toolName = toolNameForSkillAlias(skillId);
+            if (toolName === 'remember_home_house') return buildRememberHomeHouseResult(ctx, parsedArgs.houseId);
+            if (toolName === 'enter_house') return buildEnterHouseResult(ctx, parsedArgs.houseId);
             const action = { type: 'use_skill', skillId };
             return makeToolResult({
                 data: { skillId, planned: true },
@@ -621,4 +701,6 @@ function callGameMcpTool(name, args, ctx) {
 module.exports = {
     GAME_MCP_TOOLS: tools,
     callGameMcpTool,
+    normalizeNpcActionsForRuntime,
+    normalizeNpcActionForRuntime,
 };

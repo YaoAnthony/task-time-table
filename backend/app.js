@@ -6,7 +6,7 @@ const logger = require('morgan');
 const cors = require('cors'); // 跨域支持
 const indexRouter = require('./routes/index'); // 动态加载路由文件
 
-const mongoose = require('mongoose'); // mongodb
+const { connectLocalDatabase, getDatabasePath } = require('./db/localDatabase');
 
 // .env 配置
 require('dotenv').config();
@@ -48,16 +48,10 @@ app.options("*", cors(corsOptions));
 
 //connect to the database
 console.log("---------------------------------");
-console.log("Connecting to the database...");
-mongoose.connect(process.env.MongoDB_URL);
-
-const db = mongoose.connection;
-db.on('error', console.error.bind(console, 'MongoDB connect error'));
-db.once('open', function () {
-    console.log("Database connect successfully!");
-    console.log("---------------------------------");
-
-});
+console.log("Connecting to the local SQLite database...");
+connectLocalDatabase();
+console.log(`SQLite database ready: ${getDatabasePath()}`);
+console.log("---------------------------------");
 
 
 // 设置视图引擎

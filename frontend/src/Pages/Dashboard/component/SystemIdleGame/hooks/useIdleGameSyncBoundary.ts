@@ -117,8 +117,9 @@ export function useIdleGameSyncBoundary({
     };
 
     const unsubs = [
-      gameBus.on('world:action_applied', ({ action, result, source }) => {
-        syncActionToRoom(action, result, source);
+      gameBus.on('world:domain_event', (event) => {
+        if (event.type !== 'world.action_applied') return;
+        syncActionToRoom(event.action, event.result, event.source);
       }),
       gameBus.on('world:item_picked_up', ({ itemId, x, y, source }) => {
         if ((source ?? 'local') !== 'local' || !multiplayActiveRef.current) return;

@@ -15,9 +15,15 @@ import { PathingComponent } from '../shared/PathingComponent';
 import { gameBus } from '../shared/EventBus';
 import { PLAYER_HOUSE_DOOR } from '../shared/WorldLocations';
 import type { NpcAutonomyMode } from '../systems/NpcBehaviorPolicy';
+import { normalizeNpcActionForRuntime } from '../systems/ActionExecutor';
 
 const NPC_BODY_W = 10;
 const NPC_BODY_H = 8;
+const NPC_LABEL_OFFSET_Y = 34;
+const NPC_BUBBLE_OFFSET_Y = 48;
+const NPC_BUBBLE_OFFSET_X_CHOICES = [-14, -7, 0, 7, 14];
+const NPC_BUBBLE_OFFSET_Y_CHOICES = [0, -5, -10];
+const VILLAGE_WORLD_ID = 'world:village';
 
 function stableHash(input: string): number {
   let value = 0;
@@ -106,8 +112,8 @@ export class Npc {
     this.name  = name;
     const offsetIndex = stableHash(name);
     this.speechOffset = {
-      x: [-42, -22, 0, 22, 42][offsetIndex % 5],
-      y: [0, -16, -32][Math.floor(offsetIndex / 5) % 3],
+      x: NPC_BUBBLE_OFFSET_X_CHOICES[offsetIndex % NPC_BUBBLE_OFFSET_X_CHOICES.length],
+      y: NPC_BUBBLE_OFFSET_Y_CHOICES[Math.floor(offsetIndex / NPC_BUBBLE_OFFSET_X_CHOICES.length) % NPC_BUBBLE_OFFSET_Y_CHOICES.length],
     };
 
     this.sprite = scene.physics.add.sprite(x, y, 'player', 4);
@@ -127,7 +133,7 @@ export class Npc {
 
   // ── Labels ─────────────────────────────────────────────────────────────────
   private createLabels(x: number, y: number): void {
-    this.labelText = this.scene.add.text(x, y - 58, this.name, {
+    this.labelText = this.scene.add.text(x, y - NPC_LABEL_OFFSET_Y, this.name, {
       fontSize:        '9px',
       color:           '#ffff88',
       backgroundColor: '#00000099',
@@ -138,13 +144,25 @@ export class Npc {
   }
 
   private createBubbleText(x: number, y: number): Phaser.GameObjects.Text {
-    return this.scene.add.text(x + this.speechOffset.x, y - 74 + this.speechOffset.y, '', {
+    return this.scene.add.text(x + this.speechOffset.x, y - NPC_BUBBLE_OFFSET_Y + this.speechOffset.y, '', {
       fontSize:        '9px',
       color:           '#222222',
       backgroundColor: '#ffffffdd',
       padding:         { x: 6, y: 4 },
       wordWrap:        { width: 132 },
     }).setOrigin(0.5, 1).setDepth(9999).setVisible(false);
+  }
+
+  private updateLabelPositions(): void {
+    if (this.canMutateText(this.labelText)) {
+      this.labelText.setPosition(this.sprite.x, this.sprite.y - NPC_LABEL_OFFSET_Y);
+    }
+    if (this.canMutateText(this.bubbleText) && this.bubbleText.visible) {
+      this.bubbleText.setPosition(
+        this.sprite.x + this.speechOffset.x,
+        this.sprite.y - NPC_BUBBLE_OFFSET_Y + this.speechOffset.y,
+      );
+    }
   }
 
   private canMutateText(text?: Phaser.GameObjects.Text): text is Phaser.GameObjects.Text {
@@ -161,6 +179,7 @@ export class Npc {
     if (!this.canMutateText(this.bubbleText)) return false;
     try {
       this.bubbleText.setText(text).setVisible(visible);
+      this.updateLabelPositions();
       return true;
     } catch (error) {
       console.warn('[Npc] bubble text update failed; recreating bubble text', {
@@ -171,6 +190,7 @@ export class Npc {
         this.bubbleText.destroy();
         this.bubbleText = this.createBubbleText(this.sprite.x, this.sprite.y);
         this.bubbleText.setText(text).setVisible(visible);
+        this.updateLabelPositions();
         return true;
       } catch (retryError) {
         console.warn('[Npc] bubble text recreate failed', {
@@ -198,6 +218,32 @@ export class Npc {
     } catch (error) {
       console.warn('[Npc] label visibility update failed', { npcName: this.name, error });
     }
+  }
+
+  setRuntimeVisible(visible: boolean): void {
+    if (this.destroyed || !this.sprite?.scene) return;
+
+    if (!visible) {
+      this.stopFollowing();
+      this.clearNavigation();
+      this.plannedActions = [];
+      this.waitingForConfirm = false;
+      this.conversationLockTimer = 0;
+      this.conversationPartner = null;
+      this.speechTimer = 0;
+      this._isThinking = false;
+    }
+
+    this.sprite.setVisible(visible);
+    this.sprite.setAlpha(visible ? 1 : 0);
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body | null;
+    if (body) {
+      body.enable = visible;
+      body.setVelocity(0, 0);
+    }
+    this.safeSetLabelVisible(visible);
+    this.safeSetBubbleVisible(false);
+    this.updateLabelPositions();
   }
 
   // ── Memory ─────────────────────────────────────────────────────────────────
@@ -385,6 +431,7 @@ export class Npc {
 
     // Skip ALL updates while NPC is off on a dispatch mission
     if (this.isDispatched) return;
+    if (!this.sprite.visible) return;
 
     const conversationLocked = this.conversationLockTimer > 0;
     if (conversationLocked) {
@@ -465,16 +512,7 @@ export class Npc {
     this.updateAnimation();
     this.sprite.setDepth(this.sprite.y + 96);
 
-    // Keep labels glued to sprite
-    if (this.canMutateText(this.labelText)) {
-      this.labelText.setPosition(this.sprite.x, this.sprite.y - 58);
-    }
-    if (this.canMutateText(this.bubbleText) && this.bubbleText.visible) {
-      this.bubbleText.setPosition(
-          this.sprite.x + this.speechOffset.x,
-          this.sprite.y - 74 + this.speechOffset.y,
-        );
-    }
+    this.updateLabelPositions();
   }
 
   // ── Action execution ───────────────────────────────────────────────────────
@@ -594,14 +632,20 @@ export class Npc {
       }
 
       case 'use_skill': {
+        const aliased = normalizeNpcActionForRuntime(action);
+        if (aliased.type !== 'use_skill') {
+          this.executeAction(aliased, gameTick);
+          return;
+        }
         if (this.worldCtx && action.skillId) {
-          this.worldCtx.executeKnowledgeSkill(
+          const ok = this.worldCtx.executeKnowledgeSkill(
             this.name,
             action.skillId,
             { x: this.sprite.x, y: this.sprite.y },
-            (x, y, onArrive) => this.navigateToWorldTarget(this.targetWithWorld(x, y), onArrive),
+            (x, y, worldId, onArrive) => this.navigateToWorldTarget(this.targetWithWorld(x, y, worldId), onArrive),
             gameTick,
           );
+          if (!ok) this.say('这个我还没学会。', gameTick);
         }
         this.timer = action.duration ?? 2;
         break;
@@ -687,17 +731,19 @@ export class Npc {
    * Called by ActionExecutor when say+move sequencing is required.
    */
   queueActions(actions: NpcAction[], _gameTick: number): void {
+    if (!this.sprite.visible) return;
     this.plannedActions.push(...actions);
   }
 
   replaceActions(actions: NpcAction[], _gameTick: number): void {
+    if (!this.sprite.visible) return;
     this.clearNavigation();
     this.plannedActions = [...actions];
     this.timer = 0;
   }
 
   say(text: string, gameTick: number): void {
-    if (!this.isAlive()) return;
+    if (!this.isAlive() || !this.sprite.visible) return;
     const normalized = text.trim();
     if (!normalized || normalized === '-' || normalized === '...') return;
     this._isThinking = false;
@@ -856,6 +902,15 @@ export class Npc {
   }
 
   private randomWander(): void {
+    const currentWorldId = this.worldCtx?.getNpcWorldId?.(this.name)
+      ?? this.worldCtx?.getWorldIdAt?.(this.sprite.x, this.sprite.y)
+      ?? VILLAGE_WORLD_ID;
+    if (currentWorldId !== VILLAGE_WORLD_ID) {
+      this.stopMovement();
+      this.timer = 2 + Math.random() * 3;
+      return;
+    }
+
     if (Math.random() < 0.55) {
       const angle = Math.random() * Math.PI * 2;
       this.velX  = Math.cos(angle) * NPC_SPEED;

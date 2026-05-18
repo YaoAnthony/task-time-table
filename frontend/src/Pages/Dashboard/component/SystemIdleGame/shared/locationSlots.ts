@@ -46,14 +46,15 @@ function hash(input: string): number {
 export function resolveActorLocationTarget(
   place: string,
   actorId = 'actor',
-): { x: number; y: number } | null {
+): { x: number; y: number; worldId?: string } | null {
   const loc = WORLD_LOCATION_MAP[place];
   if (!loc) return null;
   const offsets = LOCATION_OFFSETS[place];
-  if (!offsets?.length) return { x: loc.worldX, y: loc.worldY };
+  if (!offsets?.length) return { x: loc.worldX, y: loc.worldY, worldId: loc.worldId };
   const offset = offsets[hash(`${actorId}:${place}`) % offsets.length];
   return {
     x: loc.worldX + offset.dx,
     y: loc.worldY + offset.dy,
+    worldId: loc.worldId,
   };
 }

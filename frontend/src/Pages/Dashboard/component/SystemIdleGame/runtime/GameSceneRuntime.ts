@@ -49,6 +49,7 @@ import type { CreatureState } from '../../../../../Redux/Features/gameSlice';
 import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
 import { EventSystem } from '../event/EventSystem';
 import { EventActionExecutor } from '../event/EventActionExecutor';
+import { StorylineRuntimeSystem } from '../event/StorylineRuntimeSystem';
 import { VehicleSystem } from '../event/VehicleSystem';
 import { CutsceneDirector } from '../event/CutsceneDirector';
 import { RoomLocationSystem } from '../locations/RoomLocationSystem';
@@ -60,12 +61,15 @@ import {
   HouseContractSystem,
 } from '../housing';
 import { StorageChestSystem } from '../storage';
+import type { PetMemorySeed, PetSystem, PetView } from '../features/pets';
+import type { IdleGameRuntime } from './IdleGameRuntime';
+import type { AudioEventMapper, AudioSystem, MusicDirector } from '../audio';
 
 import { preloadGameSceneAssets } from './GameScenePreload';
 import { createGameScene } from './GameSceneBootstrap';
 import { updateGameScene } from './GameSceneUpdateLoop';
 import { registerDefaultLighting, getDynamicLightConfigs, registerBedLight, registerNestLight, refreshNestLights, registerChestLight, registerTreeOccluder } from './GameSceneLighting';
-import { removeWorldItemsByIds, spawnToolPickups, _spawnBeds, placeEntityAt, _loadWorldState, createChickens, updateChickens, updateNests, spawnInitialTrees, spawnInitialBushes, spawnDecorations } from './GameSceneWorldObjects';
+import { removeWorldItemsByIds, spawnToolPickups, _spawnBeds, placeEntityAt, restorePetsFromWorldState, _loadWorldState, createChickens, updateChickens, updateNests, spawnInitialTrees, spawnInitialBushes, spawnDecorations } from './GameSceneWorldObjects';
 import { triggerInteract, getNearestNpcName, triggerAction, tryChopNearbyBed, tryChopNearestTree, setPlayerTool, getGameState, setInitialGameSave, loadGameSaveData, syncEventSaveData, getGameSaveData, getGameTick, getDayCycleTick, setNpcThinking, addPlayerMessageToNpc, getNpcFamiliarity, getNpcChatCount, npcReply, playerSpeak, getNpcMemory, getNpcMindState, setNpcAuthProvider, setNpcInventoryProvider, loadNpcMemories, executeNpcActions, getPlayerPosition, pauseInput, resumeInput, registerInteractable, unregisterInteractable, triggerFInteract, _triggerQDrop, loadChests, addChest, panToChest, getCreatureStates, restoreCreatures, removeChest, spawnWorldItemDirect, spawnWorldItem, getPlayerWorldPos, dropPlayerItem, makeNpcSay, getPerceptionReport, getPerceptionContext, confirmNpcAction, chopTreeById, findFarmTarget, performFarmAction, executeKnowledgeSkill, findNearestTree, findWorldItem, claimWorldItem, dropWorldItem, getWorldIdAt, getNpcWorldId, navigateNpcToWorldPosition, findHouseEntryTarget, enterHouseForNpc, rememberHomeHouseForNpc, executeCommand } from './GameScenePublicApi';
 import { spawnRemotePlayer, removeRemotePlayer, applyRemoteEvent, applyRemoteFarmEvent, buildWorldSnapshot, getWorldSnapshot, setGameTick, applyWorldSnapshotData, applyWorldSnapshot } from './GameSceneMultiplayerBridge';
 import { setAgentBrainEnabled, setPhysicsDebug, _registerCommands } from './GameSceneCommands';
@@ -75,6 +79,7 @@ export class GameSceneRuntime extends Phaser.Scene {
   initialState: Partial<IdleGameState> = {};
   initialGameSave: GameSaveV1 | null = null;
   protected activeUserId = 'player';
+  protected runtimeStorylines: unknown[] = [];
 
   player!:    Player;
   protected npc!:       Npc;
@@ -91,6 +96,8 @@ export class GameSceneRuntime extends Phaser.Scene {
   protected chests = new Map<string, Chest>();
 
   protected trees = new Map<string, TreeView>();
+
+  protected pets = new Map<string, PetView>();
 
   protected bushes: RaspberryBush[] = [];
 
@@ -127,6 +134,7 @@ export class GameSceneRuntime extends Phaser.Scene {
   protected npcDirectorSystem!: NpcDirectorSystem;
   protected eventSystem!: EventSystem;
   protected eventActionExecutor!: EventActionExecutor;
+  protected storylineRuntimeSystem!: StorylineRuntimeSystem;
   protected vehicleSystem!: VehicleSystem;
   protected cutsceneDirector!: CutsceneDirector;
   protected locationSystem!: RoomLocationSystem;
@@ -136,6 +144,11 @@ export class GameSceneRuntime extends Phaser.Scene {
   protected houseInteractionSystem!: HouseInteractionSystem;
   protected houseContractSystem!: HouseContractSystem;
   protected storageChestSystem!: StorageChestSystem;
+  protected petSystem!: PetSystem;
+  protected audioSystem!: AudioSystem;
+  protected audioEventMapper!: AudioEventMapper;
+  protected musicDirector!: MusicDirector;
+  protected idleRuntime?: IdleGameRuntime;
   worldGrid!: StateBackedWorldGrid;
   worldStateManager!: WorldStateManager;
   protected physicsDebugEnabled = false;
@@ -296,6 +309,56 @@ export class GameSceneRuntime extends Phaser.Scene {
     return applyPlaceHouseAction(this, action);
   }
 
+  beginHousePlacementForActor(
+    actorId: string,
+    definitionId = 'greenhouse',
+    blueprintItemId = 'house_blueprint_greenhouse',
+  ): boolean {
+    return this.housePlacementSystem?.beginPlacement({ actorId, definitionId, blueprintItemId }) ?? false;
+  }
+
+  confirmHousePlacementForActor(actorId: string): boolean {
+    return this.housePlacementSystem?.confirmPlacement(actorId) ?? false;
+  }
+
+  cancelHousePlacementForActor(actorId: string): void {
+    this.housePlacementSystem?.cancelPlacement(actorId);
+  }
+
+  toggleHousePlacementForActor(
+    actorId: string,
+    definitionId = 'greenhouse',
+    blueprintItemId = 'house_blueprint_greenhouse',
+  ): boolean {
+    return this.housePlacementSystem?.requestPlacement(definitionId, blueprintItemId, actorId) ?? false;
+  }
+
+  playAudio(key: string, options?: Record<string, unknown>): Phaser.Sound.BaseSound | null {
+    this.audioSystem?.resume();
+    return this.audioSystem?.play(key, options as any) ?? null;
+  }
+
+  playMusic(key: string, options?: Record<string, unknown>): Phaser.Sound.BaseSound | null {
+    this.audioSystem?.resume();
+    return this.audioSystem?.playMusic(key, options as any) ?? null;
+  }
+
+  unlockAudio(): void {
+    this.audioSystem?.resume();
+  }
+
+  setAudioVolume(volume: number): void {
+    this.audioSystem?.setAudioVolume(volume);
+  }
+
+  setMusicVolume(volume: number): void {
+    this.audioSystem?.setMusicVolume(volume);
+  }
+
+  stopAudioTag(tag: string, fadeMs = 0): void {
+    this.audioSystem?.stopByTag(tag, fadeMs);
+  }
+
   protected applyPlaceStorageChestAction(action: Extract<WorldAction, { type: 'PLACE_STORAGE_CHEST' }>): WorldActionResult {
     return applyPlaceStorageChestAction(this, action);
   }
@@ -359,6 +422,21 @@ export class GameSceneRuntime extends Phaser.Scene {
     return placeEntityAt(this, itemId, fx, fy);
   }
 
+  protected restorePetsFromWorldState(worldState: GameSaveV1['worldStatus']['entities']['worldState'] | null | undefined): void {
+    return restorePetsFromWorldState(this, worldState);
+  }
+
+  protected updatePets(dtSeconds: number, gameTick: number, timeMs: number, deltaMs: number): void {
+    return this.petSystem?.update(dtSeconds, gameTick, timeMs, deltaMs);
+  }
+
+  rememberPet(petEntityId: string, memory: PetMemorySeed): void {
+    return this.petSystem?.remember(petEntityId, memory);
+  }
+
+  getPetMemories(petEntityId: string): PetMemorySeed[] {
+    return this.petSystem?.getMemories(petEntityId) ?? [];
+  }
 
   protected _loadWorldState(ws: GameWorldState | null): void {
     return _loadWorldState(this, ws);
@@ -418,6 +496,19 @@ export class GameSceneRuntime extends Phaser.Scene {
 
   setInitialGameSave(save: GameSaveV1 | null, userId = 'player'): void {
     return setInitialGameSave(this, save, userId);
+  }
+
+  setRuntimeStorylines(storylines: unknown[]): void {
+    this.runtimeStorylines = Array.isArray(storylines) ? storylines : [];
+    this.storylineRuntimeSystem?.setStorylines(this.runtimeStorylines);
+  }
+
+  getRuntimeStorylines(): unknown[] {
+    return this.runtimeStorylines;
+  }
+
+  evaluateRuntimeStorylinesNow(): void {
+    return this.storylineRuntimeSystem?.update(this.dayCycle?.gameTick ?? 0);
   }
 
   loadGameSaveData(save: GameSaveV1 | null, userId = 'player'): void {
@@ -667,7 +758,7 @@ export class GameSceneRuntime extends Phaser.Scene {
     npcName: string,
     skillId: string,
     origin: { x: number; y: number },
-    navigate: (x: number, y: number, onArrive?: () => void) => void,
+    navigate: (x: number, y: number, worldId?: string, onArrive?: () => void) => void,
     gameTick: number,
   ): boolean {
     return executeKnowledgeSkill(this, npcName, skillId, origin, navigate, gameTick);
@@ -701,7 +792,7 @@ export class GameSceneRuntime extends Phaser.Scene {
     return navigateNpcToWorldPosition(this, npcName, target, onArrive);
   }
 
-  findHouseEntryTarget(houseId?: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null {
+  findHouseEntryTarget(houseId?: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number; worldId?: string; entryWorldId?: string; roomWorldId?: string } | null {
     return findHouseEntryTarget(this, houseId, npcName);
   }
 

@@ -120,6 +120,7 @@ export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = '
     }
     scene.eventSystem?.importSaveData?.(save.worldStatus.events, save.worldStatus.unlockedNpcs);
     scene._loadWorldState(restoredState.worldState ?? null);
+    scene.restorePetsFromWorldState(save.worldStatus.entities.worldState);
     scene.houseSaveAdapter?.loadFromGameSave(save);
     scene.storageChestSystem?.loadFromGameSave(save);
     scene.locationSystem?.restoreSavedLocations?.(save, userId);
@@ -292,6 +293,7 @@ export function triggerFInteract(scene: any) : void {
 }
 
 export function _triggerQDrop(scene: any) : void {
+    scene.housePlacementSystem?.cancelPlacement?.('player');
     scene.worldFacade.dropHeldItem();
   
 }
@@ -479,7 +481,7 @@ export function executeKnowledgeSkill(scene: any,
     npcName: string,
     skillId: string,
     origin: { x: number; y: number },
-    navigate: (x: number, y: number, onArrive?: () => void) => void,
+    navigate: (x: number, y: number, worldId?: string, onArrive?: () => void) => void,
     gameTick: number,
   ) : boolean {
     const ok = scene.actorActionService.executeKnowledgeSkill({
@@ -557,7 +559,7 @@ function findHouseViewByRoomId(scene: any, roomId: string): any | null {
     return matching ?? null;
 }
 
-function findHouseEntryByRoomId(scene: any, roomId: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number } | null {
+function findHouseEntryByRoomId(scene: any, roomId: string, npcName?: string): { houseId: string; roomId: string; x: number; y: number; worldId: string; entryWorldId: string } | null {
     void npcName;
     const view = findHouseViewByRoomId(scene, roomId);
     if (!view || !String(view.house?.stage ?? '').startsWith('ready')) return null;
@@ -568,6 +570,8 @@ function findHouseEntryByRoomId(scene: any, roomId: string, npcName?: string): {
       roomId: view.house.roomId,
       x: door.x,
       y: door.y,
+      worldId: 'world:village',
+      entryWorldId: 'world:village',
     };
 }
 
@@ -715,7 +719,7 @@ function isHouseAccessibleToNpc(scene: any, view: any, npcName: string): boolean
     return mind?.meta?.homeHouseId === house.id;
 }
 
-export function findHouseEntryTarget(scene: any, houseId?: string, npcName?: string) : { houseId: string; roomId: string; x: number; y: number } | null {
+export function findHouseEntryTarget(scene: any, houseId?: string, npcName?: string) : { houseId: string; roomId: string; x: number; y: number; worldId: string; entryWorldId: string; roomWorldId: string } | null {
     const view = getHouseViewForNpc(scene, houseId, npcName);
     if (!view || !String(view.house?.stage ?? '').startsWith('ready')) return null;
     const door = view.getDoorWorldPosition();
@@ -724,6 +728,9 @@ export function findHouseEntryTarget(scene: any, houseId?: string, npcName?: str
       roomId: view.house.roomId,
       x: door.x,
       y: door.y,
+      worldId: 'world:village',
+      entryWorldId: 'world:village',
+      roomWorldId: view.house.roomId,
     };
 }
 
@@ -751,13 +758,24 @@ export function enterHouseForNpc(scene: any, npcName: string, houseId: string) :
 export function rememberHomeHouseForNpc(scene: any, npcName: string, houseId: string, gameTick: number) : boolean {
     const view = getHouseViewForNpc(scene, houseId, npcName);
     if (!view) return false;
+    const door = view.getDoorWorldPosition?.() ?? { x: view.house.x, y: view.house.y };
+    const approach = { x: door.x, y: door.y + 40 };
+    const entryWorldId = 'world:village';
+    const roomWorldId = view.house.roomId;
     const current = scene.npcMemorySystem?.ensureNpcMindState?.(npcName, gameTick)
       ?? scene.worldStateManager?.getNpcMindState?.(npcName);
     scene.worldStateManager?.patchNpcMindState?.(npcName, {
       meta: {
         ...(current?.meta ?? {}),
         homeHouseId: view.house.id,
-        homeRoomId: view.house.roomId,
+        homeRoomId: roomWorldId,
+        homeEntryWorldId: entryWorldId,
+        homeDoorWorldId: entryWorldId,
+        homeDoorX: door.x,
+        homeDoorY: door.y,
+        homeApproachX: approach.x,
+        homeApproachY: approach.y,
+        homeInteriorWorldId: roomWorldId,
         homeHouseRememberedAtTick: gameTick,
       },
       knownLandmarks: {
@@ -768,13 +786,21 @@ export function rememberHomeHouseForNpc(scene: any, npcName: string, houseId: st
           kind: 'landmark',
           type: 'house',
           label: view.house.tenancy?.residentNpcName === npcName ? 'my home' : 'remembered home',
-          worldId: 'world:village',
-          x: view.house.x,
-          y: view.house.y,
+          worldId: entryWorldId,
+          x: approach.x,
+          y: approach.y,
           lastSeenTick: gameTick,
           meta: {
             houseId: view.house.id,
-            roomId: view.house.roomId,
+            roomId: roomWorldId,
+            entryWorldId,
+            doorWorldId: entryWorldId,
+            doorX: door.x,
+            doorY: door.y,
+            approachX: approach.x,
+            approachY: approach.y,
+            destinationWorldId: roomWorldId,
+            routeAction: 'enter_house',
             doorState: view.house.doorState,
           },
         },
@@ -783,9 +809,16 @@ export function rememberHomeHouseForNpc(scene: any, npcName: string, houseId: st
     scene.npcMemorySystem?.recordActionResult?.(npcName, gameTick, {
       status: 'success',
       actionType: 'remember_home_house',
-      targetX: view.house.x,
-      targetY: view.house.y,
-      worldId: 'world:village',
+      targetX: approach.x,
+      targetY: approach.y,
+      worldId: entryWorldId,
+      meta: {
+        houseId: view.house.id,
+        roomId: roomWorldId,
+        entryWorldId,
+        destinationWorldId: roomWorldId,
+        routeAction: 'enter_house',
+      },
     });
     return true;
 }

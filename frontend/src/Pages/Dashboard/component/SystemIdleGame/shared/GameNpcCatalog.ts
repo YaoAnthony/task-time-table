@@ -100,7 +100,24 @@ export function getNpcDefinitionById(id: string): GameNpcDefinition | null {
 
 export function getNpcDefinitionsForSave(save?: GameSaveV1 | null): GameNpcDefinition[] {
   const unlocked = normalizeUnlockedNpcIds(save?.worldStatus?.unlockedNpcs);
-  return unlocked
+  const catalogDefinitions = unlocked
     .map(getNpcDefinitionById)
     .filter((npc): npc is GameNpcDefinition => Boolean(npc));
+  const knownNames = new Set(GAME_NPC_CATALOG.map(npc => npc.name));
+  const customDefinitions = Object.values(save?.worldStatus?.npcs ?? {})
+    .filter(npc => npc?.name && !knownNames.has(npc.name))
+    .map((npc, index): GameNpcDefinition => ({
+      id: npc.id || npc.name,
+      name: npc.name,
+      role: 'starter',
+      title: npc.stressTest ? 'Stress Test' : 'Custom NPC',
+      description: npc.stressTest ? 'Temporary NPC used for local load testing.' : 'NPC loaded from save data.',
+      price: 0,
+      spawn: {
+        x: typeof npc.position?.x === 'number' ? npc.position.x : 384 + index * 32,
+        y: typeof npc.position?.y === 'number' ? npc.position.y : 760,
+      },
+      tint: npc.stressTest ? 0xff77aa : 0xb6d7ff,
+    }));
+  return [...catalogDefinitions, ...customDefinitions];
 }

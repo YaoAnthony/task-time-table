@@ -26,7 +26,7 @@ function clearCropFields(tile) {
 /**
  * Validate and execute a game item action.
  *
- * @param {object} profile      — Mongoose Profile document (personal inventory / wallet)
+ * @param {object} profile      — Profile document (personal inventory / wallet)
  * @param {string} itemId       — GAME_ITEMS key
  * @param {string} action       — ItemActionType string
  * @param {object} targetContext — { tileState?, tx?, ty?, gameTick? }

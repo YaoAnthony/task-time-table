@@ -7,6 +7,7 @@ const GREENHOUSE_STAGE_DURATION_SECONDS = 5;
 const HOUSE_CATALOG = {
     greenhouse: {
         id: 'greenhouse',
+        displayPrefix: 'greenhouse',
         name: 'Greenhouse',
         nameZh: '温室小屋',
         blueprintItemId: HOUSE_BLUEPRINT_ITEM_ID,
@@ -57,6 +58,23 @@ function createHouseRoomId(houseId) {
     return `room:${houseId}`;
 }
 
+function houseDisplayPrefix(definition) {
+    return definition.displayPrefix || definition.id;
+}
+
+function createHouseDisplayId(definitionId, sequence) {
+    const definition = getHouseDefinition(definitionId);
+    const prefix = definition ? houseDisplayPrefix(definition) : String(definitionId || 'house');
+    return `${prefix}-${String(Math.max(1, Number(sequence || 1))).padStart(3, '0')}`;
+}
+
+function parseHouseDisplaySequence(displayId, definitionId) {
+    const definition = getHouseDefinition(definitionId);
+    const prefix = definition ? houseDisplayPrefix(definition) : String(definitionId || 'house');
+    const match = String(displayId || '').match(new RegExp(`^${prefix}-(\\d+)$`));
+    return match ? Number(match[1]) : 0;
+}
+
 function getTotalConstructionDuration(definition) {
     return Object.values(definition.stageDurations).reduce((sum, value) => sum + Number(value || 0), 0);
 }
@@ -86,6 +104,11 @@ function normalizeHouseInstance(input) {
 
     return {
         id,
+        displayId: input.displayId
+            ? String(input.displayId)
+            : parseHouseDisplaySequence(id, definition.id) > 0
+                ? id
+                : undefined,
         definitionId: definition.id,
         x: Number.isFinite(Number(input.x)) ? Number(input.x) : 0,
         y: Number.isFinite(Number(input.y)) ? Number(input.y) : 0,
@@ -126,9 +149,27 @@ function normalizeHouseInstance(input) {
 }
 
 function normalizeHouseInstances(input) {
-    return Array.isArray(input)
-        ? input.map(normalizeHouseInstance).filter(Boolean)
-        : [];
+    if (!Array.isArray(input)) return [];
+    const counters = {};
+    return input
+        .map(normalizeHouseInstance)
+        .filter(Boolean)
+        .map((house) => {
+            const current = house.displayId;
+            if (current) {
+                counters[house.definitionId] = Math.max(
+                    counters[house.definitionId] || 0,
+                    parseHouseDisplaySequence(current, house.definitionId),
+                );
+                return house;
+            }
+            const next = (counters[house.definitionId] || 0) + 1;
+            counters[house.definitionId] = next;
+            return {
+                ...house,
+                displayId: createHouseDisplayId(house.definitionId, next),
+            };
+        });
 }
 
 function normalizeHouseContract(input) {
@@ -172,6 +213,8 @@ module.exports = {
     getHouseDefinition,
     getHouseShopItems,
     createHouseRoomId,
+    createHouseDisplayId,
+    parseHouseDisplaySequence,
     getTotalConstructionDuration,
     normalizeHouseInstances,
     normalizeHouseContracts,

@@ -1,5 +1,5 @@
 
-//MongoDB model
+// Legacy auth controller models
 const User = require('../models/User');
 const UserProfile = require('../models/Profile');
 const Counter = require('../models/Counter');
@@ -78,16 +78,15 @@ const register = async (req, res) => {
 
         //-----------------create profile-----------------
         console.log("create profile for the new user...");
-        //get user id from mongoDB according email
-        let userInMongoDB = await User.findOne({ 
+        const persistedUser = await User.findOne({
             email : email
         });
 
-        createProfile(userInMongoDB,res);
+        createProfile(persistedUser,res);
 
         //return token
         res.json({
-            user : userInMongoDB
+            user : persistedUser
         });
 
     } catch (err) {

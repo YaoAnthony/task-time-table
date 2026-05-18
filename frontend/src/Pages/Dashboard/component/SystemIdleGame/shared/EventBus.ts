@@ -18,8 +18,13 @@ import type { ToolType, FarmTileStateType } from '../types';
 import type { ChestRewardItem, GameChest }  from '../../../../../Types/Profile';
 import type { RemoteGameEvent, WorldSnapshot, MultiplayRoomPlayer } from '../systems/MultiplaySystem';
 import type { WorldAction, WorldActionResult } from '../systems/WorldActionSystem';
+import type { DomainEvent } from '../world/actions/DomainEvent';
 import type { WorldSyncSource } from '../sync/syncPolicy';
 import type { GameEventHistoryEntry, GameEventInstance } from '../event/EventTypes';
+import type {
+  StorylineChoiceRequestPayload,
+  StorylineChoiceSelectedPayload,
+} from '../event/storyline/StorylineRuntimeTypes';
 
 // ─── Event payload map ────────────────────────────────────────────────────────
 export interface GameEventMap {
@@ -81,6 +86,8 @@ export interface GameEventMap {
   'world:item_picked_up':  { itemId: string; x: number; y: number; actorId?: string; source?: WorldSyncSource };
   /** A world action was applied to WorldState/WorldGrid. */
   'world:action_applied':  { action: WorldAction; result: WorldActionResult; source: WorldSyncSource };
+  /** Domain-level world event emitted after a world command resolves. */
+  'world:domain_event':    DomainEvent;
   /** Local player movement snapshot that may need room broadcast. */
   'world:position_broadcast_requested': {
     x: number;
@@ -105,6 +112,10 @@ export interface GameEventMap {
   'event:completed':       { event: GameEventHistoryEntry };
   /** A game event failed while running. */
   'event:failed':          { event: GameEventHistoryEntry };
+  /** A runtime storyline needs the player to choose one branch. */
+  'storyline:choice_requested': StorylineChoiceRequestPayload;
+  /** React resolved a storyline branch choice. */
+  'storyline:choice_selected':  StorylineChoiceSelectedPayload;
 
   // ── UI messages ───────────────────────────────────────────────────────────
   /** Show a transient HUD message to the local player. */

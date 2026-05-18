@@ -51,6 +51,10 @@ const GameSettings: React.FC = () => {
   const rawSettings = useSelector((state: RootState) => state.game.settings);
   const settings: GameSettingsState = {
     ...rawSettings,
+    audioEnabled: rawSettings.audioEnabled !== false,
+    audioVolume: typeof rawSettings.audioVolume === 'number' ? rawSettings.audioVolume : 0.8,
+    musicEnabled: rawSettings.musicEnabled !== false,
+    musicVolume: typeof rawSettings.musicVolume === 'number' ? rawSettings.musicVolume : 0.6,
     pathLineEnabled: Boolean(rawSettings.pathLineEnabled),
     agentBrainEnabled: rawSettings.agentBrainEnabled !== false,
   };
@@ -82,6 +86,10 @@ const GameSettings: React.FC = () => {
   const commandPreview = [
     `/time set ${settings.timeMinute}`,
     `/weather ${settings.weather}`,
+    `/audio ${settings.audioEnabled ? 'on' : 'off'}`,
+    `/audio volume ${settings.audioVolume.toFixed(2)}`,
+    `/music ${settings.musicEnabled ? 'on' : 'off'}`,
+    `/music volume ${settings.musicVolume.toFixed(2)}`,
     `/debug ${settings.physicsDebug ? 'on' : 'off'}`,
     `/pathline ${settings.pathLineEnabled ? 'on' : 'off'}`,
     `/sleep threshold ${settings.sleepThreshold.toFixed(2)}`,
@@ -198,6 +206,71 @@ const GameSettings: React.FC = () => {
                     {weather === 'clear' ? '晴天' : '下雨'}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 22, padding: 12, border: '1px solid var(--px-border)', borderRadius: 4, background: 'var(--px-surface2)' }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--px-gold)' }}>声音</h3>
+              <div style={{ display: 'grid', gap: 14 }}>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <strong>Audio</strong>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--px-gold)' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.audioEnabled}
+                        onChange={(event) => updateSettings({ audioEnabled: event.target.checked })}
+                      />
+                      {settings.audioEnabled ? 'ON' : 'OFF'} · {Math.round(settings.audioVolume * 100)}%
+                    </label>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={settings.audioVolume}
+                    disabled={!settings.audioEnabled}
+                    onChange={(event) => {
+                      const audioVolume = Number(event.target.value);
+                      updateSettings({ audioVolume });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 4 }}>
+                    雨声、环境声、对白提示、车辆和 UI 音效。
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <strong>Music</strong>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--px-gold)' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.musicEnabled}
+                        onChange={(event) => updateSettings({ musicEnabled: event.target.checked })}
+                      />
+                      {settings.musicEnabled ? 'ON' : 'OFF'} · {Math.round(settings.musicVolume * 100)}%
+                    </label>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={settings.musicVolume}
+                    disabled={!settings.musicEnabled}
+                    onChange={(event) => {
+                      const musicVolume = Number(event.target.value);
+                      updateSettings({ musicVolume });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={{ color: 'var(--px-muted)', fontSize: 12, marginTop: 4 }}>
+                    只控制纯背景音乐，不影响雨声和音效。
+                  </div>
+                </div>
               </div>
             </div>
 

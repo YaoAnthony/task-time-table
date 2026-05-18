@@ -8,8 +8,11 @@ services:
       - ./backend/.env
     environment:
       - PORT=7778
+      - SQLITE_DB_PATH=/app/data/timeplan.sqlite
       # 覆盖 .env 里的 Website_URL，允许前端容器的 CORS
       - Website_URL=http://localhost:4002
+    volumes:
+      - ./backend/data:/app/data
 
   frontend:
     build:

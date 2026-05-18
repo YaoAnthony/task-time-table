@@ -1,0 +1,242 @@
+{
+  "id": "default_intro_bus_arrival",
+  "title": "默认开场：大巴抵达",
+  "status": "enabled",
+  "version": 10,
+  "summary": "新游戏开始时把时间设为早上 8 点，镜头转向大巴站，大巴抵达后玩家和老李下车，老李说第一句开场台词。",
+  "tags": [
+    "system",
+    "intro",
+    "new_game",
+    "game_start",
+    "authoritative_time",
+    "bootstrap_event",
+    "default",
+    "bus"
+  ],
+  "updatedAt": "2026-05-17T13:05:00.000Z",
+  "schemaVersion": 1,
+  "startState": "locked",
+  "states": [
+    "locked",
+    "playing",
+    "completed"
+  ],
+  "triggers": [
+    {
+      "id": "new_game_0800_bus_intro",
+      "fromState": "locked",
+      "when": [
+        {
+          "skill": "condition.game_tick_between",
+          "args": {
+            "minTick": 0,
+            "maxTick": 60
+          }
+        },
+        {
+          "skill": "condition.flag_not_set",
+          "args": {
+            "key": "storyline:default_intro_bus_arrival:event:intro_arrival:started"
+          }
+        }
+      ],
+      "then": [
+        {
+          "skill": "time.set_time_of_day",
+          "args": {
+            "minute": 480
+          }
+        },
+        {
+          "skill": "action.set_quest_state",
+          "args": {
+            "questId": "default_intro_bus_arrival",
+            "state": "playing"
+          }
+        },
+        {
+          "skill": "action.run_event",
+          "args": {
+            "eventId": "intro_arrival"
+          }
+        }
+      ]
+    }
+  ],
+  "events": {
+    "intro_arrival": [
+      {
+        "skill": "cutscene.lock_player_control",
+        "args": {}
+      },
+      {
+        "skill": "director.begin_event",
+        "args": {
+          "eventId": "intro_arrival",
+          "phase": "bus_arriving",
+          "participants": [
+            "player",
+            "laoli"
+          ],
+          "locks": [
+            "laoli"
+          ],
+          "reason": "新游戏开场大巴抵达"
+        }
+      },
+      {
+        "skill": "action.hide_player",
+        "args": {}
+      },
+      {
+        "skill": "action.hide_npc",
+        "args": {
+          "npcId": "laoli"
+        }
+      },
+      {
+        "skill": "camera.pan_to",
+        "args": {
+          "target": "arrival_entry",
+          "durationMs": 700
+        }
+      },
+      {
+        "skill": "vehicle.spawn_bus",
+        "args": {
+          "vehicleId": "intro_arrival_bus"
+        }
+      },
+      {
+        "skill": "camera.follow",
+        "args": {
+          "target": "vehicle",
+          "vehicleId": "intro_arrival_bus"
+        }
+      },
+      {
+        "skill": "vehicle.move_bus_to_station",
+        "args": {
+          "vehicleId": "intro_arrival_bus",
+          "durationMs": 5200
+        }
+      },
+      {
+        "skill": "vehicle.open_bus_door",
+        "args": {
+          "vehicleId": "intro_arrival_bus"
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "intro_arrival",
+          "phase": "passengers_exiting"
+        }
+      },
+      {
+        "skill": "vehicle.drop_off_passengers",
+        "args": {
+          "vehicleId": "intro_arrival_bus",
+          "passengers": [
+            "player",
+            "laoli"
+          ],
+          "target": "bus_exit",
+          "staggerMs": 850,
+          "spacing": 72,
+          "offsetY": 28
+        }
+      },
+      {
+        "skill": "sequence.wait_ms",
+        "args": {
+          "durationMs": 1000
+        }
+      },
+      {
+        "skill": "action.add_npc_memory",
+        "args": {
+          "npcId": "laoli",
+          "text": "我和玩家一起坐大巴来到这个村子。现在是早上八点，新的生活刚刚开始。",
+          "importance": 7
+        }
+      },
+      {
+        "skill": "action.npc_say",
+        "args": {
+          "npcId": "laoli",
+          "text": "路途折腾死我这老骨头了。",
+          "durationMs": 2600
+        }
+      },
+      {
+        "skill": "action.npc_say",
+        "args": {
+          "npcId": "laoli",
+          "text": "我去四处逛一下",
+          "durationMs": 2400
+        }
+      },
+      {
+        "skill": "vehicle.close_bus_door",
+        "args": {
+          "vehicleId": "intro_arrival_bus"
+        }
+      },
+      {
+        "skill": "director.set_phase",
+        "args": {
+          "eventId": "intro_arrival",
+          "phase": "bus_leaving"
+        }
+      },
+      {
+        "skill": "vehicle.move_bus_offscreen",
+        "args": {
+          "vehicleId": "intro_arrival_bus",
+          "direction": "left",
+          "durationMs": 5200
+        }
+      },
+      {
+        "skill": "vehicle.despawn_bus",
+        "args": {
+          "vehicleId": "intro_arrival_bus"
+        }
+      },
+      {
+        "skill": "camera.pan_to",
+        "args": {
+          "target": "player",
+          "durationMs": 700
+        }
+      },
+      {
+        "skill": "camera.follow",
+        "args": {
+          "target": "player"
+        }
+      },
+      {
+        "skill": "action.set_quest_state",
+        "args": {
+          "questId": "default_intro_bus_arrival",
+          "state": "completed"
+        }
+      },
+      {
+        "skill": "director.end_event",
+        "args": {
+          "eventId": "intro_arrival"
+        }
+      },
+      {
+        "skill": "cutscene.unlock_player_control",
+        "args": {}
+      }
+    ]
+  },
+  "compiledAt": "2026-05-17T13:05:00.000Z"
+}

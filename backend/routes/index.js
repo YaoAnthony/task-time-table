@@ -8,6 +8,7 @@ const ROUTE_ALLOWLIST = new Set([
   'auth.js',
   'coupon.js',
   'profile.js',
+  'storyline.js',
   'system.js',
 ]);
 

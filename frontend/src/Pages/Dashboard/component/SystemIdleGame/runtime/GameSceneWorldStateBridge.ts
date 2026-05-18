@@ -297,7 +297,7 @@ export function applyPlaceObjectAction(scene: any, action: Extract<WorldAction, 
 }
 
 export function applyPlaceHouseAction(scene: any, action: Extract<WorldAction, { type: 'PLACE_HOUSE' }>) : WorldActionResult {
-    const requested = scene.housePlacementSystem?.requestPlacement(action.definitionId, action.blueprintItemId) ?? false;
+    const requested = scene.housePlacementSystem?.requestPlacement(action.definitionId, action.blueprintItemId, action.actorId) ?? false;
     return {
       ok: requested,
       action,

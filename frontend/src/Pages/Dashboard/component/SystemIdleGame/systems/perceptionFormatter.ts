@@ -21,6 +21,9 @@ const ITEM_LABELS: Record<string, string> = {
   berry: '浆果',
   apple: '苹果',
   egg: '鸡蛋',
+  house_blueprint_greenhouse: '温室蓝图',
+  house_key: '房屋钥匙',
+  storage_chest_basic: '储物箱',
 };
 
 const OBJECT_LABELS: Record<string, string> = {
@@ -56,6 +59,7 @@ function formatEntity(entity: PerceivedEntity): string {
 function objectLabel(objectItem: PerceivedObject): string {
   const base = OBJECT_LABELS[objectItem.type] ?? objectItem.type;
   if (typeof objectItem.meta?.summary === 'string') return objectItem.meta.summary;
+  if (typeof objectItem.meta?.label === 'string') return objectItem.meta.label;
   if (objectItem.type === 'bed' && objectItem.state) return `${objectItem.state}${base}`;
   if (objectItem.type === 'tree' && objectItem.meta?.hasFruit) return '结果的树';
   return base;
@@ -101,12 +105,10 @@ export function formatPerceptionForNpcPrompt(result: PerceptionResult): string {
     parts.push(
       `视野内有 ${liveTrees.length} 棵树，最近的是 ${closest.id}，位置约 ${formatAt(closest.x, closest.y)}。`,
     );
-  } else {
-    parts.push('视野内没有明显的树木。');
   }
 
   const visibleObjects = result.visibleObjects.filter((objectItem) => (
-    objectItem.type !== 'tree'
+    objectItem.type !== 'tree' && objectItem.type !== 'room'
   ));
   if (visibleObjects.length > 0) {
     parts.push(
@@ -146,7 +148,7 @@ export function formatPerceptionForNpcPrompt(result: PerceptionResult): string {
     );
   }
 
-  if (result.landmarks.length > 0) {
+  if (result.landmarks.length > 0 && !currentRoom) {
     parts.push(
       `附近地标有：${result.landmarks
         .slice(0, 6)
@@ -155,9 +157,9 @@ export function formatPerceptionForNpcPrompt(result: PerceptionResult): string {
     );
   }
 
-  if (result.nearest.water) {
+  if (result.nearest.water && !currentRoom) {
     parts.push(`最近的水源大约在 ${formatAt(result.nearest.water.x, result.nearest.water.y)}。`);
   }
 
-  return parts.join(' ');
+  return parts.join(' ') || '附近没有明显可观察目标。';
 }

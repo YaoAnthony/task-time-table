@@ -128,6 +128,42 @@ export class VehicleSystem {
     });
   }
 
+  async moveOffscreen(vehicleId: string, direction: 'left' | 'right' = 'left', durationMs = 4200): Promise<void> {
+    const vehicle = this.vehicles.get(vehicleId);
+    if (!vehicle) return;
+    const route = VILLAGE_LAYOUT.busStation.arrivalRoute;
+    const targetX = direction === 'left'
+      ? route.entry.x - vehicle.sprite.displayWidth
+      : route.stop.x + this.scene.scale.width + vehicle.sprite.displayWidth;
+    vehicle.direction = direction === 'left' ? 'right_to_left' : 'left_to_right';
+    vehicle.sprite.setFlipX(vehicle.direction === 'left_to_right');
+
+    console.log('[DEBUG-event-flow] VehicleSystem.moveOffscreen start', {
+      vehicleId,
+      direction,
+      from: { x: vehicle.sprite.x, y: vehicle.sprite.y },
+      to: { x: targetX, y: vehicle.sprite.y },
+      durationMs,
+    });
+    await new Promise<void>((resolve) => {
+      this.scene.tweens.add({
+        targets: vehicle.sprite,
+        x: targetX,
+        y: vehicle.sprite.y,
+        duration: durationMs,
+        ease: 'Sine.easeInOut',
+        onUpdate: () => vehicle.sprite.setDepth(vehicle.sprite.y + 120),
+        onComplete: () => {
+          console.log('[DEBUG-event-flow] VehicleSystem.moveOffscreen complete', {
+            vehicleId,
+            at: { x: vehicle.sprite.x, y: vehicle.sprite.y },
+          });
+          resolve();
+        },
+      });
+    });
+  }
+
   async playDoor(vehicleId: string, mode: 'open' | 'close'): Promise<void> {
     const vehicle = this.vehicles.get(vehicleId);
     if (!vehicle) return;

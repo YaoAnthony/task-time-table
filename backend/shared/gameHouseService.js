@@ -1,10 +1,11 @@
-const { v4: uuidv4 } = require('uuid');
 const {
     HOUSE_BLUEPRINT_ITEM_ID,
     HOUSE_KEY_ITEM_ID,
     getHouseDefinition,
     getHouseShopItems,
     createHouseRoomId,
+    createHouseDisplayId,
+    parseHouseDisplaySequence,
     getTotalConstructionDuration,
     normalizeHouseInstances,
     normalizeHouseContracts,
@@ -96,12 +97,20 @@ function purchaseHouseBlueprint({ gameSave, profile, userId, definitionId, quant
     };
 }
 
-function createHouseInstance({ userId, username, definition, x, y, gameTick }) {
-    const id = `house_${uuidv4()}`;
+function nextHouseDisplayId(existingHouses, definition) {
+    const maxSequence = existingHouses
+        .filter((house) => house.definitionId === definition.id)
+        .reduce((max, house) => Math.max(max, parseHouseDisplaySequence(house.displayId || house.id, definition.id)), 0);
+    return createHouseDisplayId(definition.id, maxSequence + 1);
+}
+
+function createHouseInstance({ userId, username, definition, x, y, gameTick, existingHouses = [] }) {
+    const id = nextHouseDisplayId(existingHouses, definition);
     const startedAtTick = Number.isFinite(Number(gameTick)) ? Number(gameTick) : 0;
     const readyIn = getTotalConstructionDuration(definition);
     return {
         id,
+        displayId: id,
         definitionId: definition.id,
         x: Number(x || 0),
         y: Number(y || 0),
@@ -152,7 +161,7 @@ function placeHouse({ gameSave, userId, username, definitionId, blueprintItemId,
         }
     }
     const houses = getHouses(gameSave);
-    const house = createHouseInstance({ userId, username, definition, x, y, gameTick });
+    const house = createHouseInstance({ userId, username, definition, x, y, gameTick, existingHouses: houses });
     houses.push(house);
     setHouses(gameSave, houses);
     return {

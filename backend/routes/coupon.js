@@ -1,6 +1,5 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const mongoose = require('mongoose');
 const Coupon = require('../models/Coupon');
 const authenticateToken = require('../middlewares/authenticateToken');
 

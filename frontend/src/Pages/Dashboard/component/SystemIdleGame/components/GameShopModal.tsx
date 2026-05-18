@@ -21,6 +21,7 @@ const categoryLabels: Record<GameShopItem['category'] | 'all', string> = {
   house: 'Houses',
   storage: 'Storage',
   tool: 'Tools',
+  pet: 'Pets',
 };
 
 const categoryAccent: Record<GameShopItem['category'], string> = {
@@ -28,6 +29,7 @@ const categoryAccent: Record<GameShopItem['category'], string> = {
   house: '#d69b28',
   storage: '#b77a42',
   tool: '#6e8ee8',
+  pet: '#d9a066',
 };
 
 export const GameShopModal: React.FC<GameShopModalProps> = ({ open, roomId, sceneRef, onClose }) => {
@@ -64,6 +66,8 @@ export const GameShopModal: React.FC<GameShopModalProps> = ({ open, roomId, scen
         message.success('House blueprint added to backpack.');
       } else if (item.category === 'storage') {
         message.success('Storage chest added to backpack.');
+      } else if (item.category === 'pet') {
+        message.success(`${item.nameZh || item.name || item.title || item.id} added to backpack.`);
       } else {
         message.success(`${item.nameZh || item.name || item.title || item.id} added to backpack.`);
       }
@@ -116,7 +120,7 @@ export const GameShopModal: React.FC<GameShopModalProps> = ({ open, roomId, scen
           <div>
             <h2 style={{ margin: 0, color: 'var(--px-gold)', fontSize: 20, letterSpacing: 0 }}>Game Shop</h2>
             <p style={{ margin: '5px 0 0', color: 'var(--px-muted)', fontSize: 12 }}>
-              Buy villagers, house blueprints, placeable storage, and tools.
+              Buy villagers, house blueprints, placeable storage, pets, and tools.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -135,7 +139,7 @@ export const GameShopModal: React.FC<GameShopModalProps> = ({ open, roomId, scen
         </header>
 
         <div style={{ display: 'flex', gap: 8, padding: '10px 16px', borderBottom: '1px solid var(--px-border)' }}>
-          {(['all', 'npc', 'house', 'storage', 'tool'] as const).map((entry) => (
+          {(['all', 'npc', 'house', 'storage', 'pet', 'tool'] as const).map((entry) => (
             <button
               key={entry}
               type="button"
@@ -189,7 +193,7 @@ export const GameShopModal: React.FC<GameShopModalProps> = ({ open, roomId, scen
                       <span style={{ color: accent, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>{status}</span>
                     </div>
                     <p style={{ margin: 0, color: 'var(--px-muted)', fontSize: 13, lineHeight: 1.55 }}>
-                      {item.description || (item.category === 'storage' ? `Capacity ${item.capacity ?? 24}` : item.category === 'tool' ? 'Tool item.' : '')}
+                      {item.description || (item.category === 'storage' ? `Capacity ${item.capacity ?? 24}` : item.category === 'tool' ? 'Tool item.' : item.category === 'pet' ? 'Pet companion.' : '')}
                     </p>
                     {ownedCount != null && (
                       <div style={{ color: 'var(--px-muted)', fontSize: 12 }}>Backpack: {ownedCount}</div>

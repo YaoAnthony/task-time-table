@@ -13,10 +13,10 @@ import React, {
   useRef, useState, useCallback, useEffect,
 } from 'react';
 import Phaser          from 'phaser';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '../../../../Redux/store';
 
-import type { GameSettingsState } from '../../../../Redux/Features/gameSlice';
+import { setGameSettings, type GameSettingsState } from '../../../../Redux/Features/gameSlice';
 
 import { GameScene }       from './GameScene';
 import {
@@ -48,11 +48,14 @@ import {
   useSaveGameSaveMutation,
 } from './api';
 import { GameShopModal } from './components/GameShopModal';
+import { AudioSettingsModal } from './components/AudioSettingsModal';
 import { HouseContractModal } from './components/HouseContractModal';
 import { StorageChestModal } from './components/StorageChestModal';
+import { StorylineChoiceModal } from './components/StorylineChoiceModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const SystemIdleGame: React.FC = () => {
+  const dispatch = useDispatch();
   // ── 跨 hook 共享的 refs ────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef     = useRef<GameScene | null>(null);
@@ -90,6 +93,7 @@ const SystemIdleGame: React.FC = () => {
   // ── 附加 UI 状态 ─────────────────────────────────────────────────────────
   const [timeStr,  setTimeStr ] = useState('2026-01-01 06:00');
   const [isSaving, setIsSaving] = useState(false);
+  const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [gameShopOpen, setGameShopOpen] = useState(false);
   const [houseContractOpen, setHouseContractOpen] = useState(false);
   const [storageChestOpenId, setStorageChestOpenId] = useState<string | null>(null);
@@ -112,6 +116,10 @@ const SystemIdleGame: React.FC = () => {
   backpackSlotsRef.current = backpackSlots;
   const gameSettings: GameSettingsState = {
     ...rawGameSettings,
+    audioEnabled: rawGameSettings.audioEnabled !== false,
+    audioVolume: typeof rawGameSettings.audioVolume === 'number' ? rawGameSettings.audioVolume : 0.8,
+    musicEnabled: rawGameSettings.musicEnabled !== false,
+    musicVolume: typeof rawGameSettings.musicVolume === 'number' ? rawGameSettings.musicVolume : 0.6,
     pathLineEnabled: Boolean(rawGameSettings.pathLineEnabled),
     agentBrainEnabled: rawGameSettings.agentBrainEnabled !== false,
   };
@@ -147,6 +155,19 @@ const SystemIdleGame: React.FC = () => {
     catch { /* best-effort */ }
     finally { setIsSaving(false); }
   }, [auth.myDisplayName, auth.userId, hotbar.hotbarSlotsRef, multiplay.multiplayRoomIdRef, npcChat.npcInventoriesRef, saveGameSave]);
+
+  const handleAudioSettingsChange = useCallback((patch: Partial<GameSettingsState>) => {
+    const nextSettings: GameSettingsState = {
+      ...gameSettingsRef.current,
+      ...patch,
+    };
+    dispatch(setGameSettings(nextSettings));
+    sceneRef.current?.setAudioVolume?.(nextSettings.audioEnabled ? nextSettings.audioVolume : 0);
+    sceneRef.current?.setMusicVolume?.(nextSettings.musicEnabled ? nextSettings.musicVolume : 0);
+    window.setTimeout(() => {
+      gameBus.emit('game:save_requested', { reason: 'settings:audio' });
+    }, 0);
+  }, [dispatch]);
 
   useEffect(() => {
     const unsubscribe = gameBus.on('game:save_delete_requested', async ({ roomId }) => {
@@ -263,11 +284,17 @@ const SystemIdleGame: React.FC = () => {
     scene.executeCommand(`/pathline ${gameSettings.pathLineEnabled ? 'on' : 'off'}`);
     scene.executeCommand(`/sleep threshold ${gameSettings.sleepThreshold}`);
     scene.executeCommand(`/agent brain ${gameSettings.agentBrainEnabled ? 'on' : 'off'}`);
+    scene.setAudioVolume?.(gameSettings.audioEnabled ? gameSettings.audioVolume : 0);
+    scene.setMusicVolume?.(gameSettings.musicEnabled ? gameSettings.musicVolume : 0);
   }, [
     gameSettings.agentBrainEnabled,
+    gameSettings.audioEnabled,
+    gameSettings.audioVolume,
     gameSettings.pathLineEnabled,
     gameSettings.physicsDebug,
     gameSettings.sleepThreshold,
+    gameSettings.musicEnabled,
+    gameSettings.musicVolume,
     gameSettings.weather,
   ]);
 
@@ -360,6 +387,23 @@ const SystemIdleGame: React.FC = () => {
           display: 'grid',
           gap: 8,
         }}>
+          <button
+            type="button"
+            onClick={() => setAudioSettingsOpen(true)}
+            style={{
+              border: '2px solid var(--px-border)',
+              borderRadius: 6,
+              background: 'var(--px-surface2)',
+              color: 'var(--px-text)',
+              padding: '7px 12px',
+              fontSize: 13,
+              fontFamily: '"Courier New", monospace',
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            声音
+          </button>
           <button
             type="button"
             onClick={() => setGameShopOpen(true)}
@@ -509,6 +553,13 @@ const SystemIdleGame: React.FC = () => {
         onDisconnect={multiplay.handleMultiplayDisconnect}
       />
 
+      <AudioSettingsModal
+        open={audioSettingsOpen}
+        settings={gameSettings}
+        onChange={handleAudioSettingsChange}
+        onClose={() => setAudioSettingsOpen(false)}
+      />
+
       <GameShopModal
         open={gameShopOpen}
         roomId={multiplay.multiplayRoomId}
@@ -531,6 +582,13 @@ const SystemIdleGame: React.FC = () => {
         sceneRef={sceneRef}
         onClose={() => setHouseContractOpen(false)}
       />
+
+      {npcChat.storylineChoice && (
+        <StorylineChoiceModal
+          choice={npcChat.storylineChoice}
+          onSelect={npcChat.handleStorylineChoiceSelect}
+        />
+      )}
 
       {npcChat.npcConfirm && (
         <div style={{

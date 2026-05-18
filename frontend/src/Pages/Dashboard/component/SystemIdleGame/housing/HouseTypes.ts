@@ -38,6 +38,7 @@ export interface HouseDefinition {
 
 export interface HouseInstanceSave {
   id: string;
+  displayId?: string;
   definitionId: HouseDefinitionId;
   x: number;
   y: number;
@@ -92,6 +93,7 @@ export interface HouseContractSave {
 
 export interface HouseObservation {
   id: string;
+  displayId: string;
   kind: 'house';
   name: string;
   stage: HouseStage;

@@ -24,6 +24,7 @@ export interface NamedLocation {
   label: string;
   worldX: number;
   worldY: number;
+  worldId?: string;
   desc?: string;
 }
 
@@ -40,6 +41,7 @@ export const WORLD_LOCATIONS: NamedLocation[] = [
     label: 'Player house door',
     worldX: PLAYER_HOUSE_DOOR.x,
     worldY: PLAYER_HOUSE_DOOR.y,
+    worldId: 'world:village',
     desc: `Door of the left player house at (${PLAYER_HOUSE_DOOR.x}, ${PLAYER_HOUSE_DOOR.y}).`,
   },
   {
@@ -47,6 +49,7 @@ export const WORLD_LOCATIONS: NamedLocation[] = [
     label: 'Pond',
     worldX: POND_CENTER.x,
     worldY: POND_CENTER.y,
+    worldId: 'world:village',
     desc: `Pond center around (${POND_CENTER.x}, ${POND_CENTER.y}).`,
   },
   {
@@ -54,6 +57,7 @@ export const WORLD_LOCATIONS: NamedLocation[] = [
     label: 'Farm',
     worldX: 320,
     worldY: 320,
+    worldId: 'world:village',
     desc: 'Central farm area for crops.',
   },
 ];

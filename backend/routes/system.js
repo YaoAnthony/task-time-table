@@ -1,5 +1,5 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const objectIds = require('../db/objectIdCompat');
 
 const authenticateToken = require('../middlewares/authenticateToken');
 const User = require('../models/User');
@@ -18,7 +18,7 @@ const registerSystemDailyQuestRoutes = require('./modules/system.dailyQuestRoute
 const router = express.Router();
 
 const domainService = createSystemDomainService({
-    mongoose,
+    objectIds,
     User,
     Profile,
     System,

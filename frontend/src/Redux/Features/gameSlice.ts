@@ -60,6 +60,10 @@ export type GameWeatherSetting = 'clear' | 'rain';
 export interface GameSettingsState {
   timeMinute: number;
   weather: GameWeatherSetting;
+  audioEnabled: boolean;
+  audioVolume: number;
+  musicEnabled: boolean;
+  musicVolume: number;
   physicsDebug: boolean;
   pathLineEnabled: boolean;
   sleepThreshold: number;
@@ -94,6 +98,10 @@ const initialState: GameReduxState = {
   settings: {
     timeMinute:     360,
     weather:        'clear',
+    audioEnabled:   true,
+    audioVolume:    0.8,
+    musicEnabled:   true,
+    musicVolume:    0.6,
     physicsDebug:   false,
     pathLineEnabled: false,
     sleepThreshold: 0,
@@ -249,6 +257,18 @@ const gameSlice = createSlice({
       }
       if (next.weather === 'clear' || next.weather === 'rain') {
         state.settings.weather = next.weather;
+      }
+      if (typeof next.audioEnabled === 'boolean') {
+        state.settings.audioEnabled = next.audioEnabled;
+      }
+      if (typeof next.audioVolume === 'number') {
+        state.settings.audioVolume = Math.max(0, Math.min(1, next.audioVolume));
+      }
+      if (typeof next.musicEnabled === 'boolean') {
+        state.settings.musicEnabled = next.musicEnabled;
+      }
+      if (typeof next.musicVolume === 'number') {
+        state.settings.musicVolume = Math.max(0, Math.min(1, next.musicVolume));
       }
       if (typeof next.physicsDebug === 'boolean') {
         state.settings.physicsDebug = next.physicsDebug;
