@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams, useNavigate, Outlet } from 'react-router-dom';
+import { useParams, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { message } from 'antd';
 import { FaCogs } from 'react-icons/fa';
@@ -8,6 +8,7 @@ import { RootState } from '../../../../Redux/store';
 import { useLazyGetSystemListQuery } from '../../../../api/systemRtkApi';
 import { setSelectedSystemId } from '../../../../Redux/Features/systemSlice';
 import SystemManagement from '../SystemManagement';
+import { isOwnedSystem } from '../../utils/systemRelationship';
 
 /**
  * SystemRouter - 根据用户权限路由到正确的系统界面
@@ -17,6 +18,7 @@ import SystemManagement from '../SystemManagement';
 const SystemRouter: React.FC = () => {
     const { systemId } = useParams<{ systemId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const dispatch = useDispatch();
     
     const systems = useSelector((state: RootState) => state.system.systems);
@@ -55,10 +57,13 @@ const SystemRouter: React.FC = () => {
     }
 
     // 判断用户是否是系统的创建者（owner）
-    const isOwner = currentSystem.profile === profile?._id;
+    const isOwner = isOwnedSystem(currentSystem, profile?._id);
+    const isLotteryRoute = systemId
+        ? location.pathname === `/dashboard/system/${systemId}/lottery`
+        : false;
 
     // 根据权限显示不同的组件
-    if (isOwner) {
+    if (isOwner && !isLotteryRoute) {
         return <SystemManagement />;
     } else {
         // 成员显示子路由

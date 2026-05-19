@@ -13,7 +13,7 @@ const AttributeBoardPanel: React.FC<{ systemId: string }> = () => {
                     <motion.button 
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        className="bg-blue-500 hover:bg-blue-600 dark:bg-[#FFC72C] dark:hover:bg-white text-white dark:text-black px-6 py-2 rounded-lg font-bold tracking-widest transition-colors shadow-sm dark:shadow-none"
+                        className="bg-blue-500 hover:bg-blue-600 dark:bg-[#FFC72C] dark:hover:bg-white text-black px-6 py-2 rounded-lg font-bold tracking-widest transition-colors shadow-sm dark:shadow-none"
                     >
                         + 添加属性维度
                     </motion.button>

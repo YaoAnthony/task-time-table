@@ -9,7 +9,6 @@ const ITEM_LABELS: Record<string, string> = {
   watering_can: '水壶',
   axe: '斧头',
   scythe: '锄头',
-  shovel: '铲子',
   wheat_seed: '小麦种子',
   tomato_seed: '番茄种子',
   wheat: '小麦',

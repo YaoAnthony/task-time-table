@@ -12,7 +12,7 @@ export interface ItemCapability {
 }
 
 export type GameItemType = 'consumable' | 'tool' | 'seed' | 'crop' | 'material' | 'house_blueprint' | 'key' | 'storage' | 'pet';
-export type GameItemRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
+export type GameItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 export interface GameItemDefinition {
   id:           string;
@@ -86,26 +86,26 @@ export const GAME_ITEMS: Record<string, GameItemDefinition> = {
   watering_can: {
     id: 'watering_can', name: 'Watering Can', nameZh: '水壶',
     type: 'tool', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'tools', description: '为耕地浇水。',
+    rarity: 'uncommon', image: 'tools', description: '为耕地浇水。',
     capabilities: [{ action: 'water' }], tags: ['tool', 'farming'],
   },
   shovel: {
     id: 'shovel', name: 'Shovel', nameZh: '铲子',
     type: 'tool', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'tools', description: '基础挖掘工具。',
+    rarity: 'uncommon', image: 'tools', description: '基础挖掘工具。',
     capabilities: [], tags: ['tool', 'digging'],
   },
   scythe: {
     id: 'scythe', name: 'Hoe', nameZh: '锄头',
     type: 'tool', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'tools', description: '开垦土地用的锄头。',
+    rarity: 'uncommon', image: 'tools', description: '开垦土地用的锄头。',
     capabilities: [{ action: 'till' }], tags: ['tool', 'farming'],
   },
   axe: {
     id: 'axe', name: 'Axe', nameZh: '斧头',
     type: 'tool', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'tools', description: '砍树专用。',
-    capabilities: [], tags: ['tool'],
+    rarity: 'uncommon', image: 'tools', description: '砍树专用。',
+    capabilities: [{ action: 'chop' }], tags: ['tool'],
   },
   animal_feed: {
     id: 'animal_feed', name: 'Animal Feed', nameZh: '饲料',
@@ -116,26 +116,26 @@ export const GAME_ITEMS: Record<string, GameItemDefinition> = {
   house_blueprint_greenhouse: {
     id: 'house_blueprint_greenhouse', name: 'Greenhouse Blueprint', nameZh: '温室蓝图',
     type: 'house_blueprint', category: 'game', stackable: true, maxStack: 99,
-    rarity: 'common', image: 'green-house/house-close', description: '可以在空地上建造一间温室小屋。',
+    rarity: 'rare', image: 'green-house/house-close', description: '可以在空地上建造一间温室小屋。',
     capabilities: [{ action: 'place_house' }], tags: ['house', 'blueprint', 'building'],
   },
   house_key: {
     id: 'house_key', name: 'House Key', nameZh: '房屋钥匙',
     type: 'key', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'icon/key', description: '打开指定房子的钥匙。',
+    rarity: 'rare', image: 'icon/key', description: '打开指定房子的钥匙。',
     capabilities: [{ action: 'open_house' }], tags: ['house', 'key'],
   },
   storage_chest_basic: {
-    id: 'storage_chest_basic', name: 'Storage Chest', nameZh: 'Storage Chest',
+    id: 'storage_chest_basic', name: 'Storage Chest', nameZh: '储物箱',
     type: 'storage', category: 'game', stackable: true, maxStack: 99,
-    rarity: 'common', image: 'chest', description: 'Place it in the world to store backpack items.',
+    rarity: 'uncommon', image: 'chest', description: '放置在世界中，用来存放背包物品。',
     capabilities: [{ action: 'place_storage_chest', requires: { definitionId: 'basic' } }],
     tags: ['storage', 'chest', 'building'],
   },
   pet_laoli_cat: {
     id: 'pet_laoli_cat', name: "Lao Li's Cat", nameZh: '老李的猫',
     type: 'pet', category: 'game', stackable: false, maxStack: 1,
-    rarity: 'common', image: 'player', description: '老李牵挂的小猫。现在先复用玩家动作帧，之后可以替换成猫素材。',
+    rarity: 'rare', image: 'player', description: '老李牵挂的小猫。现在先复用玩家动作帧，之后可以替换成猫素材。',
     capabilities: [{ action: 'place_pet' }],
     tags: ['pet', 'cat', 'laoli', 'mainline'],
   },

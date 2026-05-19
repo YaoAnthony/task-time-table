@@ -2,6 +2,7 @@ import type { GameChest } from '../../../../../Types/Profile';
 import { Npc } from '../entities/Npc';
 import { gameBus } from '../shared/EventBus';
 import { GAME_NPC_CATALOG, getNpcDefinitionById } from '../shared/GameNpcCatalog';
+import { resolveSafeChestPlacement } from '../world/chestPlacement';
 import { VILLAGE_LAYOUT } from '../world/layouts/villageLayout';
 import type { CutsceneDirector } from './CutsceneDirector';
 import type { VehicleSystem } from './VehicleSystem';
@@ -121,12 +122,9 @@ function spawnRandomChest(scene: any): GameChest | null {
     { x: 1500, y: 980 },
     { x: 440, y: 900 },
   ];
-  const point = points.find((candidate) => {
-    const cell = scene.worldGrid?.worldToCell(candidate.x, candidate.y);
-    return cell && scene.worldGrid.getWeight(cell.col, cell.row) > 0;
-  }) ?? points[0];
+  const point = points[Math.floor(Math.random() * points.length)] ?? points[0];
 
-  const chest: GameChest = {
+  const chest: GameChest = resolveSafeChestPlacement(scene, {
     id: `event-chest-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     x: point.x,
     y: point.y,
@@ -136,7 +134,7 @@ function spawnRandomChest(scene: any): GameChest | null {
     },
     opened: false,
     createdAt: scene.dayCycle?.gameTick ?? 0,
-  };
+  });
   scene.addChest(chest);
   gameBus.emit('game:chest_spawned', { chest });
   gameBus.emit('game:save_requested', { reason: 'event:random_chest_spawned' });

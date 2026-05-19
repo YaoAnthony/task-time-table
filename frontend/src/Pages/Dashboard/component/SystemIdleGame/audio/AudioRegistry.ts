@@ -1,10 +1,12 @@
 import type { AudioRegistryEntry, AudioSource } from './AudioTypes';
 
+const SYSTEM_VILLAGE_MUSIC_PATH = '/audio/system/music_village_morning.wav';
+
 /**
  * Central audio registry.
  *
  * Use source.kind='relative' for files in frontend/public, for example:
- *   { kind: 'relative', path: '/audio/music/village_morning.mp3' }
+ *   { kind: 'relative', path: '/audio/system/music_village_morning.wav' }
  *
  * Use source.kind='url' for remote assets that are allowed to be streamed:
  *   { kind: 'url', url: 'https://example.com/audio/theme.mp3' }
@@ -78,6 +80,15 @@ export const AUDIO_REGISTRY: Record<string, AudioRegistryEntry> = {
     volume: 0.42,
     tags: ['sfx', 'house'],
   },
+  'sfx.open_chest': {
+    id: 'sfx.open_chest',
+    label: 'Open coin chest',
+    channel: 'sfx',
+    source: { kind: 'relative', path: '/audio/system/open_chest.wav' },
+    preload: true,
+    volume: 0.58,
+    tags: ['sfx', 'chest', 'coins'],
+  },
   'ambience.village_morning': {
     id: 'ambience.village_morning',
     label: 'Birds singing in garden',
@@ -116,15 +127,91 @@ export const AUDIO_REGISTRY: Record<string, AudioRegistryEntry> = {
   },
   'music.village_morning': {
     id: 'music.village_morning',
-    label: 'Brook ambience test loop',
+    label: 'Village morning theme',
     channel: 'music',
-    source: { kind: 'relative', path: '/audio/system/music_village_morning.wav' },
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
     preload: true,
     loop: true,
     volume: 0.62,
-    tags: ['music', 'village', 'test', 'brook'],
-    license: 'Project generated placeholder',
-    notes: 'Local placeholder assigned to the music channel. Replace with final farm BGM later.',
+    tags: ['music', 'village', 'morning'],
+    notes: 'Default village BGM. Replace /audio/system/music_village_morning.wav to swap it without code changes.',
+  },
+  'music.system_village_morning': {
+    id: 'music.system_village_morning',
+    label: 'System village morning',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: true,
+    loop: true,
+    volume: 0.58,
+    tags: ['music', 'village', 'fallback'],
+    notes: 'Alias for music.village_morning.',
+  },
+  'music.celestial': {
+    id: 'music.celestial',
+    label: 'Legacy village music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.56,
+    tags: ['music', 'morning', 'calm'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
+  },
+  'music.windless_slopes': {
+    id: 'music.windless_slopes',
+    label: 'Legacy village music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.58,
+    tags: ['music', 'day', 'village'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
+  },
+  'music.red_carpet_wooden_floor': {
+    id: 'music.red_carpet_wooden_floor',
+    label: 'Legacy village music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.55,
+    tags: ['music', 'evening', 'cozy'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
+  },
+  'music.nocturnal_mysteries': {
+    id: 'music.nocturnal_mysteries',
+    label: 'Legacy village music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.5,
+    tags: ['music', 'night'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
+  },
+  'music.foggy_woods': {
+    id: 'music.foggy_woods',
+    label: 'Legacy village music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.54,
+    tags: ['music', 'rain', 'forest'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
+  },
+  'music.the_arrival_battle': {
+    id: 'music.the_arrival_battle',
+    label: 'Legacy event music alias',
+    channel: 'music',
+    source: { kind: 'relative', path: SYSTEM_VILLAGE_MUSIC_PATH },
+    preload: false,
+    loop: true,
+    volume: 0.58,
+    tags: ['music', 'event', 'battle'],
+    notes: 'Legacy key kept for existing storyline data; it now uses the local system village BGM.',
   },
 };
 
@@ -135,6 +222,10 @@ export function listAudioRegistry(): AudioRegistryEntry[] {
 export function getAudioEntry(id: string | undefined | null): AudioRegistryEntry | null {
   if (!id) return null;
   return AUDIO_REGISTRY[id] ?? null;
+}
+
+export function listMusicAudioEntries(): AudioRegistryEntry[] {
+  return listAudioRegistry().filter((entry) => entry.channel === 'music');
 }
 
 export function resolveAudioSourceUrl(source: AudioSource): string {

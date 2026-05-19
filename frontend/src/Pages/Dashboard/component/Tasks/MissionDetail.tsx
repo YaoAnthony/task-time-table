@@ -4,6 +4,7 @@ import { Mission, StoreProduct } from '../../../../Types/System';
 import { FaPlay, FaCheck, FaTimes, FaRedo, FaGift, FaMapMarkerAlt, FaLock, FaQuestion, FaCrown, FaLink, FaStar } from 'react-icons/fa';
 import { goldIcon } from '../../../../assets';
 import RewardBadge from '../../../../Component/RewardBadge';
+import '../pixelDashboard.css';
 
 interface MissionDetailProps {
     mission: Mission | null;
@@ -40,7 +41,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
 
     if (!mission) {
         return (
-            <div className="h-full w-full flex items-center justify-center text-neutral-400 dark:text-white/30">
+            <div className="pixel-empty h-full w-full flex items-center justify-center">
                 <div className="text-center">
                     <FaMapMarkerAlt className="text-6xl mb-4 mx-auto opacity-20" />
                     <p className="text-lg font-bold tracking-widest">请先选择一个委托</p>
@@ -61,12 +62,8 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
     };
 
     return (
-        <div className="relative h-full w-full flex flex-col bg-white/50 dark:bg-black/30 rounded-2xl overflow-hidden border border-white/50 dark:border-white/10 shadow-sm group backdrop-blur-[2px]">
-            <div className={`absolute top-0 right-0 w-96 h-96 blur-3xl rounded-full -mr-32 -mt-32 pointer-events-none transition-colors duration-700 opacity-20 z-0 ${
-                isUrgent ? 'bg-red-500' : 'bg-amber-400 dark:bg-amber-600'
-            }`} />
-
-            <div className="relative border-b border-black/5 dark:border-white/10 z-10 overflow-hidden min-h-[180px] flex flex-col justify-end bg-gradient-to-b from-black/5 to-transparent dark:from-white/5">
+        <div className="pixel-section relative h-full w-full flex flex-col overflow-hidden group">
+            <div className="pixel-page-header relative z-10 overflow-hidden min-h-[180px] flex flex-col justify-end">
                 {image && (
                     <>
                         <div
@@ -85,10 +82,10 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
 
                 <div className="relative z-10 px-8 pt-8 pb-6">
                     <div className="flex items-center gap-3 mb-2">
-                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border flex items-center gap-1.5 ${
+                        <span className={`pixel-chip text-[10px] font-black uppercase tracking-widest px-2 py-0.5 flex items-center gap-1.5 ${
                             isUrgent
-                                ? 'bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300 border-red-200 dark:border-red-500/30'
-                                : 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-500/30'
+                                ? 'text-red-700'
+                                : ''
                         }`}>
                             <div className={`w-1.5 h-1.5 rounded-full ${isUrgent ? 'bg-red-500 animate-pulse' : 'bg-amber-500'}`} />
                             {isUrgent ? '紧急委托' : '主线委托'}
@@ -97,8 +94,8 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                             <FaMapMarkerAlt /> 委托追踪
                         </span>
                     </div>
-                    <h2 className="text-3xl font-black text-neutral-800 dark:text-white tracking-wider mb-3 drop-shadow-md">{title}</h2>
-                    <p className="text-sm font-medium text-neutral-700 dark:text-white/70 leading-relaxed max-w-2xl drop-shadow-sm">
+                    <h2 className="pixel-page-title text-3xl font-black mb-3">{title}</h2>
+                    <p className="pixel-page-subtitle text-sm font-medium leading-relaxed max-w-2xl">
                         {description || '当前委托还没有更多说明。'}
                     </p>
                 </div>
@@ -111,7 +108,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -10 }}
-                            className="flex flex-col items-center justify-center p-12 bg-black/5 dark:bg-white/5 rounded-2xl border border-dashed border-black/10 dark:border-white/10"
+                            className="pixel-empty flex flex-col items-center justify-center p-12"
                         >
                             <FaLock className="text-4xl text-neutral-400 dark:text-white/30 mb-4" />
                             <p className="text-sm font-bold text-neutral-500 dark:text-white/50 tracking-widest mb-6 px-10 text-center">
@@ -121,10 +118,10 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 disabled={isAccepting}
-                                className={`px-8 py-3 rounded-xl text-sm font-black tracking-widest shadow-lg transition-all disabled:opacity-50 text-white ${
+                                className={`pixel-button pixel-button-primary px-8 py-3 text-sm font-black tracking-widest transition-all disabled:opacity-50 ${
                                     isUrgent
-                                        ? 'bg-gradient-to-r from-red-500 to-rose-600 shadow-red-500/30'
-                                        : 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-amber-500/30'
+                                        ? 'pixel-card-urgent'
+                                        : ''
                                 }`}
                                 onClick={() => handleAcceptMissionList(mission._id, mission.title)}
                             >
@@ -149,7 +146,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                     id={`mission-node-${node.nodeId}`}
                                     initial={{ opacity: 0, x: -20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className={`bg-white/60 dark:bg-black/40 border-l-4 rounded-r-xl p-6 shadow-sm ${node.isLocked ? 'border-slate-400 dark:border-slate-500' : 'border-amber-400 dark:border-amber-500'}`}
+                                    className={`pixel-card p-6 ${node.isLocked ? '' : 'pixel-card-selected'}`}
                                 >
                                     <div className="flex items-center justify-between gap-4 mb-3">
                                         <h3 className="text-lg font-bold text-neutral-800 dark:text-white flex items-center gap-2">
@@ -158,16 +155,16 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                         </h3>
                                         <div className="flex items-center gap-2 flex-wrap justify-end">
                                             {node.isMergeNode && (
-                                                <span className={`text-[10px] font-black tracking-widest uppercase px-2 py-0.5 rounded flex items-center gap-1 ${
+                                                <span className={`pixel-chip text-[10px] font-black tracking-widest uppercase px-2 py-0.5 flex items-center gap-1 ${
                                                     node.mergeTier === 'boss'
-                                                        ? 'bg-fuchsia-100 dark:bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-300 dark:border-fuchsia-500/30'
-                                                        : 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/30'
+                                                        ? 'text-fuchsia-700'
+                                                        : ''
                                                 }`}>
                                                     {node.mergeTier === 'boss' ? <FaCrown className="text-[10px]" /> : <FaStar className="text-[10px]" />}
                                                     {node.mergeTier === 'boss' ? 'Boss 节点' : '里程碑节点'}
                                                 </span>
                                             )}
-                                            <span className="text-[10px] font-bold text-neutral-500 dark:text-white/50 tracking-widest uppercase bg-black/5 dark:bg-white/10 px-2 py-0.5 rounded">
+                                            <span className="pixel-chip text-[10px] font-bold tracking-widest uppercase px-2 py-0.5">
                                                 {node.timeCostMinutes} min
                                             </span>
                                         </div>
@@ -177,12 +174,12 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                     </p>
 
                                     {node.isLocked && (
-                                        <div className="mb-6 rounded-xl border border-slate-300/70 dark:border-slate-600 bg-slate-100/70 dark:bg-slate-900/30 px-4 py-3">
+                                        <div className="pixel-empty mb-6 px-4 py-3">
                                             <p className="text-xs font-black tracking-widest text-slate-600 dark:text-slate-300 mb-2">
                                                 该节点暂未解锁，需要先完成以下前置条件
                                             </p>
                                             {node.isMergeNode && (
-                                                <div className="mb-3 rounded-lg border border-amber-300/60 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+                                                <div className="pixel-card mb-3 px-3 py-2 text-xs">
                                                     <div className="flex items-center gap-2 font-black tracking-widest mb-1">
                                                         <FaLink className="text-[11px]" />
                                                         合流解锁条件
@@ -201,7 +198,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                                     <button
                                                         key={blockedNodeId}
                                                         onClick={() => jumpToNode(blockedNodeId)}
-                                                        className="text-xs px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 border border-slate-300 dark:border-slate-500 text-slate-700 dark:text-slate-200 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
+                                                        className="pixel-button text-xs px-2.5 py-1 transition-colors"
                                                     >
                                                         {(node.blockedByTitles && node.blockedByTitles[index]) || nodeTitleMap.get(blockedNodeId) || blockedNodeId}
                                                     </button>
@@ -211,10 +208,10 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                     )}
 
                                     {!node.isLocked && node.isMergeNode && (
-                                        <div className={`mb-6 rounded-xl px-4 py-3 border ${
+                                        <div className={`pixel-card mb-6 px-4 py-3 ${
                                             node.mergeTier === 'boss'
-                                                ? 'border-fuchsia-300/70 dark:border-fuchsia-500/30 bg-fuchsia-50/70 dark:bg-fuchsia-500/10'
-                                                : 'border-amber-300/70 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/10'
+                                                ? 'pixel-card-urgent'
+                                                : ''
                                         }`}>
                                             <div className={`text-xs font-black tracking-widest mb-2 flex items-center gap-2 ${
                                                 node.mergeTier === 'boss' ? 'text-fuchsia-700 dark:text-fuchsia-200' : 'text-amber-700 dark:text-amber-200'
@@ -276,10 +273,10 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                     )}
 
                                     {node.isMergeNode && node.mergeBonusPreview && (((node.mergeBonusPreview.coins ?? 0) > 0) || (node.mergeBonusPreview.experience?.length || 0) > 0) && (
-                                        <div className={`mb-6 rounded-xl px-4 py-3 border ${
+                                        <div className={`pixel-card mb-6 px-4 py-3 ${
                                             node.mergeTier === 'boss'
-                                                ? 'border-fuchsia-300/70 dark:border-fuchsia-500/30 bg-fuchsia-50/70 dark:bg-fuchsia-500/10'
-                                                : 'border-amber-300/70 dark:border-amber-500/30 bg-amber-50/70 dark:bg-amber-500/10'
+                                                ? 'pixel-card-urgent'
+                                                : ''
                                         }`}>
                                             <div className={`text-xs font-black tracking-widest mb-2 flex items-center gap-2 ${
                                                 node.mergeTier === 'boss' ? 'text-fuchsia-700 dark:text-fuchsia-200' : 'text-amber-700 dark:text-amber-200'
@@ -302,7 +299,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
                                                 disabled={isStarting}
-                                                className="bg-blue-500 hover:bg-blue-400 text-white px-5 py-2 rounded-lg text-xs font-bold tracking-widest shadow-[0_3px_10px_rgba(59,130,246,0.3)] flex items-center gap-2 disabled:opacity-50"
+                                                className="pixel-button pixel-button-primary px-5 py-2 text-xs font-bold tracking-widest flex items-center gap-2 disabled:opacity-50"
                                                 onClick={() => handleStartTask(mission._id, node.nodeId, node.title)}
                                             >
                                                 <FaPlay className="text-xs" /> 开始任务
@@ -315,7 +312,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                                     whileHover={{ scale: 1.05 }}
                                                     whileTap={{ scale: 0.95 }}
                                                     disabled={isCompleting}
-                                                    className="bg-amber-400 hover:bg-amber-300 text-black px-5 py-2 rounded-lg text-xs font-black tracking-widest drop-shadow-[0_3px_10px_rgba(251,191,36,0.4)] flex items-center gap-2 disabled:opacity-50"
+                                                    className="pixel-button pixel-button-primary px-5 py-2 text-xs font-black tracking-widest flex items-center gap-2 disabled:opacity-50"
                                                     onClick={() => handleCompleteTask(mission._id, node.nodeId, node.title)}
                                                 >
                                                     <FaCheck className="text-xs" /> 完成任务
@@ -324,7 +321,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                                     whileHover={{ scale: 1.05 }}
                                                     whileTap={{ scale: 0.95 }}
                                                     disabled={isFailing}
-                                                    className="bg-rose-500 hover:bg-rose-400 text-white px-5 py-2 rounded-lg text-xs font-bold tracking-widest shadow-[0_3px_10px_rgba(225,29,72,0.3)] flex items-center gap-2 disabled:opacity-50"
+                                                    className="pixel-button px-5 py-2 text-xs font-bold tracking-widest flex items-center gap-2 disabled:opacity-50"
                                                     onClick={() => handleFailTask(mission._id, node.nodeId, node.title)}
                                                 >
                                                     <FaTimes className="text-xs" /> 标记失败
@@ -337,7 +334,7 @@ const MissionDetail: React.FC<MissionDetailProps> = ({
                                                 whileHover={{ scale: 1.05 }}
                                                 whileTap={{ scale: 0.95 }}
                                                 disabled={isRestarting}
-                                                className="bg-purple-500 hover:bg-purple-400 text-white px-5 py-2 rounded-lg text-xs font-bold tracking-widest shadow-[0_3px_10px_rgba(168,85,247,0.3)] flex items-center gap-2 disabled:opacity-50"
+                                                className="pixel-button px-5 py-2 text-xs font-bold tracking-widest flex items-center gap-2 disabled:opacity-50"
                                                 onClick={() => handleRestartTask(mission._id, node.nodeId, node.title)}
                                             >
                                                 <FaRedo className="text-xs" /> 重新挑战

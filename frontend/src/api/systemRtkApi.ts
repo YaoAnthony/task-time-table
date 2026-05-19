@@ -3,9 +3,17 @@ import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolk
 import type { RootState } from '../Redux/store';
 import { getEnv } from '../config/env';
 import { setToken, logout } from '../Redux/Features/userSlice';
-import { setProfile } from '../Redux/Features/profileSlice';
+import { patchWalletCoins, setProfile } from '../Redux/Features/profileSlice';
+import {
+    setInventory,
+    setProfileStateError,
+    setProfileStateLoading,
+    setWalletCoins,
+    type InventoryItem,
+} from '../Redux/Features/profileStateSlice';
 import {
     addSystem,
+    patchSystemRelationship,
     removeSystem,
     setCurrentSystem,
     setSelectedSystemId,
@@ -182,7 +190,7 @@ export const systemRtkApi = createApi({
                 }
             },
         }),
-        leaveSystem: builder.mutation<{ success: boolean; systemId: string }, { systemId: string }>({
+        leaveSystem: builder.mutation<{ success: boolean; systemId: string; ownerMembershipOnly?: boolean }, { systemId: string }>({
             query: ({ systemId }) => ({
                 url: `/system/${systemId}/leave`,
                 method: 'POST',
@@ -191,7 +199,24 @@ export const systemRtkApi = createApi({
             invalidatesTags: ['SystemList'],
             async onQueryStarted({ systemId }, { dispatch, getState, queryFulfilled }) {
                 try {
-                    await queryFulfilled;
+                    const { data } = await queryFulfilled;
+
+                    if (data.ownerMembershipOnly) {
+                        dispatch(patchSystemRelationship({ systemId, isOwner: true, isMember: false }));
+
+                        const state = getState() as RootState;
+                        const currentProfile = state.profile.profile;
+                        if (currentProfile) {
+                            dispatch(setProfile({
+                                ...currentProfile,
+                                inventory: (currentProfile.inventory || []).filter(
+                                    (entry) => String(entry.sourceSystem || '') !== String(systemId)
+                                ),
+                            }));
+                        }
+                        return;
+                    }
+
                     dispatch(removeSystem(systemId));
 
                     const state = getState() as RootState;
@@ -564,6 +589,8 @@ export const systemRtkApi = createApi({
             {
                 success: boolean;
                 message: string;
+                wallet?: { coins: number };
+                inventory?: InventoryItem[];
                 purchase: {
                     productId: string;
                     productName: string;
@@ -581,6 +608,21 @@ export const systemRtkApi = createApi({
                 body: { quantity },
             }),
             invalidatesTags: (_res, _err, arg) => [{ type: 'System', id: arg.systemId }, 'SystemList'],
+            async onQueryStarted(_, { dispatch, queryFulfilled }) {
+                dispatch(setProfileStateLoading(true));
+                try {
+                    const { data } = await queryFulfilled;
+                    const coins = data.wallet?.coins ?? data.purchase.remainingCoins;
+                    dispatch(setWalletCoins(coins));
+                    dispatch(patchWalletCoins(coins));
+                    if (data.inventory) dispatch(setInventory(data.inventory));
+                    dispatch(setProfileStateLoading(false));
+                } catch (err) {
+                    const e = err as { error: FetchBaseQueryError };
+                    const message = (e.error?.data as { message?: string })?.message || 'Failed to purchase product';
+                    dispatch(setProfileStateError(message));
+                }
+            },
         }),
 
         // ── Lottery Pool CRUD ───────────────────────────────────────────────

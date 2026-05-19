@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getAudioEntry, listMusicAudioEntries } from '../audio';
 import { getNpcDefinitionById } from '../shared/GameNpcCatalog';
 import { gameBus } from '../shared/EventBus';
 
@@ -72,6 +73,49 @@ export function _registerCommands(scene: any) : void {
       },
     );
 
+    scene.commands.register(
+      'music',
+      'control music: /music list | /music play <key> | /music auto | /music stop',
+      (args: string[]) => {
+        const mode = args[0]?.toLowerCase();
+        const tracks = listMusicAudioEntries();
+
+        if (mode === 'list' || !mode) {
+          return [
+            'Music tracks:',
+            ...tracks.map((entry) => `  ${entry.id} - ${entry.label}`),
+            'Usage: /music play music.windless_slopes',
+          ].join('\n');
+        }
+
+        if (mode === 'play') {
+          const rawKey = args.slice(1).join(' ').trim();
+          if (!rawKey) return 'Usage: /music play <music key>';
+          const key = rawKey.startsWith('music.') ? rawKey : `music.${rawKey}`;
+          const entry = getAudioEntry(key);
+          if (!entry || entry.channel !== 'music') {
+            return `Unknown music key: ${key}\nUse /music list`;
+          }
+          scene.audioSystem?.resume?.();
+          scene.musicDirector?.setMusic?.(key, 800);
+          return `Playing ${entry.label} (${key})`;
+        }
+
+        if (mode === 'auto') {
+          scene.audioSystem?.resume?.();
+          scene.musicDirector?.useAutomaticMusic?.(800);
+          return 'Automatic music enabled';
+        }
+
+        if (mode === 'stop') {
+          scene.musicDirector?.stopMusic?.(600);
+          return 'Music stopped. Use /music auto to resume automatic music.';
+        }
+
+        return 'Usage: /music list | /music play <key> | /music auto | /music stop';
+      },
+    );
+
     // /time set <0-1439>
     scene.commands.register(
       'time',
@@ -81,6 +125,7 @@ export function _registerCommands(scene: any) : void {
           const mins = parseInt(args[1] ?? '');
           if (!isNaN(mins) && mins >= 0 && mins <= 1439) {
             scene.dayCycle.setTimeOfDay(mins);
+            refreshAudioDirector(scene);
             const h = Math.floor(mins / 60).toString().padStart(2, '0');
             const m = (mins % 60).toString().padStart(2, '0');
             return `Time set to ${h}:${m}`;

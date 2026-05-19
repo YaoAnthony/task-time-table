@@ -81,6 +81,26 @@ const systemSlice = createSlice({
             const sys = state.systems.find(s => s._id === action.payload.systemId);
             if (sys) sys.lotteryPools = action.payload.lotteryPools;
         },
+        patchSystemRelationship(
+            state,
+            action: PayloadAction<{ systemId: string; isOwner?: boolean; isMember?: boolean }>
+        ) {
+            const sys = state.systems.find(s => s._id === action.payload.systemId);
+            if (!sys) return;
+
+            sys.relationship = {
+                ...(sys.relationship || {}),
+                ...(typeof action.payload.isOwner === 'boolean' ? { isOwner: action.payload.isOwner } : {}),
+                ...(typeof action.payload.isMember === 'boolean' ? { isMember: action.payload.isMember } : {}),
+            };
+
+            if (typeof action.payload.isOwner === 'boolean') {
+                sys.isOwner = action.payload.isOwner;
+            }
+            if (typeof action.payload.isMember === 'boolean') {
+                sys.isMember = action.payload.isMember;
+            }
+        },
     },
     extraReducers: (builder) => {
         builder.addCase(logout, (state) => {
@@ -104,6 +124,7 @@ export const {
     clearSystemState,
     patchSystemProducts,
     patchSystemLotteryPools,
+    patchSystemRelationship,
 } = systemSlice.actions;
 
 export default systemSlice.reducer;

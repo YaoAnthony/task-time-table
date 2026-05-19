@@ -17,7 +17,6 @@ export interface ObjectSystemOptions {
 }
 
 export interface ObjectSystemInitSteps {
-  spawnToolPickups: () => void;
   createChickens: () => void;
   registerFarmSensors: (playerSprite: Phaser.Physics.Arcade.Sprite) => void;
   spawnBeds: () => void;
@@ -34,7 +33,6 @@ export class ObjectSystem {
 
   init(steps: ObjectSystemInitSteps): void {
     const player = this.options.getPlayer();
-    steps.spawnToolPickups();
     steps.createChickens();
     if (player) steps.registerFarmSensors(player.sprite);
     steps.spawnBeds();

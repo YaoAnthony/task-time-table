@@ -3,6 +3,8 @@ import type { AudioSystem } from './AudioSystem';
 export class MusicDirector {
   private activeMusicKey: string | null = null;
   private activeAmbienceKey: string | null = null;
+  private manualMusicKey: string | null = null;
+  private automaticMusicPaused = false;
   private lastUpdateMs = 0;
 
   constructor(
@@ -30,13 +32,25 @@ export class MusicDirector {
   }
 
   setMusic(key: string, fadeMs = 1000): void {
+    this.manualMusicKey = key;
+    this.automaticMusicPaused = false;
     const sound = this.audio.playMusic(key, { fadeMs });
     if (sound) this.activeMusicKey = key;
   }
 
   stopMusic(fadeMs = 800): void {
+    this.manualMusicKey = null;
+    this.automaticMusicPaused = true;
     this.activeMusicKey = null;
     this.audio.stopMusic(fadeMs);
+  }
+
+  useAutomaticMusic(fadeMs = 1000): void {
+    this.manualMusicKey = null;
+    this.automaticMusicPaused = false;
+    this.activeMusicKey = null;
+    this.audio.stopMusic(fadeMs);
+    this.update(this.lastUpdateMs + 2001);
   }
 
   refresh(timeMs = 0): void {
@@ -47,8 +61,13 @@ export class MusicDirector {
   }
 
   private resolveMusicKey(): string | null {
+    if (this.automaticMusicPaused) return null;
+    if (this.manualMusicKey) return this.manualMusicKey;
+
     const worldId = this.getWorldId();
-    if (worldId === 'world:village') return 'music.village_morning';
+    if (worldId === 'world:village') {
+      return 'music.village_morning';
+    }
     return null;
   }
 

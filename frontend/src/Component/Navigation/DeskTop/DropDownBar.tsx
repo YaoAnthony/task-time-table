@@ -20,7 +20,6 @@ import {
     BarChartOutlined,
     SettingOutlined,
     ShopOutlined,
-    ShoppingOutlined,
     UnorderedListOutlined
     
 } from '@ant-design/icons';
@@ -99,10 +98,9 @@ const DropDownBar = () => {
         >
             <h1 className='text-center w-full text-xl my-5'>Hi, {user.username}</h1>
             <ListButton to="/dashboard/home" title={'主界面'} icon={<BarChartOutlined />}/>
-            <ListButton to="/dashboard/backpack" title={'背包'} icon={<ShoppingOutlined />}/>
             <ListButton to="/dashboard/tasks" title={'任务'} icon={<UnorderedListOutlined />}/>
             <ListButton to="/dashboard/store" title={'商城'} icon={<ShopOutlined />}/>
-            <ListButton to="/dashboard/setting" title={'Setting'} icon={<SettingOutlined />}/>
+            <ListButton to="/dashboard/setting" title={'系统管理'} icon={<SettingOutlined />}/>
             <div className="text-gray-200"><hr/></div>
             <motion.button
                 className={itemStyle}

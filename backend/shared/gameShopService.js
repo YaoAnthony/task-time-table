@@ -24,12 +24,6 @@ const {
 
 const TOOL_SHOP_CATALOG = [
     {
-        itemId: 'shovel',
-        nameZh: '铲子',
-        price: 5,
-        description: '基础铲子。现在可以先作为工具购买和携带，后续可接挖地、移除地块等动作。',
-    },
-    {
         itemId: 'scythe',
         nameZh: '锄头',
         price: 5,
@@ -40,6 +34,12 @@ const TOOL_SHOP_CATALOG = [
         nameZh: '水壶',
         price: 5,
         description: '用来给农田浇水。',
+    },
+    {
+        itemId: 'axe',
+        nameZh: '斧头',
+        price: 5,
+        description: '用来砍树和回收可砍的世界物件。',
     },
 ];
 

@@ -24,6 +24,7 @@ import { GameScene }          from '../GameScene';
 import type { GameChest }     from '../../../../../Types/Profile';
 import type { IdleGameState } from '../../../../../Types/Profile';
 import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
+import { normalizeGameSave } from '../persistence/save/GameSaveMapper';
 
 interface UsePhaserBootProps {
   /** Phaser canvas 容器 */
@@ -133,7 +134,9 @@ export function usePhaserBoot({
 
         fetchGameSave(multiplayRoomIdRef.current ?? undefined)
           .then((result) => {
-            const save = result.data?.gameSave;
+            const save = result.data?.gameSave
+              ? normalizeGameSave(result.data.gameSave, { userId: userId ?? 'player' })
+              : null;
             if (!save) return;
             scene.setRuntimeStorylines(result.data?.storylines ?? []);
             scene.loadGameSaveData(save, userId ?? 'player');
@@ -145,7 +148,8 @@ export function usePhaserBoot({
             const owned = inventory.map((i: { itemId: string }) => i.itemId);
             scene.removeWorldItemsByIds(owned);
 
-            const chests: GameChest[] = save.worldStatus.entities.chests.filter((chest) => !chest.opened);
+            const savedChests = save.worldStatus?.entities?.chests;
+            const chests: GameChest[] = (Array.isArray(savedChests) ? savedChests : []).filter((chest) => !chest.opened);
             setAvailableChests(chests);
           }).catch(() => {});
       }),

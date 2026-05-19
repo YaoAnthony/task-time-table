@@ -71,6 +71,8 @@ function registerSystemStoreRoutes(router, deps) {
             if (!buyerProfile) {
                 return res.status(404).json({ message: 'Buyer profile not found.' });
             }
+            if (!buyerProfile.wallet) buyerProfile.wallet = { coins: 0 };
+            if (!Array.isArray(buyerProfile.inventory)) buyerProfile.inventory = [];
 
             const unitPrice = Number(product.price || 0);
             const totalCost = unitPrice * quantity;
@@ -83,12 +85,26 @@ function registerSystemStoreRoutes(router, deps) {
             buyerProfile.wallet.coins = currentCoins - totalCost;
 
             const inventoryKey = String(product._id);
+            const inventoryMetadata = {
+                productId: String(product._id),
+                systemId: String(system._id),
+                rarity: product.rarity,
+                description: product.description || '',
+                image: product.image || '',
+                price: unitPrice,
+            };
             const existingInventory = (buyerProfile.inventory || []).find(
                 (entry) => entry.inventoryKey === inventoryKey && String(entry.sourceSystem) === String(system._id)
             );
 
             if (existingInventory) {
                 existingInventory.quantity += quantity;
+                existingInventory.name = product.name;
+                existingInventory.type = product.type;
+                existingInventory.metadata = {
+                    ...(existingInventory.metadata || {}),
+                    ...inventoryMetadata,
+                };
             } else {
                 buyerProfile.inventory.push({
                     inventoryKey,
@@ -96,12 +112,10 @@ function registerSystemStoreRoutes(router, deps) {
                     type: product.type,
                     quantity,
                     sourceSystem: system._id,
-                    metadata: {
-                        rarity: product.rarity,
-                        description: product.description || '',
-                    },
+                    metadata: inventoryMetadata,
                 });
             }
+            buyerProfile.markModified?.('inventory');
 
             if (product.stock !== null) {
                 product.stock = Math.max(0, Number(product.stock) - quantity);
@@ -142,6 +156,8 @@ function registerSystemStoreRoutes(router, deps) {
             return res.status(201).json({
                 success: true,
                 message: 'Purchase successful.',
+                wallet: buyerProfile.wallet,
+                inventory: buyerProfile.inventory,
                 purchase: {
                     productId: String(product._id),
                     productName: product.name,

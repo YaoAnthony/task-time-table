@@ -1,14 +1,10 @@
 // icons
 import {
     BarChartOutlined,
-    ShoppingOutlined,
     ShopOutlined,
     UnorderedListOutlined,
-    SettingOutlined,
-    SlidersOutlined,
     PlaySquareOutlined,
     DatabaseOutlined,
-    TeamOutlined,
     HighlightOutlined,
 } from '@ant-design/icons';
 
@@ -23,14 +19,9 @@ export const inventoryTabs: { id: string; label: string }[] = [
 
 export const sidebarItems = [
     { label: '主界面', path: '/dashboard/home', icon: <BarChartOutlined /> },
-    { label: '背包', path: '/dashboard/backpack', icon: <ShoppingOutlined /> },
     { label: '系列任务', path: '/dashboard/tasks', icon: <UnorderedListOutlined /> },
-    { label: '每日任务', path: '/dashboard/daily-quests', icon: <PlaySquareOutlined /> },
     { label: '商城', path: '/dashboard/store', icon: <ShopOutlined /> },
     { label: '挂机培养', path: '/dashboard/idle-game', icon: <PlaySquareOutlined /> },
     { label: '剧情编辑器', path: '/dashboard/storyline-editor', icon: <HighlightOutlined /> },
-    { label: 'NPC 商店', path: '/dashboard/npc-shop', icon: <TeamOutlined /> },
-    { label: '游戏设置', path: '/dashboard/game-settings', icon: <SlidersOutlined /> },
     { label: 'NPC data', path: '/dashboard/npc-data', icon: <DatabaseOutlined /> },
-    { label: '探索法则', path: '/dashboard/setting', icon: <SettingOutlined /> },
 ];

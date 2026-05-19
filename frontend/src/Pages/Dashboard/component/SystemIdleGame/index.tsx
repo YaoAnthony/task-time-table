@@ -52,6 +52,14 @@ import { AudioSettingsModal } from './components/AudioSettingsModal';
 import { HouseContractModal } from './components/HouseContractModal';
 import { StorageChestModal } from './components/StorageChestModal';
 import { StorylineChoiceModal } from './components/StorylineChoiceModal';
+import { BackpackModal } from './components/BackpackModal';
+import { GameSettingsModal } from './components/GameSettingsModal';
+import soundIcon from '../../../../assets/game-ui-icons/sound.svg';
+import shopIcon from '../../../../assets/game-ui-icons/shop.svg';
+import contractIcon from '../../../../assets/game-ui-icons/contract.svg';
+import backpackIcon from '../../../../assets/game-ui-icons/backpack.svg';
+import settingsIcon from '../../../../assets/game-ui-icons/settings.svg';
+import './components/GameHudControls.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
 const SystemIdleGame: React.FC = () => {
@@ -96,6 +104,8 @@ const SystemIdleGame: React.FC = () => {
   const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
   const [gameShopOpen, setGameShopOpen] = useState(false);
   const [houseContractOpen, setHouseContractOpen] = useState(false);
+  const [backpackOpen, setBackpackOpen] = useState(false);
+  const [gameSettingsOpen, setGameSettingsOpen] = useState(false);
   const [storageChestOpenId, setStorageChestOpenId] = useState<string | null>(null);
   /** Closest NPC name to player (refreshed @4Hz) — drives the talk-button label. */
   const [nearbyNpc, setNearbyNpc] = useState<string | null>(null);
@@ -107,6 +117,30 @@ const SystemIdleGame: React.FC = () => {
   }, []);
 
   // ── 存档快捷 ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tagName = target.tagName.toLowerCase();
+      return tagName === 'input'
+        || tagName === 'textarea'
+        || tagName === 'select'
+        || target.isContentEditable;
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey || isEditableTarget(event.target)) return;
+      if (event.key.toLowerCase() !== 'b') return;
+      if (npcChat.chat.open) return;
+      if (audioSettingsOpen || gameShopOpen || houseContractOpen || gameSettingsOpen || storageChestOpenId) return;
+
+      event.preventDefault();
+      setBackpackOpen(open => !open);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [audioSettingsOpen, gameSettingsOpen, gameShopOpen, houseContractOpen, npcChat.chat.open, storageChestOpenId]);
+
   const rawGameSettings = useSelector((s: RootState) => s.game.settings);
   const gameInventory = useSelector((s: RootState) => s.game.gameInventory);
   const backpackSlots = useSelector((s: RootState) => s.game.backpackSlots);
@@ -156,16 +190,29 @@ const SystemIdleGame: React.FC = () => {
     finally { setIsSaving(false); }
   }, [auth.myDisplayName, auth.userId, hotbar.hotbarSlotsRef, multiplay.multiplayRoomIdRef, npcChat.npcInventoriesRef, saveGameSave]);
 
-  const handleAudioSettingsChange = useCallback((patch: Partial<GameSettingsState>) => {
+  const handleGameSettingsChange = useCallback((patch: Partial<GameSettingsState>) => {
     const nextSettings: GameSettingsState = {
       ...gameSettingsRef.current,
       ...patch,
     };
     dispatch(setGameSettings(nextSettings));
-    sceneRef.current?.setAudioVolume?.(nextSettings.audioEnabled ? nextSettings.audioVolume : 0);
-    sceneRef.current?.setMusicVolume?.(nextSettings.musicEnabled ? nextSettings.musicVolume : 0);
+
+    const scene = sceneRef.current;
+    if (typeof patch.timeMinute === 'number') scene?.executeCommand(`/time set ${nextSettings.timeMinute}`);
+    if (patch.weather) scene?.executeCommand(`/weather ${nextSettings.weather}`);
+    if (typeof patch.physicsDebug === 'boolean') scene?.executeCommand(`/debug ${nextSettings.physicsDebug ? 'on' : 'off'}`);
+    if (typeof patch.pathLineEnabled === 'boolean') scene?.executeCommand(`/pathline ${nextSettings.pathLineEnabled ? 'on' : 'off'}`);
+    if (typeof patch.sleepThreshold === 'number') scene?.executeCommand(`/sleep threshold ${nextSettings.sleepThreshold}`);
+    if (typeof patch.agentBrainEnabled === 'boolean') scene?.executeCommand(`/agent brain ${nextSettings.agentBrainEnabled ? 'on' : 'off'}`);
+    if (typeof patch.audioEnabled === 'boolean' || typeof patch.audioVolume === 'number') {
+      scene?.setAudioVolume?.(nextSettings.audioEnabled ? nextSettings.audioVolume : 0);
+    }
+    if (typeof patch.musicEnabled === 'boolean' || typeof patch.musicVolume === 'number') {
+      scene?.setMusicVolume?.(nextSettings.musicEnabled ? nextSettings.musicVolume : 0);
+    }
+
     window.setTimeout(() => {
-      gameBus.emit('game:save_requested', { reason: 'settings:audio' });
+      gameBus.emit('game:save_requested', { reason: 'settings:game' });
     }, 0);
   }, [dispatch]);
 
@@ -377,66 +424,73 @@ const SystemIdleGame: React.FC = () => {
         </button>
       )}
 
-      {/* 宝箱 HUD 指示器 */}
-      {!npcChat.chat.open && !npcChat.dialog.visible && (
-        <div style={{
-          position: 'absolute',
-          top: 128,
-          right: 16,
-          zIndex: 210,
-          display: 'grid',
-          gap: 8,
-        }}>
+      {/* Utility buttons stay available while NPC speech is visible. */}
+      {!npcChat.chat.open && (
+        <div className="idle-game-utility-dock" aria-label="game tools">
           <button
             type="button"
             onClick={() => setAudioSettingsOpen(true)}
-            style={{
-              border: '2px solid var(--px-border)',
-              borderRadius: 6,
-              background: 'var(--px-surface2)',
-              color: 'var(--px-text)',
-              padding: '7px 12px',
-              fontSize: 13,
-              fontFamily: '"Courier New", monospace',
-              fontWeight: 900,
-              cursor: 'pointer',
-            }}
+            title="Audio settings"
+            aria-label="Audio settings"
+            data-active={audioSettingsOpen ? 'true' : undefined}
+            className="idle-game-tool-button idle-game-tool-button--blue"
           >
-            声音
+            <span className="idle-game-tool-icon-shell" aria-hidden="true">
+              <img className="idle-game-tool-icon" src={soundIcon} alt="" draggable={false} />
+            </span>
+            <span className="idle-game-tool-label">声音</span>
           </button>
           <button
             type="button"
             onClick={() => setGameShopOpen(true)}
-            style={{
-              border: '2px solid var(--px-border-gold)',
-              borderRadius: 6,
-              background: 'var(--px-surface2)',
-              color: 'var(--px-gold)',
-              padding: '7px 12px',
-              fontSize: 13,
-              fontFamily: '"Courier New", monospace',
-              fontWeight: 900,
-              cursor: 'pointer',
-            }}
+            title="House shop"
+            aria-label="House shop"
+            data-active={gameShopOpen ? 'true' : undefined}
+            className="idle-game-tool-button idle-game-tool-button--gold"
           >
-            房屋商店
+            <span className="idle-game-tool-icon-shell" aria-hidden="true">
+              <img className="idle-game-tool-icon" src={shopIcon} alt="" draggable={false} />
+            </span>
+            <span className="idle-game-tool-label">房屋商店</span>
           </button>
           <button
             type="button"
             onClick={() => setHouseContractOpen(true)}
-            style={{
-              border: '2px solid var(--px-border)',
-              borderRadius: 6,
-              background: 'var(--px-surface2)',
-              color: 'var(--px-text)',
-              padding: '7px 12px',
-              fontSize: 13,
-              fontFamily: '"Courier New", monospace',
-              fontWeight: 900,
-              cursor: 'pointer',
-            }}
+            title="House contract"
+            aria-label="House contract"
+            data-active={houseContractOpen ? 'true' : undefined}
+            className="idle-game-tool-button idle-game-tool-button--green"
           >
-            房屋合同
+            <span className="idle-game-tool-icon-shell" aria-hidden="true">
+              <img className="idle-game-tool-icon" src={contractIcon} alt="" draggable={false} />
+            </span>
+            <span className="idle-game-tool-label">房屋合同</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBackpackOpen(true)}
+            title="Backpack, shortcut B"
+            aria-label="Backpack, shortcut B"
+            data-active={backpackOpen ? 'true' : undefined}
+            className="idle-game-tool-button idle-game-tool-button--violet"
+          >
+            <span className="idle-game-tool-icon-shell" aria-hidden="true">
+              <img className="idle-game-tool-icon" src={backpackIcon} alt="" draggable={false} />
+            </span>
+            <span className="idle-game-tool-label">背包 (B)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setGameSettingsOpen(true)}
+            title="Game settings"
+            aria-label="Game settings"
+            data-active={gameSettingsOpen ? 'true' : undefined}
+            className="idle-game-tool-button idle-game-tool-button--slate"
+          >
+            <span className="idle-game-tool-icon-shell" aria-hidden="true">
+              <img className="idle-game-tool-icon" src={settingsIcon} alt="" draggable={false} />
+            </span>
+            <span className="idle-game-tool-label">游戏设置</span>
           </button>
         </div>
       )}
@@ -556,8 +610,15 @@ const SystemIdleGame: React.FC = () => {
       <AudioSettingsModal
         open={audioSettingsOpen}
         settings={gameSettings}
-        onChange={handleAudioSettingsChange}
+        onChange={handleGameSettingsChange}
         onClose={() => setAudioSettingsOpen(false)}
+      />
+
+      <GameSettingsModal
+        open={gameSettingsOpen}
+        settings={gameSettings}
+        onChange={handleGameSettingsChange}
+        onClose={() => setGameSettingsOpen(false)}
       />
 
       <GameShopModal
@@ -581,6 +642,11 @@ const SystemIdleGame: React.FC = () => {
         roomId={multiplay.multiplayRoomId}
         sceneRef={sceneRef}
         onClose={() => setHouseContractOpen(false)}
+      />
+
+      <BackpackModal
+        open={backpackOpen}
+        onClose={() => setBackpackOpen(false)}
       />
 
       {npcChat.storylineChoice && (

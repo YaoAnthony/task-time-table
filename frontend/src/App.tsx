@@ -14,10 +14,7 @@ const Dashboard = lazy(() => import('./Pages/Dashboard'));
 
 
 const Overview = lazy(() => import('./Pages/Dashboard/component/Overview'));
-const Backpack = lazy(() => import('./Pages/Dashboard/component/Backpack'));
 const Setting = lazy(() => import('./Pages/Dashboard/component/Setting'));
-const GameSettings = lazy(() => import('./Pages/Dashboard/component/GameSettings'));
-const GameNpcShop = lazy(() => import('./Pages/Dashboard/component/GameNpcShop'));
 const NPCData = lazy(() => import('./Pages/Dashboard/component/NPCData'));
 const Tasks = lazy(() => import('./Pages/Dashboard/component/Tasks'));
 const Store = lazy(() => import('./Pages/Dashboard/component/Store'));
@@ -28,7 +25,6 @@ const SystemTasks = lazy(() => import('./Pages/Dashboard/component/SystemTasks')
 const SystemLottery = lazy(() => import('./Pages/Dashboard/component/SystemLottery'));
 const SystemIdleGame = lazy(() => import('./Pages/Dashboard/component/SystemIdleGame'));
 const StorylineEditor = lazy(() => import('./Pages/Dashboard/component/StorylineEditor'));
-const DailyQuests = lazy(() => import('./Pages/Dashboard/component/DailyQuests'));
 
 
 const LoginRegisterPage = lazy(() => import('./Features/Authentication/pages/LoginRegisterPage'));
@@ -77,13 +73,11 @@ const App = () => {
                     <Route path="/dashboard" element={<Dashboard />} >
                         <Route index element={<Navigate to="home" />} />
                         <Route path="home" element={<Overview />} />
-                        <Route path="backpack" element={<Backpack />} />
                         <Route path="tasks" element={<Tasks />} />
-                        <Route path="daily-quests" element={<DailyQuests />} />
+                        <Route path="daily-quests" element={<Navigate to="/dashboard/home" replace />} />
                         <Route path="store" element={<Store />} />
                         <Route path="setting" element={<Setting />} />
-                        <Route path="game-settings" element={<GameSettings />} />
-                        <Route path="npc-shop" element={<GameNpcShop />} />
+                        <Route path="game-settings" element={<Navigate to="/dashboard/idle-game" replace />} />
                         <Route path="npc-data" element={<NPCData />} />
                         <Route path="idle-game" element={<SystemIdleGame />} />
                         <Route path="storyline-editor" element={<StorylineEditor />} />

@@ -20,6 +20,8 @@ import {
     useFailMemberTaskMutation,
     useRestartMemberTaskMutation,
 } from '../../../../api/systemRtkApi';
+import { getMemberSystems, isOwnedSystem } from '../../utils/systemRelationship';
+import '../pixelDashboard.css';
 
 const Tasks: React.FC = () => {
     const dispatch = useDispatch();
@@ -34,9 +36,15 @@ const Tasks: React.FC = () => {
     const profile = useSelector((state: RootState) => state.profile.profile);
     const accessToken = useSelector((state: RootState) => state.user.accessToken);
 
-    const ownSystems = useMemo(() => allSystems.filter((system) => system.profile === profile?._id), [allSystems, profile?._id]);
-    const joinedSystems = useMemo(() => allSystems.filter((system) => system.profile !== profile?._id), [allSystems, profile?._id]);
-    const systems = useMemo(() => [...ownSystems, ...joinedSystems], [ownSystems, joinedSystems]);
+    const systems = useMemo(() => getMemberSystems(allSystems, profile?._id), [allSystems, profile?._id]);
+    const ownSystems = useMemo(
+        () => systems.filter((system) => isOwnedSystem(system, profile?._id)),
+        [systems, profile?._id]
+    );
+    const joinedSystems = useMemo(
+        () => systems.filter((system) => !isOwnedSystem(system, profile?._id)),
+        [systems, profile?._id]
+    );
 
     const selectedSystem = useMemo(() => {
         if (!systems.length) return null;
@@ -123,9 +131,9 @@ const Tasks: React.FC = () => {
         try {
             const result = await completeMemberTask({ systemId: selectedSystem._id, missionListId, nodeId }).unwrap();
             const hasChestReward = (result?.rewards?.coins || 0) > 0 || (result?.rewards?.items?.length || 0) > 0;
-            message.success(`节点已完成：${title}${hasChestReward ? '，奖励已收入囊中！' : ''}`);
+            message.success(`节点已完成：${title}${hasChestReward ? '，奖励已发送到游戏内，请前往领取' : ''}`);
             if (result?.mergeBonus?.coins || (result?.mergeBonus?.experience?.length || 0) > 0) {
-                message.success(`合流奖励已触发，获得 ${result.mergeBonus?.coins || 0} 金币${result.mergeBonus?.tier === 'boss' ? '，并解锁一个 Boss 节点。' : '。'}`);
+                message.success(`合流奖励已触发，奖励已发送到游戏内，请前往领取${result.mergeBonus?.tier === 'boss' ? '，并解锁一个 Boss 节点。' : '。'}`);
             }
             if (result?.unlockedMergeNodes?.length) {
                 const unlockedTitles = result.unlockedMergeNodes.map((node) => node.title).join('、');
@@ -185,7 +193,7 @@ const Tasks: React.FC = () => {
         }
     }, [targetSystemId, systems, selectedSystemId, dispatch]);
 
-    const isOwner = selectedSystem?.profile === profile?._id;
+    const isOwner = selectedSystem ? isOwnedSystem(selectedSystem, profile?._id) : false;
     const missionLists = useMemo(() => taskCenterData?.missionLists || [], [taskCenterData?.missionLists]);
 
     useEffect(() => {
@@ -214,7 +222,7 @@ const Tasks: React.FC = () => {
 
     if (!systems.length) {
         return (
-            <section className="w-full h-[85vh] flex flex-col rounded-3xl border border-white/60 dark:border-white/10 bg-white/40 dark:bg-black/40 shadow-[inset_2px_2px_5px_rgba(255,255,255,0.8),_0_8px_32px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_15px_rgba(255,255,255,0.02),_0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl overflow-hidden text-neutral-800 dark:text-white font-sans select-none transition-colors duration-300 p-8">
+            <section className="pixel-page-shell w-full h-[85vh] flex flex-col overflow-hidden select-none p-8">
                 <div className="flex flex-col items-center justify-center h-full text-neutral-400 dark:text-white/40">
                     <FaTasks className="text-7xl mb-6 opacity-40 drop-shadow-md" />
                     <p className="text-2xl font-black tracking-widest mb-2">你还没有可用系统</p>
@@ -225,22 +233,16 @@ const Tasks: React.FC = () => {
     }
 
     return (
-        <section className="w-full h-[85vh] flex flex-col rounded-3xl border border-white/60 dark:border-white/10 bg-white/40 dark:bg-black/40 shadow-[inset_2px_2px_5px_rgba(255,255,255,0.8),_0_8px_32px_rgba(0,0,0,0.05)] dark:shadow-[inset_0_0_15px_rgba(255,255,255,0.02),_0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl overflow-hidden text-neutral-800 dark:text-white font-sans select-none transition-colors duration-300 relative">
-            <div className="absolute inset-0 pointer-events-none opacity-40 dark:opacity-20 flex justify-end items-start p-20 z-0">
-                <div className="w-96 h-96 bg-blue-300 dark:bg-blue-600 rounded-full blur-[100px] mix-blend-multiply dark:mix-blend-screen" />
-            </div>
-
-            <div className="px-8 py-6 border-b border-black/5 dark:border-white/10 bg-gradient-to-r from-white/50 dark:from-white/5 to-transparent relative z-10 overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-blue-400/20 dark:bg-[#FFC72C]/10 rounded-full blur-3xl -translate-y-1/2 pointer-events-none" />
-
+        <section className="pixel-page-shell w-full h-[85vh] flex flex-col overflow-hidden select-none relative">
+            <div className="pixel-page-header px-8 py-6 relative z-10 overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                        <div className="p-3 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl shadow-[0_5px_15px_rgba(59,130,246,0.4)] text-white">
+                        <div className="pixel-icon-tile p-3">
                             <FaGamepad className="text-3xl drop-shadow-md" />
                         </div>
                         <div>
-                            <h1 className="text-3xl font-extrabold tracking-widest drop-shadow-sm dark:drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] text-neutral-800 dark:text-white">任务中心</h1>
-                            <p className="text-sm font-bold text-neutral-500 dark:text-white/60 tracking-widest uppercase mt-1">Mission Control Board</p>
+                            <h1 className="pixel-page-title text-3xl font-extrabold">任务中心</h1>
+                            <p className="pixel-page-subtitle text-sm font-bold uppercase mt-1">Mission Control Board</p>
                         </div>
                     </div>
 
@@ -249,7 +251,7 @@ const Tasks: React.FC = () => {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => navigate(`/dashboard/system/${selectedSystem._id}`)}
-                            className="px-6 py-2.5 bg-gradient-to-r from-neutral-800 to-black hover:from-neutral-700 dark:from-[#FFC72C] dark:to-orange-400 text-white dark:text-black rounded-xl text-sm font-black tracking-widest shadow-[0_5px_15px_rgba(0,0,0,0.2)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] transition-all border border-black/10 dark:border-transparent flex items-center gap-2"
+                            className="pixel-button pixel-button-primary px-6 py-2.5 text-sm font-black tracking-widest transition-all flex items-center gap-2"
                         >
                             <FaCogs className="text-xs" />
                             前往系统管理
@@ -262,10 +264,10 @@ const Tasks: React.FC = () => {
                         <button
                             key={system._id}
                             onClick={() => dispatch(setSelectedSystemId(system._id))}
-                            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
+                            className={`pixel-button px-4 py-2 text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
                                 selectedSystem?._id === system._id
-                                    ? 'text-white dark:text-black bg-neutral-800 dark:bg-[#FFC72C] shadow-[0_4px_10px_rgba(0,0,0,0.2)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] border border-neutral-700 dark:border-transparent'
-                                    : 'text-neutral-500 dark:text-white/60 bg-white/60 dark:bg-white/5 border border-white/80 dark:border-white/15 hover:border-neutral-300 dark:hover:border-white/40 hover:bg-white dark:hover:bg-white/10'
+                                    ? 'pixel-button-primary'
+                                    : ''
                             }`}
                         >
                             <span className="relative z-10">{system.name}</span>
@@ -287,10 +289,10 @@ const Tasks: React.FC = () => {
                         <button
                             key={system._id}
                             onClick={() => dispatch(setSelectedSystemId(system._id))}
-                            className={`px-4 py-2 rounded-xl text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
+                            className={`pixel-button px-4 py-2 text-xs md:text-sm font-black tracking-widest transition-all duration-300 relative overflow-hidden ${
                                 selectedSystem?._id === system._id
-                                    ? 'text-white dark:text-black bg-neutral-800 dark:bg-[#FFC72C] shadow-[0_4px_10px_rgba(0,0,0,0.2)] dark:shadow-[0_0_15px_rgba(255,199,44,0.4)] border border-neutral-700 dark:border-transparent'
-                                    : 'text-neutral-500 dark:text-white/60 bg-white/60 dark:bg-white/5 border border-white/80 dark:border-white/15 hover:border-neutral-300 dark:hover:border-white/40 hover:bg-white dark:hover:bg-white/10'
+                                    ? 'pixel-button-primary'
+                                    : ''
                             }`}
                         >
                             <span className="relative z-10">{system.name}</span>
@@ -304,7 +306,7 @@ const Tasks: React.FC = () => {
 
             <div className="flex-1 overflow-hidden p-4 md:p-8 relative z-10 flex flex-col md:flex-row gap-6">
                 {!selectedSystem?.modules?.taskChain ? (
-                    <div className="w-full h-full flex items-center justify-center text-neutral-400 dark:text-white/35">
+                    <div className="pixel-empty w-full h-full flex items-center justify-center">
                         <div className="text-center">
                             <FaTasks className="text-7xl mb-6 opacity-30 drop-shadow-md mx-auto" />
                             <p className="text-2xl font-black tracking-widest mb-2">任务链模块未开启</p>
@@ -312,14 +314,14 @@ const Tasks: React.FC = () => {
                         </div>
                     </div>
                 ) : isFetching && missionLists.length === 0 ? (
-                    <div className="w-full h-full flex items-center justify-center text-neutral-400 dark:text-white/35">
+                    <div className="pixel-empty w-full h-full flex items-center justify-center">
                         <div className="text-center animate-pulse">
                             <FaTasks className="text-7xl mb-6 opacity-20 drop-shadow-md mx-auto transition-all" />
                             <p className="text-2xl font-black tracking-widest mb-2">任务同步中...</p>
                         </div>
                     </div>
                 ) : missionLists.length === 0 ? (
-                    <div className="w-full h-full flex items-center justify-center text-neutral-400 dark:text-white/35">
+                    <div className="pixel-empty w-full h-full flex items-center justify-center">
                         <div className="text-center">
                             <FaTasks className="text-7xl mb-6 opacity-30 drop-shadow-md mx-auto" />
                             <p className="text-2xl font-black tracking-widest mb-2">暂无任务列表</p>
@@ -336,12 +338,12 @@ const Tasks: React.FC = () => {
                                     <button
                                         key={list._id}
                                         onClick={() => setSelectedMissionId(list._id)}
-                                        className={`w-full text-left relative overflow-hidden rounded-xl border transition-all duration-300 py-4 px-5 group ${
+                                        className={`pixel-card w-full text-left relative overflow-hidden transition-all duration-300 py-4 px-5 group ${
                                             isSelected
                                                 ? (isUrgent
-                                                    ? 'bg-red-50 dark:bg-red-950/40 border-red-300 dark:border-red-800 shadow-[inset_2px_2px_5px_rgba(255,255,255,0.7),_0_4px_10px_rgba(0,0,0,0.05)] text-red-900 dark:text-red-100'
-                                                    : 'bg-white dark:bg-neutral-800 border-amber-300 dark:border-amber-600 shadow-[inset_2px_2px_5px_rgba(255,255,255,0.7),_0_4px_10px_rgba(0,0,0,0.05)] text-neutral-900 dark:text-white')
-                                                : 'bg-white/40 dark:bg-black/20 border-white/50 dark:border-white/5 hover:bg-white/70 dark:hover:bg-white/5 text-neutral-600 dark:text-neutral-400'
+                                                    ? 'pixel-card-selected pixel-card-urgent text-red-900 dark:text-red-100'
+                                                    : 'pixel-card-selected text-neutral-900 dark:text-white')
+                                                : 'text-neutral-700 dark:text-neutral-200'
                                         }`}
                                     >
                                         {isSelected && (
@@ -349,13 +351,13 @@ const Tasks: React.FC = () => {
                                         )}
                                         <div className="flex items-center gap-3 relative z-10">
                                             {list.image ? (
-                                                <div className={`w-9 h-9 rounded-lg overflow-hidden border flex-shrink-0 shadow-sm ${
+                                                <div className={`pixel-item-frame w-9 h-9 overflow-hidden flex-shrink-0 ${
                                                     isUrgent ? 'border-red-300 dark:border-red-700/50' : 'border-amber-300 dark:border-amber-700/50'
                                                 }`}>
                                                     <img src={list.image} alt={list.title} className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
-                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center border shadow-sm flex-shrink-0 ${
+                                                <div className={`pixel-item-frame w-9 h-9 flex items-center justify-center flex-shrink-0 ${
                                                     isUrgent ? 'bg-red-100 dark:bg-red-900/50 text-red-500 border-red-200 dark:border-red-800' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-500 border-amber-200 dark:border-amber-800'
                                                 }`}>
                                                     <span className="text-xs font-black">!</span>

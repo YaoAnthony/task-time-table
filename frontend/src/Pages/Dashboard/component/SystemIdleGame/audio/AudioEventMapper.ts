@@ -17,6 +17,10 @@ export class AudioEventMapper {
       gameBus.on('game:house_place_requested', () => {
         this.audio.playSfx('sfx.place_house');
       }),
+      gameBus.on('chest:interact', ({ rewards }) => {
+        if (Number(rewards?.coins ?? 0) <= 0) return;
+        this.audio.playSfx('sfx.open_chest');
+      }),
       gameBus.on('world:action_applied', ({ action, result }) => {
         if (!result.ok) return;
         if (action.type === 'PICKUP_DROP' || action.type === 'DROP_ITEM' || action.type === 'PLACE_OBJECT') {

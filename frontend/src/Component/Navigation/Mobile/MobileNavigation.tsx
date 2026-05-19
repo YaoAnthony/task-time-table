@@ -20,7 +20,6 @@ import { CloseOutlined } from '@ant-design/icons';
 import { MdInsertChartOutlined } from "react-icons/md";
 import { 
     AiOutlineCoffee,
-    AiOutlineShoppingCart,
     AiOutlineUnorderedList,
     AiOutlineShop,
     AiOutlineSetting,
@@ -34,10 +33,9 @@ import { User } from '../../../Types/User';
 
 const userNav = [
     { name: "主界面", icon: <MdInsertChartOutlined />, url: "/dashboard/home" },
-    { name: "背包", icon: <AiOutlineShoppingCart />, url: "/dashboard/backpack" },
     { name: "任务", icon: <AiOutlineUnorderedList />, url: "/dashboard/tasks" },
     { name: "商城", icon: <AiOutlineShop />, url: "/dashboard/store" },
-    { name: "Setting", icon: <AiOutlineSetting />, url: "/dashboard/setting" },
+    { name: "系统管理", icon: <AiOutlineSetting />, url: "/dashboard/setting" },
 ];
 
 

@@ -13,6 +13,39 @@ function createSystemDomainService(deps) {
     const normalizeNodeId = (value) => String(value || '').trim();
     const normalizeItemKey = (value) => String(value || '').trim();
 
+    const isMissingSubdocumentId = (value) => {
+        const id = value?._id;
+        return id === undefined || id === null || String(id) === '' || String(id) === 'undefined';
+    };
+
+    const ensureMissionListIdentity = (missionList) => {
+        if (!missionList || !isMissingSubdocumentId(missionList)) return false;
+        missionList._id = objectIds.createObjectId();
+        return true;
+    };
+
+    const ensureMissionListIdentities = (system) => {
+        let changed = false;
+        if (!Array.isArray(system.missionLists)) {
+            system.missionLists = [];
+            return true;
+        }
+        for (const missionList of system.missionLists) {
+            changed = ensureMissionListIdentity(missionList) || changed;
+        }
+        return changed;
+    };
+
+    const ensureMemberTaskState = (member) => {
+        if (!member) return null;
+        if (!Array.isArray(member.acceptedMissionLists)) member.acceptedMissionLists = [];
+        if (!Array.isArray(member.taskCompletions)) member.taskCompletions = [];
+        if (!Array.isArray(member.taskHistory)) member.taskHistory = [];
+        if (!Array.isArray(member.dailyQuestStatus)) member.dailyQuestStatus = [];
+        if (member.activeTask === undefined) member.activeTask = null;
+        return member;
+    };
+
     const ensureProfile = async (userId) => {
         const user = await User.findById(userId);
         if (!user) {
@@ -52,6 +85,9 @@ function createSystemDomainService(deps) {
         if (!system) {
             return { error: 'System not found.', status: 404 };
         }
+        if (ensureMissionListIdentities(system)) {
+            await system.save();
+        }
 
         return { system, profile };
     };
@@ -77,12 +113,30 @@ function createSystemDomainService(deps) {
         if (!isOwner && !isMember) {
             return { error: 'You are not a member of this system.', status: 403 };
         }
+        if (ensureMissionListIdentities(system)) {
+            await system.save();
+        }
 
         return { system, profile, isOwner };
     };
 
     const findMissionListById = (system, missionListId) => {
-        const list = system.missionLists.id(missionListId);
+        const normalizedMissionListId = String(missionListId || '').trim();
+        if (normalizedMissionListId === 'undefined' || normalizedMissionListId === '') {
+            const legacyMatches = (system.missionLists || []).filter((missionList) => isMissingSubdocumentId(missionList));
+            if (legacyMatches.length === 1) {
+                ensureMissionListIdentity(legacyMatches[0]);
+                return { list: legacyMatches[0], repaired: true };
+            }
+        }
+
+        ensureMissionListIdentities(system);
+        const list = typeof system.missionLists?.id === 'function'
+            ? system.missionLists.id(normalizedMissionListId)
+            : (system.missionLists || []).find((missionList) => String(missionList?._id) === normalizedMissionListId);
+        if (!list && normalizedMissionListId === 'undefined' && (system.missionLists || []).length === 1) {
+            return { list: system.missionLists[0], repaired: true };
+        }
         if (!list) {
             return { error: 'Mission list not found.', status: 404 };
         }
@@ -229,7 +283,8 @@ function createSystemDomainService(deps) {
     };
 
     const findMemberByUserId = (system, userId) => {
-        return system.members.find((member) => String(member.user) === String(userId)) || null;
+        const member = system.members.find((entry) => String(entry.user) === String(userId)) || null;
+        return ensureMemberTaskState(member);
     };
 
     const findMemberMissionListState = (member, missionListId) => {

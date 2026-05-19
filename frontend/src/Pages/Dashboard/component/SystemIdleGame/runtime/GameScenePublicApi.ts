@@ -3,7 +3,7 @@ import type { FacingDirection, GameChest, IdleGameState } from '../../../../../T
 import type { DropItem } from '../entities/DropItem';
 import type { TreeView } from '../entities/TreeView';
 import type { GameSaveV1 } from '../persistence/save/GameSaveTypes';
-import { idleGameStateFromGameSave } from '../persistence/save/GameSaveMapper';
+import { idleGameStateFromGameSave, normalizeGameSave } from '../persistence/save/GameSaveMapper';
 import { gameBus } from '../shared/EventBus';
 import { serializeNpcKnowledgeForPrompt } from '../shared/NpcKnowledge';
 import { PLAYER_HOUSE_DOOR, PLAYER_HOUSE_ROOM } from '../shared/WorldLocations';
@@ -13,6 +13,7 @@ import { formatPerceptionForNpcPrompt } from '../systems/perceptionFormatter';
 import type { GameSaveBuildContext } from '../systems/SavingSystem';
 import type { WorldSyncSource } from '../sync/syncPolicy';
 import type { Interactable, NpcMemoryEntry, ToolType } from '../types';
+import { resolveSafeChestPlacement, type ReservedChestPosition } from '../world/chestPlacement';
 
 export function triggerInteract(scene: any, initialValue: string = '') : void {
     if (!scene.player) return;
@@ -92,20 +93,23 @@ export function getGameState(scene: any) : IdleGameState {
 }
 
 export function setInitialGameSave(scene: any, save: GameSaveV1 | null, userId = 'player') : void {
+    const normalizedSave = save ? normalizeGameSave(save, { userId }) : null;
     scene.activeUserId = userId;
-    scene.initialGameSave = save;
-    if (save) {
+    scene.initialGameSave = normalizedSave;
+    if (normalizedSave) {
       scene.initialState = {
         ...scene.initialState,
-        ...idleGameStateFromGameSave(save, userId),
+        ...idleGameStateFromGameSave(normalizedSave, userId),
       };
     }
   
 }
 
 export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = 'player') : void {
-    scene.setInitialGameSave(save, userId);
-    if (!save) return;
+    const normalizedSave = save ? normalizeGameSave(save, { userId }) : null;
+    scene.setInitialGameSave(normalizedSave, userId);
+    if (!normalizedSave) return;
+    save = normalizedSave;
 
     const restoredState = idleGameStateFromGameSave(save, userId);
     const playerSave = save.players[userId] ?? Object.values(save.players)[0];
@@ -124,12 +128,20 @@ export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = '
     scene.houseSaveAdapter?.loadFromGameSave(save);
     scene.storageChestSystem?.loadFromGameSave(save);
     scene.locationSystem?.restoreSavedLocations?.(save, userId);
-    scene.loadChests(save.worldStatus.entities.chests.filter((chest) => !chest.opened));
-    scene.farmSystem?.loadFromBackend?.(save.worldStatus.entities.farmTiles);
-    if (save.worldStatus.entities.creatures.length) {
-      scene.restoreCreatures(save.worldStatus.entities.creatures);
+    const entities = save.worldStatus?.entities;
+    const chests: GameChest[] = (Array.isArray(entities?.chests) ? entities.chests : []).filter((chest) => !chest.opened);
+    const farmTiles = Array.isArray(entities?.farmTiles) ? entities.farmTiles : [];
+    const creatures: CreatureState[] = Array.isArray(entities?.creatures) ? entities.creatures : [];
+    const npcs: GameSaveV1['worldStatus']['npcs'] = save.worldStatus?.npcs && typeof save.worldStatus.npcs === 'object'
+      ? save.worldStatus.npcs
+      : {};
+
+    scene.loadChests(chests);
+    scene.farmSystem?.loadFromBackend?.(farmTiles);
+    if (creatures.length) {
+      scene.restoreCreatures(creatures);
     }
-    Object.values(save.worldStatus.npcs).forEach((npcSave) => {
+    Object.values(npcs).forEach((npcSave) => {
       if (npcSave.memory?.length) scene.loadNpcMemories(npcSave.name || npcSave.id, npcSave.memory);
     });
   
@@ -137,17 +149,18 @@ export function loadGameSaveData(scene: any, save: GameSaveV1 | null, userId = '
 
 export function syncEventSaveData(scene: any, save: GameSaveV1 | null) : void {
     if (!save) return;
+    const normalizedSave = normalizeGameSave(save, { userId: scene.activeUserId ?? 'player' });
     console.log('[DEBUG-event-flow] syncEventSaveData called', {
       sceneReady: Boolean(scene.eventSystem),
-      roomId: save.worldStatus?.roomId,
-      gameTick: save.worldStatus?.gameTick,
-      queuedEvents: save.worldStatus?.events?.queued,
-      activeEvents: save.worldStatus?.events?.active,
-      unlockedNpcs: save.worldStatus?.unlockedNpcs,
+      roomId: normalizedSave.worldStatus.roomId,
+      gameTick: normalizedSave.worldStatus.gameTick,
+      queuedEvents: normalizedSave.worldStatus.events.queued,
+      activeEvents: normalizedSave.worldStatus.events.active,
+      unlockedNpcs: normalizedSave.worldStatus.unlockedNpcs,
     });
-    scene.initialGameSave = save;
-    scene.eventSystem?.importSaveData?.(save.worldStatus.events, save.worldStatus.unlockedNpcs);
-    scene.houseSaveAdapter?.loadFromGameSave(save);
+    scene.initialGameSave = normalizedSave;
+    scene.eventSystem?.importSaveData?.(normalizedSave.worldStatus.events, normalizedSave.worldStatus.unlockedNpcs);
+    scene.houseSaveAdapter?.loadFromGameSave(normalizedSave);
 
 }
 
@@ -300,19 +313,26 @@ export function _triggerQDrop(scene: any) : void {
 
 export function loadChests(scene: any, chests: GameChest[]) : void {
     const unopenedChests = chests.filter((chest) => !chest.opened);
-    const nextIds = new Set(unopenedChests.map((chest) => chest.id));
+    const reserved: ReservedChestPosition[] = [];
+    const safeChests = unopenedChests.map((chest) => {
+      const safeChest = resolveSafeChestPlacement(scene, chest, { reserved });
+      reserved.push({ id: safeChest.id, x: safeChest.x, y: safeChest.y });
+      return safeChest;
+    });
+    const nextIds = new Set(safeChests.map((chest) => chest.id));
     for (const chestId of scene.chests.keys()) {
       if (!nextIds.has(chestId)) scene.lightingSystem?.removeStaticLight(`chest:${chestId}`);
     }
-    scene.renderSyncSystem.loadChests(unopenedChests);
-    unopenedChests.forEach((chest) => scene.registerChestLight(chest));
+    scene.renderSyncSystem.loadChests(safeChests);
+    safeChests.forEach((chest) => scene.registerChestLight(chest));
   
 }
 
 export function addChest(scene: any, data: GameChest) : void {
     if (data.opened) return;
-    scene.renderSyncSystem.addChest(data);
-    scene.registerChestLight(data);
+    const safeChest = resolveSafeChestPlacement(scene, data);
+    scene.renderSyncSystem.addChest(safeChest);
+    scene.registerChestLight(safeChest);
   
 }
 

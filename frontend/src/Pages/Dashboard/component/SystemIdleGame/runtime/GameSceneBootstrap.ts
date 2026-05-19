@@ -125,7 +125,7 @@ export function createGameScene(scene: any): void {
     const npcDefinitions = getNpcDefinitionsForSave(scene.initialGameSave);
     const [primaryNpcDefinition = GAME_NPC_CATALOG[0], ...extraNpcDefinitions] = npcDefinitions;
     const spawnNpcFromDefinition = (definition: GameNpcDefinition) => {
-      const saved = scene.initialGameSave?.worldStatus.npcs?.[definition.name];
+      const saved = scene.initialGameSave?.worldStatus?.npcs?.[definition.name];
       const x = saved?.position?.x ?? definition.spawn.x;
       const y = saved?.position?.y ?? definition.spawn.y;
       const npc = new Npc(scene, x, y, definition.name);
@@ -381,10 +381,6 @@ export function createGameScene(scene: any): void {
     // Gossip when one NPC speaks, nearby NPCs can chime in (canned reactions, no GPT).
 
 
-    // Tool pickups inside the house
-    // House-1 interior: x:112 68, y:112 56 (cols 1-8, rows 1-4)
-    // Place tools on a shelf row near the back wall (row 2)
-
     // Chickens + Nests (created after pathfinder is ready)
 
     // Farm tile sensors (passthrough overlap for proximity detection)
@@ -415,7 +411,6 @@ export function createGameScene(scene: any): void {
       updateNests: (playerX, playerY, timeMs) => scene.updateNests(playerX, playerY, timeMs),
     });
     scene.objectSystem.init({
-      spawnToolPickups: () => scene.spawnToolPickups(),
       createChickens: () => scene.createChickens(),
       registerFarmSensors: (playerSprite: any) => scene.farmSystem.registerPlayerSensors(playerSprite),
       spawnBeds: () => scene._spawnBeds(),

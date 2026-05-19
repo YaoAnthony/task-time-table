@@ -132,8 +132,8 @@ const SystemTasks: React.FC = () => {
         if (!systemId) return;
         try {
             const result = await completeMemberTask({ systemId, missionListId, nodeId }).unwrap();
-            const rewardCoins = result?.rewards?.coins || 0;
-            message.success(`任务完成：${title}${rewardCoins > 0 ? `，获得 ${rewardCoins} 金币` : ''}`);
+            const hasChestReward = (result?.rewards?.coins || 0) > 0 || (result?.rewards?.items?.length || 0) > 0;
+            message.success(`任务完成：${title}${hasChestReward ? '，奖励已发送到游戏内，请前往领取' : ''}`);
             refetch();
         } catch (error) {
             const err = error as { data?: { message?: string } };

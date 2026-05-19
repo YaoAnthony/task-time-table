@@ -208,7 +208,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
 
             member.acceptedMissionLists.push({
                 missionListId: missionList._id,
-                acceptedAt: new Date(),
+                acceptedAt: new Date().toISOString(),
                 hasFailed: false,
                 completedAt: null,
             });
@@ -218,7 +218,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
                 missionListId: missionList._id,
                 nodeId: null,
                 taskTitle: missionList.title,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
             });
 
             await system.save();
@@ -285,7 +285,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
             member.activeTask = {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
-                startedAt: new Date(),
+                startedAt: new Date().toISOString(),
             };
 
             member.taskHistory.push({
@@ -293,7 +293,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
                 taskTitle: node.title,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
             });
 
             await system.save();
@@ -435,7 +435,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
             member.taskCompletions.push({
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
-                completedAt: new Date(),
+                completedAt: new Date().toISOString(),
                 rewards: finalRewards,
             });
 
@@ -444,7 +444,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
                 taskTitle: node.title,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
                 rewards: finalRewards,
             });
 
@@ -459,7 +459,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
             );
             const allCompleted = allNodeIds.length > 0 && allNodeIds.every((id) => completedNodeIds.has(id));
             if (listState && allCompleted) {
-                listState.completedAt = new Date();
+                listState.completedAt = new Date().toISOString();
             }
 
             const unlockedMergeNodes = (missionList.taskTree || [])
@@ -556,7 +556,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
                 taskTitle: node.title,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
             });
 
             await system.save();
@@ -619,7 +619,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
             member.activeTask = {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
-                startedAt: new Date(),
+                startedAt: new Date().toISOString(),
             };
 
             member.taskHistory.push({
@@ -627,7 +627,7 @@ function registerSystemMemberTaskRoutes(router, deps) {
                 missionListId: missionList._id,
                 nodeId: node.nodeId,
                 taskTitle: `${node.title} (重开)`,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
             });
 
             await system.save();

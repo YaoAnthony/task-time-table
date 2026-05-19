@@ -12,6 +12,7 @@ import { clearSystemState, setSelectedSystemId, type SystemLite } from '../../..
 import { clearProfileState } from '../../../../Redux/Features/profileStateSlice';
 import { useLogoutMutation } from '../../../../api/authApi';
 import { useCreateSystemMutation, useLazyGetSystemListQuery, useLazySearchSystemQuery, useJoinSystemMutation } from '../../../../api/systemRtkApi';
+import { getMemberSystems, getOwnedSystems, isOwnedSystem } from '../../utils/systemRelationship';
 
 type CreateSystemForm = {
     name: string;
@@ -62,11 +63,13 @@ const Setting: React.FC = () => {
     }, [triggerGetSystemList]);
 
     const filteredOwnSystems = useMemo(() =>
-        systems.filter(s => s.profile === profile?._id && s.name.toLowerCase().includes(searchQuery.toLowerCase())),
+        getOwnedSystems(systems, profile?._id).filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())),
         [systems, profile?._id, searchQuery]
     );
     const filteredJoinedSystems = useMemo(() =>
-        systems.filter(s => s.profile !== profile?._id && s.name.toLowerCase().includes(searchQuery.toLowerCase())),
+        getMemberSystems(systems, profile?._id)
+            .filter(s => !isOwnedSystem(s, profile?._id))
+            .filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase())),
         [systems, profile?._id, searchQuery]
     );
 
@@ -611,7 +614,7 @@ const Setting: React.FC = () => {
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                     disabled={isCreatingSystem}
-                                    className="w-full bg-blue-600 dark:bg-[#FFC72C] hover:bg-blue-500 dark:hover:bg-white text-white dark:text-black py-4 font-black tracking-[0.3em] transition-all disabled:opacity-50 relative overflow-hidden group uppercase"
+                                    className="w-full bg-blue-600 dark:bg-[#FFC72C] hover:bg-blue-500 dark:hover:bg-white text-black py-4 font-black tracking-[0.3em] transition-all disabled:opacity-50 relative overflow-hidden group uppercase"
                                     style={{ clipPath: 'polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px)' }}
                                 >
                                     <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]" />

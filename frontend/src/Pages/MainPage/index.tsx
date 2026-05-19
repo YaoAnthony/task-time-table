@@ -144,7 +144,7 @@ const MainPage: React.FC = () => {
     };
 
     return (
-        <div className="relative w-screen h-screen overflow-hidden font-sans select-none">
+        <div className="relative isolate w-screen h-screen overflow-hidden font-sans select-none">
             {/* Tailwind Custom Animations injected securely via style block */}
             <style>{`
                 @keyframes shine {
@@ -156,7 +156,7 @@ const MainPage: React.FC = () => {
             `}</style>
 
             {/* Layer 1: Background Image */}
-            <div className="absolute inset-0 w-full h-full bg-cover bg-center z-[-2]" style={{ backgroundImage: "url('/background.png')" }}>
+            <div className="absolute inset-0 z-0 h-full w-full bg-cover bg-center" style={{ backgroundImage: "url('/background.png')" }}>
                  {/* Dark overlay specifically fading into the top edge to make the navbar readable */}
                  <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent h-48" />
                  {/* Vignette effect around the entire screen to focus the center point */}
@@ -164,12 +164,12 @@ const MainPage: React.FC = () => {
             </div>
 
             {/* Layer 2: WebGL Particles (Three.js WebGL rendering for deep immersion) */}
-            <div className="absolute inset-0 z-[-1]">
+            <div className="absolute inset-0 z-10">
                 <ThreeParticles />
             </div>
             
             {/* Layer 3: Application UI Container */}
-            <div className="absolute inset-0 z-10 flex flex-col justify-between pt-20">
+            <div className="absolute inset-0 z-20 flex flex-col justify-between pt-20">
                 
                 <Navbar />
 

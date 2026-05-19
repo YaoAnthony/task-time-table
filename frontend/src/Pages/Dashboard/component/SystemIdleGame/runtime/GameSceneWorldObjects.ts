@@ -1,5 +1,5 @@
 import type { BedColor } from '../entities/Bed';
-import { DropItem, ITEM_DEF_MAP, TOOL_ITEM_DEFS } from '../entities/DropItem';
+import { ITEM_DEF_MAP } from '../entities/DropItem';
 import { NestView } from '../entities/NestView';
 import { RaspberryBush } from '../entities/RaspberryBush';
 import type { TreeGrowthStage } from '../shared/worldStateTypes';
@@ -25,20 +25,6 @@ export function removeWorldItemsByIds(scene: any, ownedItemIds: string[]) : void
       return true;
     });
     scene.drops.splice(0, scene.drops.length, ...activeDrops);
-  
-}
-
-export function spawnToolPickups(scene: any) : void {
-    // House-1 at (80,80), 10 tiles (T=32). Interior: x:112 68, y:112 56.
-    // Tool pickup positions come from the shared village layout.
-    const TOOL_POSITIONS: [number, number][] = [...VILLAGE_LAYOUT.toolPickups];
-
-    TOOL_ITEM_DEFS.forEach((def, i) => {
-      const [x, y] = TOOL_POSITIONS[i];
-      const item   = new DropItem(scene, x, y, def.itemId);
-      scene.drops.push(item);
-      scene.registerDropState(item);
-    });
   
 }
 

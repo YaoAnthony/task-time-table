@@ -69,7 +69,7 @@ import { preloadGameSceneAssets } from './GameScenePreload';
 import { createGameScene } from './GameSceneBootstrap';
 import { updateGameScene } from './GameSceneUpdateLoop';
 import { registerDefaultLighting, getDynamicLightConfigs, registerBedLight, registerNestLight, refreshNestLights, registerChestLight, registerTreeOccluder } from './GameSceneLighting';
-import { removeWorldItemsByIds, spawnToolPickups, _spawnBeds, placeEntityAt, restorePetsFromWorldState, _loadWorldState, createChickens, updateChickens, updateNests, spawnInitialTrees, spawnInitialBushes, spawnDecorations } from './GameSceneWorldObjects';
+import { removeWorldItemsByIds, _spawnBeds, placeEntityAt, restorePetsFromWorldState, _loadWorldState, createChickens, updateChickens, updateNests, spawnInitialTrees, spawnInitialBushes, spawnDecorations } from './GameSceneWorldObjects';
 import { triggerInteract, getNearestNpcName, triggerAction, tryChopNearbyBed, tryChopNearestTree, setPlayerTool, getGameState, setInitialGameSave, loadGameSaveData, syncEventSaveData, getGameSaveData, getGameTick, getDayCycleTick, setNpcThinking, addPlayerMessageToNpc, getNpcFamiliarity, getNpcChatCount, npcReply, playerSpeak, getNpcMemory, getNpcMindState, setNpcAuthProvider, setNpcInventoryProvider, loadNpcMemories, executeNpcActions, getPlayerPosition, pauseInput, resumeInput, registerInteractable, unregisterInteractable, triggerFInteract, _triggerQDrop, loadChests, addChest, panToChest, getCreatureStates, restoreCreatures, removeChest, spawnWorldItemDirect, spawnWorldItem, getPlayerWorldPos, dropPlayerItem, makeNpcSay, getPerceptionReport, getPerceptionContext, confirmNpcAction, chopTreeById, findFarmTarget, performFarmAction, executeKnowledgeSkill, findNearestTree, findWorldItem, claimWorldItem, dropWorldItem, getWorldIdAt, getNpcWorldId, navigateNpcToWorldPosition, findHouseEntryTarget, enterHouseForNpc, rememberHomeHouseForNpc, executeCommand } from './GameScenePublicApi';
 import { spawnRemotePlayer, removeRemotePlayer, applyRemoteEvent, applyRemoteFarmEvent, buildWorldSnapshot, getWorldSnapshot, setGameTick, applyWorldSnapshotData, applyWorldSnapshot } from './GameSceneMultiplayerBridge';
 import { setAgentBrainEnabled, setPhysicsDebug, _registerCommands } from './GameSceneCommands';
@@ -407,10 +407,6 @@ export class GameSceneRuntime extends Phaser.Scene {
 
   removeWorldItemsByIds(ownedItemIds: string[]): void {
     return removeWorldItemsByIds(this, ownedItemIds);
-  }
-
-  protected spawnToolPickups(): void {
-    return spawnToolPickups(this);
   }
 
   protected _spawnBeds(): void {

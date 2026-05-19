@@ -1,4 +1,5 @@
 const { normalizeProposal, validateProposal } = require('./shared/systemAiSchemas');
+const { createObjectId } = require('../../db/objectIdCompat');
 const { resolveSystemAiCover } = require('./services/systemAiCoverService');
 const { buildTaskTreeFromProposal } = require('./services/systemAiMissionBuilder');
 const { runSystemAiTaskChat } = require('./services/systemAiTaskService');
@@ -75,7 +76,13 @@ function registerSystemAiRoutes(router, deps) {
                 missionList.taskTree.push(...taskTree);
                 await system.save();
 
-                emitSystemUpdateEvent(systemId, 'mission_list_updated', { missionListId: missionList._id });
+                emitSystemUpdateEvent(String(system._id), {
+                    type: 'mission_list_updated',
+                    systemId: String(system._id),
+                    missionListId: String(missionList._id),
+                    missionListTitle: missionList.title,
+                    timestamp: new Date().toISOString(),
+                });
                 return res.json({
                     success: true,
                     reply: `好呀，我把 ${proposal.nodes.length} 个小任务接到「${missionList.title}」里了，像给小路补上几块踏脚石一样。`,
@@ -86,8 +93,9 @@ function registerSystemAiRoutes(router, deps) {
 
             const { rootNodeId, taskTree } = buildTaskTreeFromProposal(proposal);
 
-            if (!system.missionLists) system.missionLists = [];
+            if (!Array.isArray(system.missionLists)) system.missionLists = [];
             system.missionLists.push({
+                _id: createObjectId(),
                 listType: proposal.listType || 'mainline',
                 title: proposal.title,
                 image: imageUrl,
@@ -101,7 +109,13 @@ function registerSystemAiRoutes(router, deps) {
             await system.save();
 
             const newList = system.missionLists[system.missionLists.length - 1];
-            emitSystemUpdateEvent(systemId, 'mission_list_created', { missionListId: newList._id });
+            emitSystemUpdateEvent(String(system._id), {
+                type: 'mission_list_created',
+                systemId: String(system._id),
+                missionListId: String(newList._id),
+                missionListTitle: newList.title,
+                timestamp: new Date().toISOString(),
+            });
 
             return res.json({
                 success: true,

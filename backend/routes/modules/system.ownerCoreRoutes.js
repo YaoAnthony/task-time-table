@@ -3,6 +3,7 @@ const {
     removeDeletedNodeReferences,
     validateMissionGraphAcyclic,
 } = require('./shared/systemTaskGraphUtils');
+const { createObjectId } = require('../../db/objectIdCompat');
 const { ANIMAL_CROSSING_ASSISTANT_STYLE } = require('./shared/animalCrossingAgentStyle');
 
 function registerSystemOwnerCoreRoutes(router, deps) {
@@ -28,6 +29,24 @@ function registerSystemOwnerCoreRoutes(router, deps) {
     } = deps;
 
     const CLEAR_SYSTEM_INVENTORY_ON_DELETE = process.env.CLEAR_SYSTEM_INVENTORY_ON_DELETE !== 'false';
+
+    const buildSystemRelationship = (system, profileId, userId) => {
+        const isOwner = String(system?.profile || '') === String(profileId || '');
+        const isMember = (system?.members || []).some((member) => String(member.user) === String(userId));
+        return { isOwner, isMember };
+    };
+
+    const withSystemRelationship = (system, profileId, userId) => {
+        const source = typeof system?.toObject === 'function' ? system.toObject() : { ...(system || {}) };
+        const relationship = buildSystemRelationship(source, profileId, userId);
+        const { members, ...publicSystem } = source;
+        return {
+            ...publicSystem,
+            relationship,
+            isOwner: relationship.isOwner,
+            isMember: relationship.isMember,
+        };
+    };
 
     const normalizePrerequisiteNodeIds = (value, missionList, normalizedParentNodeId = null) => {
         const ids = Array.isArray(value) ? value.map((item) => normalizeNodeId(item)).filter(Boolean) : [];
@@ -148,15 +167,15 @@ function registerSystemOwnerCoreRoutes(router, deps) {
             const payload = {
                 profile: profile._id,
                 name: name.trim(),
-                image,
-                description,
-                modules,
-                attributeBoard,
-                obtainableItems,
-                missionLists,
-                storeProducts,
-                lotteryPools,
             };
+            if (image !== undefined) payload.image = image;
+            if (description !== undefined) payload.description = description;
+            if (modules !== undefined) payload.modules = modules;
+            if (attributeBoard !== undefined) payload.attributeBoard = attributeBoard;
+            if (obtainableItems !== undefined) payload.obtainableItems = obtainableItems;
+            if (missionLists !== undefined) payload.missionLists = missionLists;
+            if (storeProducts !== undefined) payload.storeProducts = storeProducts;
+            if (lotteryPools !== undefined) payload.lotteryPools = lotteryPools;
 
             const validateResult = validateAgainstObtainableItems(payload);
             if (!validateResult.valid) {
@@ -173,7 +192,7 @@ function registerSystemOwnerCoreRoutes(router, deps) {
             return res.status(201).json({
                 success: true,
                 message: 'System created successfully.',
-                system: newSystem,
+                system: withSystemRelationship(newSystem, profile._id, userId),
             });
         } catch (error) {
             console.error('Create system error:', error);
@@ -191,17 +210,16 @@ function registerSystemOwnerCoreRoutes(router, deps) {
             }
 
             const systems = await System.find({ _id: { $in: profile.systems } })
-                .select('name image description modules storeProducts lotteryPools missionLists obtainableItems createdAt updatedAt profile')
+                .select('name image description modules storeProducts lotteryPools missionLists obtainableItems createdAt updatedAt profile members')
                 .sort({ createdAt: -1 })
                 .lean();
 
-            const profileIdStr = String(profile._id);
             const filteredSystems = systems.map((sys) => {
-                const isOwner = String(sys.profile) === profileIdStr;
-                if (isOwner) return sys;
+                const system = withSystemRelationship(sys, profile._id, userId);
+                if (system.relationship.isOwner) return system;
                 return {
-                    ...sys,
-                    storeProducts: (sys.storeProducts || []).filter((p) => p.isListed !== false),
+                    ...system,
+                    storeProducts: (system.storeProducts || []).filter((p) => p.isListed !== false),
                 };
             });
 
@@ -402,7 +420,9 @@ function registerSystemOwnerCoreRoutes(router, deps) {
                 return res.status(status || 400).json({ message: error });
             }
 
+            if (!Array.isArray(system.missionLists)) system.missionLists = [];
             system.missionLists.push({
+                _id: createObjectId(),
                 listType,
                 title,
                 image,
@@ -1020,20 +1040,26 @@ function registerSystemOwnerCoreRoutes(router, deps) {
     router.get('/search/:systemId', authenticateToken, async (req, res) => {
         try {
             const { systemId } = req.params;
+            const userId = req.user.id;
 
             if (!isValidObjectId(systemId)) {
                 return res.status(400).json({ message: 'Invalid system ID format.' });
             }
 
+            const { profile, error, status } = await ensureProfile(userId);
+            if (error) {
+                return res.status(status || 400).json({ message: error });
+            }
+
             const system = await System.findById(systemId)
-                .select('name image description modules createdAt updatedAt')
+                .select('name image description modules createdAt updatedAt profile members')
                 .lean();
 
             if (!system) {
                 return res.status(404).json({ message: 'System not found.' });
             }
 
-            return res.json({ system });
+            return res.json({ system: withSystemRelationship(system, profile._id, userId) });
         } catch (error) {
             console.error('Search system error:', error);
             return res.status(500).json({ message: 'Failed to search system', error: error.message });
@@ -1067,8 +1093,12 @@ function registerSystemOwnerCoreRoutes(router, deps) {
             system.members.push({
                 user: userId,
                 profile: profile._id,
-                joinedAt: new Date(),
+                joinedAt: new Date().toISOString(),
+                acceptedMissionLists: [],
+                activeTask: null,
                 taskCompletions: [],
+                taskHistory: [],
+                dailyQuestStatus: [],
                 purchases: [],
             });
 
@@ -1082,7 +1112,7 @@ function registerSystemOwnerCoreRoutes(router, deps) {
             return res.status(201).json({
                 success: true,
                 message: 'Successfully joined the system.',
-                system,
+                system: withSystemRelationship(system, profile._id, userId),
             });
         } catch (error) {
             console.error('Join system error:', error);
@@ -1100,13 +1130,13 @@ function registerSystemOwnerCoreRoutes(router, deps) {
                 return res.status(status || 400).json({ message: error });
             }
 
-            if (isOwner) {
-                return res.status(400).json({ message: 'System owner cannot leave their own system.' });
-            }
-
             const member = findMemberByUserId(system, userId);
             if (!member) {
-                return res.status(404).json({ message: 'Member not found in this system.' });
+                return res.status(404).json({
+                    message: isOwner
+                        ? 'System owner is not joined as a member of this system.'
+                        : 'Member not found in this system.',
+                });
             }
 
             const memberProfileId = member.profile ? String(member.profile) : String(profile._id);
@@ -1116,14 +1146,16 @@ function registerSystemOwnerCoreRoutes(router, deps) {
 
             await system.save();
 
+            const pullUpdate = isOwner
+                ? { inventory: { sourceSystem: system._id } }
+                : {
+                    systems: system._id,
+                    inventory: { sourceSystem: system._id },
+                };
+
             await Profile.updateOne(
                 { _id: profile._id },
-                {
-                    $pull: {
-                        systems: system._id,
-                        inventory: { sourceSystem: system._id },
-                    },
-                }
+                { $pull: pullUpdate }
             );
 
             const timestamp = new Date().toISOString();
@@ -1146,8 +1178,11 @@ function registerSystemOwnerCoreRoutes(router, deps) {
 
             return res.json({
                 success: true,
-                message: 'Successfully left the system.',
+                message: isOwner
+                    ? 'Successfully left the system as a member.'
+                    : 'Successfully left the system.',
                 systemId: String(system._id),
+                ownerMembershipOnly: isOwner,
             });
         } catch (error) {
             console.error('Leave system error:', error);

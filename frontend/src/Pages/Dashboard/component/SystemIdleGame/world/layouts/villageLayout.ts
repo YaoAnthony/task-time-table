@@ -48,11 +48,6 @@ export const VILLAGE_LAYOUT = {
     y: 760,
   },
   extraNpcs: [],
-  toolPickups: [
-    [272, 208],
-    [304, 208],
-    [336, 208],
-  ] as [number, number][],
   beds: [
     { x: 368, y: 272, color: 'pink' as const },
   ],

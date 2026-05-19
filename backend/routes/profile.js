@@ -277,9 +277,11 @@ router.get('/active-system-tasks', authenticateToken, async (req, res) => {
             if (!node) continue;
 
             const startedAtRaw = member.activeTask.startedAt ? new Date(member.activeTask.startedAt) : null;
-            if (!startedAtRaw || Number.isNaN(startedAtRaw.getTime())) continue;
+            const startedAt = startedAtRaw && !Number.isNaN(startedAtRaw.getTime())
+                ? startedAtRaw
+                : new Date(now);
 
-            const elapsedSeconds = Math.max(0, Math.floor((now - startedAtRaw.getTime()) / 1000));
+            const elapsedSeconds = Math.max(0, Math.floor((now - startedAt.getTime()) / 1000));
             const requiredSeconds = Math.max(60, Number(node.timeCostMinutes || 1) * 60);
 
             activeTasks.push({
@@ -291,7 +293,7 @@ router.get('/active-system-tasks', authenticateToken, async (req, res) => {
                 missionListTitle: missionList.title || '',
                 nodeId: node.nodeId,
                 nodeTitle: node.title || '',
-                startedAt: startedAtRaw.toISOString(),
+                startedAt: startedAt.toISOString(),
                 timeCostMinutes: Number(node.timeCostMinutes || 0),
                 requiredSeconds,
                 elapsedSeconds,
@@ -897,7 +899,6 @@ const ITEM_NAMES_ZH = {
     axe:          '斧头',
     watering_can: '水壶',
     scythe:       '锄头',
-    shovel:       '铲子',
     egg:          '鸡蛋',
     fruit:        '果实',
     animal_feed:  '饲料',
@@ -1439,7 +1440,7 @@ router.post('/npc/dispatch-return', authenticateToken, async (req, res) => {
         // Build a description of what the NPC took with them
         const itemNameZhLocal = (id) => ({
             apple: '苹果', berry: '浆果', axe: '斧头', log: '木头',
-            stone: '石头', watering_can: '水壶', scythe: '锄头', shovel: '铲子',
+            stone: '石头', watering_can: '水壶', scythe: '锄头',
         }[id] ?? id);
 
         const carriedStr = Object.keys(carriedItems).length > 0

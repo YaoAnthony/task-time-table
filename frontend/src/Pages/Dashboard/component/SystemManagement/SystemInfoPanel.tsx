@@ -8,6 +8,7 @@ import type { RootState } from '../../../../Redux/store';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import DeleteSystem from './DeleteSystem';
+import { isOwnedSystem } from '../../utils/systemRelationship';
 
 const SystemInfoPanel: React.FC<{ system: SystemLite }> = ({ system }) => {
 
@@ -15,7 +16,7 @@ const SystemInfoPanel: React.FC<{ system: SystemLite }> = ({ system }) => {
     
     const { systemId } = useParams<{ systemId: string }>();
     const profile = useSelector((state: RootState) => state.profile.profile);
-    const isOwner = String(system.profile || '') === String(profile?._id || '');
+    const isOwner = isOwnedSystem(system, profile?._id);
 
     return (
         <div className="p-8 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
@@ -82,7 +83,7 @@ const SystemInfoPanel: React.FC<{ system: SystemLite }> = ({ system }) => {
                                 navigator.clipboard.writeText(system._id);
                                 message.success('系统ID已复制到剪贴板');
                             }}
-                            className="bg-blue-500 hover:bg-blue-600 dark:bg-[#FFC72C] dark:hover:bg-white text-white dark:text-black px-4 py-2 rounded-lg font-bold tracking-wider transition-colors shadow-sm"
+                            className="bg-blue-500 hover:bg-blue-600 dark:bg-[#FFC72C] dark:hover:bg-white text-black px-4 py-2 rounded-lg font-bold tracking-wider transition-colors shadow-sm"
                         >
                             复制ID
                         </motion.button>

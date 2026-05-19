@@ -185,6 +185,12 @@ export interface SystemLite {
     image?: string | null;
     description?: string;
     profile?: string;
+    relationship?: {
+        isOwner?: boolean;
+        isMember?: boolean;
+    };
+    isOwner?: boolean;
+    isMember?: boolean;
     modules?: {
         taskChain?: boolean;
         store?: boolean;

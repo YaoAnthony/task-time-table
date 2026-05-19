@@ -46,14 +46,6 @@ const Dashboard: React.FC = () => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (isEditableTarget(event.target)) return;
 
-            if (event.key.toLowerCase() === 'b') {
-                event.preventDefault();
-                if (location.pathname !== '/dashboard/backpack') {
-                    navigate('/dashboard/backpack');
-                }
-                return;
-            }
-
             if (event.key === 'Escape') {
                 event.preventDefault();
                 if (location.pathname !== '/dashboard/idle-game') {

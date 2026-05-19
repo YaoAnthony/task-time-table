@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -477,7 +476,7 @@ const NPCData: React.FC = () => {
     return (
       <div style={{ minHeight: '100%', padding: 24, fontFamily: '"Courier New", monospace' }}>
         <Section title="NPC data">
-          <Empty text="还没有已解锁 NPC。去 NPC 商店招募后这里才会显示数据。" />
+          <Empty text="还没有已解锁 NPC。在游戏里的 NPC 商店招募后，这里才会显示数据。" />
         </Section>
       </div>
     );
@@ -521,20 +520,6 @@ const NPCData: React.FC = () => {
         <aside style={{ ...panelStyle, padding: 12, position: 'sticky', top: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
             <strong style={{ fontSize: 13 }}>已解锁 NPC</strong>
-            <Link
-              to="/dashboard/npc-shop"
-              style={{
-                padding: '5px 8px',
-                border: '1px solid var(--px-gold)',
-                borderRadius: 4,
-                color: 'var(--px-gold)',
-                textDecoration: 'none',
-                fontSize: 12,
-                fontWeight: 900,
-              }}
-            >
-              商店
-            </Link>
           </div>
           <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
             {unlockedNpcDefinitions.map((npc) => {
